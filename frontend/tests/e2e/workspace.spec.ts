@@ -141,7 +141,7 @@ test("switches OAuth provider and renders a grounded response", async ({ page })
       body: JSON.stringify({
         provider: "claude",
         text: "TEXT Hello를 확인했습니다. [handle:591]",
-        sessionId: "oauth-session-test"
+        sessionId: "98d84d53-7861-4c73-a789-d6c8f5490966"
       })
     });
   });
@@ -167,7 +167,7 @@ test("switches OAuth provider and renders a grounded response", async ({ page })
     provider: "claude",
     drawingPath: "tests/fixtures/dwg/export_sample.dwg",
     message: "앞 질문에 이어서 설명해줘",
-    sessionId: "oauth-session-test"
+    sessionId: "98d84d53-7861-4c73-a789-d6c8f5490966"
   });
   const responseBox = await page.getByTestId("live-response").boundingBox();
   const composerBox = await page.locator(".composer").boundingBox();
@@ -256,8 +256,10 @@ test("workspace controls change visible state instead of remaining inert", async
     buffer: Buffer.from("check handle 239")
   });
   await expect(page.locator(".attachment-chip")).toContainText("review-note.txt");
+  await expect(page.getByLabel("AI 질문")).toHaveValue(/check handle 239/);
   await page.getByRole("button", { name: "첨부 제거" }).click();
   await expect(page.locator(".attachment-chip")).toHaveCount(0);
+  await expect(page.getByLabel("AI 질문")).toHaveValue("@drawing-index-agent");
 
   await page.getByRole("button", { name: "패널 닫기" }).click();
   await expect(page.getByLabel("에이전트 워크스페이스")).toBeHidden();

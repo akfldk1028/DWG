@@ -5,7 +5,7 @@ import {
   Square,
   X
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ProviderId } from "../../shared/types";
 
@@ -27,13 +27,42 @@ export function ChatComposer({
   onCancel
 }: Props) {
   const [attachmentName, setAttachmentName] = useState<string | null>(null);
+  const [attachmentBlock, setAttachmentBlock] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!message && attachmentName) {
+      setAttachmentName(null);
+      setAttachmentBlock("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [attachmentName, message]);
 
   function insertMention() {
     const separator = message && !message.endsWith(" ") ? " " : "";
     onMessageChange(`${message}${separator}@drawing-index-agent `);
     window.setTimeout(() => messageInputRef.current?.focus(), 0);
+  }
+
+  async function attachFile(file: File | undefined) {
+    if (!file) return;
+    const content = await file.text();
+    const clippedContent = content.slice(0, 12_000);
+    const block = `\n\n[첨부: ${file.name}]\n${clippedContent}${content.length > clippedContent.length ? "\n[내용 일부 생략]" : ""}`;
+    const messageWithoutPreviousAttachment = attachmentBlock
+      ? message.replace(attachmentBlock, "")
+      : message;
+    setAttachmentName(file.name);
+    setAttachmentBlock(block);
+    onMessageChange(`${messageWithoutPreviousAttachment.trimEnd()}${block}`);
+  }
+
+  function removeAttachment() {
+    onMessageChange(message.replace(attachmentBlock, "").trimEnd());
+    setAttachmentName(null);
+    setAttachmentBlock("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   return (
@@ -47,10 +76,10 @@ export function ChatComposer({
         value={message}
       />
       <input
-        accept=".dwg,.dxf,.json,.txt"
+        accept=".dxf,.json,.txt"
         aria-label="첨부 파일 선택"
-        className="visually-hidden"
-        onChange={(event) => setAttachmentName(event.target.files?.[0]?.name ?? null)}
+        hidden
+        onChange={(event) => void attachFile(event.target.files?.[0])}
         ref={fileInputRef}
         type="file"
       />
@@ -58,10 +87,7 @@ export function ChatComposer({
         <span className="attachment-chip">
           <Paperclip size={11} />
           <span>{attachmentName}</span>
-          <button aria-label="첨부 제거" onClick={() => {
-            setAttachmentName(null);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-          }} type="button"><X size={11} /></button>
+          <button aria-label="첨부 제거" onClick={removeAttachment} type="button"><X size={11} /></button>
         </span>
       )}
       <div className="composer-actions">
