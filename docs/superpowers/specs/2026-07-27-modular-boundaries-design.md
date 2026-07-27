@@ -13,7 +13,8 @@ This pass covers:
 1. one shared TypeScript source for public CAD and provider DTOs;
 2. workspace-control state extraction from `App.tsx`;
 3. provider-session persistence behind an injected storage boundary;
-4. feature-owned CSS without pixel changes.
+4. functional per-layer visibility shared by the explorer and viewer;
+5. feature-owned CSS without pixel changes.
 
 The current attachment behavior in `ChatComposer.tsx` is preserved. Streaming,
 server-side conversation storage, Codex app-server adoption, and new CAD
@@ -53,6 +54,20 @@ Move global UI coordination from `App.tsx` into
 
 `App.tsx` remains the composition root: it loads the drawing and chat features,
 selects the current entity, and wires feature outputs to layout components.
+
+### Layer visibility
+
+Create `frontend/src/features/drawing-explorer/useLayerVisibility.ts` as the
+owner of visible/hidden layer state for the loaded index. `DrawingExplorer`
+receives the visibility state and toggle callback; it does not own a second
+copy. `CadViewer` receives hidden layer names and excludes matching entities
+from SVG rendering.
+
+Each layer eye is a real button with `aria-pressed` and a state-specific Korean
+label. Clicking it hides every entity on that layer without changing the CAD
+index, finding evidence, or stable handles. Clicking it again restores the
+same entities. Loading a different drawing removes hidden names that do not
+exist in the new index.
 
 ### Provider session storage
 
@@ -99,6 +114,7 @@ multiple grid children stay in the app stylesheet.
 ```text
 App
   -> useWorkspaceControls
+  -> useLayerVisibility
   -> drawing/chat feature hooks
   -> feature components
 
@@ -123,6 +139,8 @@ contracts. The contracts package never imports an application module.
 - A failed provider request never overwrites a stored session.
 - Cancellation keeps the currently stored valid session but ignores the
   cancelled response.
+- Layer visibility changes only rendering state; the immutable CAD index and
+  evidence results remain available.
 - Shared public request validation remains in the loopback gateway.
 - CSS movement must not introduce missing assets, console errors, overflow, or
   screenshot differences.
@@ -133,6 +151,8 @@ contracts. The contracts package never imports an application module.
   clear behavior.
 - Contract compilation proves frontend and agent consumers use the shared
   package without duplicate public DTO declarations.
+- Playwright proves a layer eye hides and restores exactly the entities owned
+  by that layer.
 - Existing provider, gateway, orchestration, MCP, and real DWG tests remain
   green.
 - Playwright adds a reload-continuation scenario and retains cancellation,
@@ -146,6 +166,8 @@ contracts. The contracts package never imports an application module.
 - `App.tsx` contains no keyboard or popover event-listener implementation.
 - Frontend and agent public CAD/provider DTOs come from `@dwg/contracts`.
 - Provider sessions survive a same-tab reload and remain isolated by provider.
+- Every layer eye controls the visibility of its indexed entities in the CAD
+  viewer and exposes its current state accessibly.
 - Every feature owns its CSS, with cross-feature grid rules remaining in app.
 - All automated tests, exact PNG comparisons, and both real OAuth two-turn
   smoke tests pass.
