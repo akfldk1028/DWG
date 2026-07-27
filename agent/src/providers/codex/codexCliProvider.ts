@@ -1,5 +1,6 @@
 import { createOAuthOnlyEnvironment } from "../cli/oauthEnvironment.js";
 import { defaultProcessRunner } from "../cli/processRunner.js";
+import { buildProviderPrompt, describeCliFailure } from "../cli/providerPrompt.js";
 import { join } from "node:path";
 import type {
   ChatProvider,
@@ -72,11 +73,11 @@ export class CodexCliProvider implements ChatProvider {
       ],
       cwd: this.cwd,
       env: createOAuthOnlyEnvironment(),
-      stdin: buildPrompt(request),
+      stdin: buildProviderPrompt(request),
       timeoutMs: 180_000
     });
     if (result.exitCode !== 0) {
-      throw new Error(`Codex provider failed: ${safeFailure(result.errorCode)}`);
+      throw new Error(`Codex provider failed: ${describeCliFailure(result.errorCode)}`);
     }
 
     let text = "";
@@ -115,22 +116,4 @@ function resolveCodexLaunch(command?: string) {
     };
   }
   return { command: "codex", prefixArgs: [] as string[] };
-}
-
-function buildPrompt(request: ProviderChatRequest) {
-  return [
-    request.systemPrompt,
-    "",
-    "<cad_context>",
-    request.context,
-    "</cad_context>",
-    "",
-    "<user_request>",
-    request.message,
-    "</user_request>"
-  ].join("\n");
-}
-
-function safeFailure(errorCode?: string) {
-  return errorCode === "ENOENT" ? "CLI not installed" : "CLI execution error";
 }

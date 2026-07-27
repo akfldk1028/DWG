@@ -1,13 +1,10 @@
 import {
-  AtSign,
   Bot,
   Check,
   ChevronRight,
   CircleDot,
   LoaderCircle,
   MessageSquarePlus,
-  Paperclip,
-  Send,
   TerminalSquare
 } from "lucide-react";
 import { useEffect, useRef } from "react";
@@ -19,6 +16,8 @@ import type {
   ProviderStatus,
   Scenario
 } from "../../shared/types";
+import { ChatComposer } from "./ChatComposer";
+import { ProviderSwitch } from "./ProviderSwitch";
 
 interface Props {
   scenario: Scenario;
@@ -66,23 +65,11 @@ export function AgentWorkspace({
           <strong>Drawing inspection</strong>
           <span>@export_sample.dwg · OAuth CLI · 7 agents</span>
         </div>
-        <div className="provider-switch" aria-label="AI provider">
-          {(["codex", "claude"] as const).map((providerId) => {
-            const status = providers.find((provider) => provider.id === providerId);
-            return (
-              <button
-                className={selectedProvider === providerId ? "active" : ""}
-                disabled={!status?.authenticated}
-                key={providerId}
-                onClick={() => onProviderChange(providerId)}
-                title={status?.detail ?? "상태 확인 중"}
-              >
-                <i className={status?.authenticated ? "online" : ""} />
-                {providerId === "codex" ? "GPT" : "Claude"}
-              </button>
-            );
-          })}
-        </div>
+        <ProviderSwitch
+          providers={providers}
+          selectedProvider={selectedProvider}
+          onProviderChange={onProviderChange}
+        />
       </div>
 
       <div className="conversation">
@@ -142,25 +129,13 @@ export function AgentWorkspace({
         </div>
       </div>
 
-      <form className="composer" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
-        <input
-          aria-label="AI 질문"
-          disabled={chatLoading}
-          onChange={(event) => onMessageChange(event.target.value)}
-          placeholder="도면에 대해 질문하세요…"
-          value={message}
-        />
-        <div className="composer-actions">
-          <span>
-            <button aria-label="에이전트 멘션" type="button"><AtSign size={14} /></button>
-            <button aria-label="파일 첨부" type="button"><Paperclip size={14} /></button>
-          </span>
-          <span className="composer-provider">{selectedProvider === "codex" ? "GPT" : "CLAUDE"} · OAUTH</span>
-          <button className="send-button" aria-label="전송" disabled={chatLoading || !message.trim()}>
-            {chatLoading ? <LoaderCircle className="spin" size={13} /> : <Send size={13} />}
-          </button>
-        </div>
-      </form>
+      <ChatComposer
+        provider={selectedProvider}
+        message={message}
+        loading={chatLoading}
+        onMessageChange={onMessageChange}
+        onSubmit={onSubmit}
+      />
     </aside>
   );
 }

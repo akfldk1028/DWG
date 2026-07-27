@@ -1,5 +1,6 @@
 import { createOAuthOnlyEnvironment } from "../cli/oauthEnvironment.js";
 import { defaultProcessRunner } from "../cli/processRunner.js";
+import { buildProviderPrompt, describeCliFailure } from "../cli/providerPrompt.js";
 import type {
   ChatProvider,
   ProcessRunner,
@@ -72,11 +73,11 @@ export class ClaudeCliProvider implements ChatProvider {
       ],
       cwd: this.cwd,
       env: createOAuthOnlyEnvironment(),
-      stdin: buildPrompt(request),
+      stdin: buildProviderPrompt(request),
       timeoutMs: 180_000
     });
     if (result.exitCode !== 0) {
-      throw new Error(`Claude provider failed: ${safeFailure(result.errorCode)}`);
+      throw new Error(`Claude provider failed: ${describeCliFailure(result.errorCode)}`);
     }
 
     let output: any;
@@ -94,22 +95,4 @@ export class ClaudeCliProvider implements ChatProvider {
       sessionId: typeof output.session_id === "string" ? output.session_id : null
     };
   }
-}
-
-function buildPrompt(request: ProviderChatRequest) {
-  return [
-    request.systemPrompt,
-    "",
-    "<cad_context>",
-    request.context,
-    "</cad_context>",
-    "",
-    "<user_request>",
-    request.message,
-    "</user_request>"
-  ].join("\n");
-}
-
-function safeFailure(errorCode?: string) {
-  return errorCode === "ENOENT" ? "CLI not installed" : "CLI execution error";
 }

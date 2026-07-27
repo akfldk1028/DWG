@@ -12,90 +12,27 @@ import {
   Search,
   Settings2
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { AgentWorkspace } from "../features/agent-chat/AgentWorkspace";
+import { useProviderChat } from "../features/agent-chat/useProviderChat";
 import { CadViewer } from "../features/cad-viewer/CadViewer";
 import { DrawingExplorer } from "../features/drawing-explorer/DrawingExplorer";
+import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
 import { InspectionDock } from "../features/inspection-results/InspectionDock";
-import type {
-  CadIndex,
-  ProviderChatResult,
-  ProviderId,
-  ProviderStatus,
-  Scenario
-} from "../shared/types";
+import type { Scenario } from "../shared/types";
 
 export function App() {
-  const [index, setIndex] = useState<CadIndex | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { index, error } = useDrawingIndex();
+  const chat = useProviderChat();
   const [scenario, setScenario] = useState<Scenario>("loaded");
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
-  const [providers, setProviders] = useState<ProviderStatus[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("codex");
-  const [message, setMessage] = useState("");
-  const [chatResult, setChatResult] = useState<ProviderChatResult | null>(null);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [chatLoading, setChatLoading] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/data/export_sample.index.json", { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json() as Promise<CadIndex>;
-      })
-      .then(setIndex)
-      .catch((reason: Error) => {
-        if (reason.name !== "AbortError") setError(reason.message);
-      });
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/providers", { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json() as Promise<{ providers: ProviderStatus[] }>;
-      })
-      .then((payload) => setProviders(payload.providers))
-      .catch((reason: Error) => {
-        if (reason.name !== "AbortError") setChatError("로컬 AI gateway에 연결할 수 없습니다.");
-      });
-    return () => controller.abort();
-  }, []);
 
   const selected = index?.entities.find((entity) => entity.handle === selectedHandle) ?? null;
 
   function chooseScenario(next: Scenario) {
     setScenario(next);
     setSelectedHandle(next === "finding" ? "23D" : null);
-  }
-
-  async function submitChat() {
-    if (!message.trim() || chatLoading) return;
-    setChatLoading(true);
-    setChatError(null);
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          provider: selectedProvider,
-          drawingPath: "tests/fixtures/dwg/export_sample.dwg",
-          message: message.trim()
-        })
-      });
-      const payload = await response.json() as ProviderChatResult & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
-      setChatResult(payload);
-      setMessage("");
-    } catch (reason) {
-      setChatError(reason instanceof Error ? reason.message : "AI 응답에 실패했습니다.");
-    } finally {
-      setChatLoading(false);
-    }
   }
 
   if (error) {
@@ -133,15 +70,15 @@ export function App() {
         <CadViewer index={index} scenario={scenario} selectedHandle={selectedHandle} />
         <AgentWorkspace
           scenario={scenario}
-          providers={providers}
-          selectedProvider={selectedProvider}
-          onProviderChange={setSelectedProvider}
-          message={message}
-          onMessageChange={setMessage}
-          onSubmit={submitChat}
-          chatLoading={chatLoading}
-          chatResult={chatResult}
-          chatError={chatError}
+          providers={chat.providers}
+          selectedProvider={chat.selectedProvider}
+          onProviderChange={chat.setSelectedProvider}
+          message={chat.message}
+          onMessageChange={chat.setMessage}
+          onSubmit={chat.submit}
+          chatLoading={chat.loading}
+          chatResult={chat.result}
+          chatError={chat.error}
         />
         <InspectionDock
           scenario={scenario}
