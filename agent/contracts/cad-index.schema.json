@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cad-index.schema.json",
+  "title": "CAD Entity Index",
+  "type": "object",
+  "required": ["schemaVersion", "drawingId", "source", "summary", "layers", "entities", "unsupported"],
+  "properties": {
+    "schemaVersion": { "const": "cad-index/v0.1" },
+    "drawingId": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["kind", "displayName", "parser"],
+      "properties": {
+        "kind": { "enum": ["dxf", "dwg"] },
+        "displayName": { "type": "string" },
+        "parser": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "summary": {
+      "type": "object",
+      "required": ["entityCount", "layerCount", "unsupportedCount", "modelSpaceCount", "paperSpaceCount"],
+      "properties": {
+        "entityCount": { "type": "integer", "minimum": 0 },
+        "layerCount": { "type": "integer", "minimum": 0 },
+        "unsupportedCount": { "type": "integer", "minimum": 0 },
+        "modelSpaceCount": { "type": "integer", "minimum": 0 },
+        "paperSpaceCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "entityCount", "visible", "frozen"],
+        "properties": {
+          "name": { "type": "string" },
+          "entityCount": { "type": "integer", "minimum": 0 },
+          "visible": { "type": "boolean" },
+          "frozen": { "type": "boolean" }
+        }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "handle", "type", "layer", "space", "layout", "bbox", "warnings"],
+        "properties": {
+          "id": { "type": "string" },
+          "handle": { "type": ["string", "null"] },
+          "type": { "type": "string" },
+          "layer": { "type": "string" },
+          "space": { "enum": ["model", "paper", "unknown"] },
+          "layout": { "type": "string" },
+          "bbox": {
+            "type": ["object", "null"],
+            "required": ["min", "max"],
+            "properties": {
+              "min": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+              "max": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+            }
+          },
+          "text": { "type": ["string", "null"] },
+          "blockName": { "type": ["string", "null"] },
+          "attributes": { "type": "object" },
+          "geometry": { "type": "object" },
+          "warnings": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    "unsupported": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "count", "reason"],
+        "properties": {
+          "type": { "type": "string" },
+          "count": { "type": "integer", "minimum": 0 },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

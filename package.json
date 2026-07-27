@@ -1,0 +1,19 @@
+{
+  "name": "dwg-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test \"agent/**/*.test.ts\"",
+    "harness": "tsx agent/harness/run-case.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "dxf-parser": "^1.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

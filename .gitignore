@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.env
+.env.*
+
+clone/
+logs/
+
+backend/bin/
+backend/obj/
+frontend/node_modules/
+agent/.cache/
+
+.worktrees/
