@@ -8,8 +8,10 @@
     "harness": "tsx agent/harness/run-case.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "ajv": "^8.17.1",
-    "dxf-parser": "^1.1.2"
+    "dxf-parser": "^1.1.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.1.0",
