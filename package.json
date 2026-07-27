@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test \"agent/**/*.test.ts\"",
+    "test": "node --import tsx --test \"agent/**/*.test.ts\" \"frontend/tests/unit/**/*.test.ts\"",
     "harness": "tsx agent/harness/run-case.ts",
     "mcp": "tsx agent/src/mcp/stdio.ts",
     "gateway": "tsx agent/src/http/gateway.ts",

@@ -9,10 +9,16 @@ import type {
   ProviderId,
   ProviderStatus
 } from "../../shared/types";
+import {
+  browserProviderSessionStore,
+  type ProviderSessionStore
+} from "./providerSessionStore";
 
 const drawingPath = "tests/fixtures/dwg/export_sample.dwg";
 
-export function useProviderChat() {
+export function useProviderChat(
+  sessionStore: ProviderSessionStore = browserProviderSessionStore
+) {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>("codex");
   const [message, setMessage] = useState("");
@@ -21,7 +27,6 @@ export function useProviderChat() {
   const [loading, setLoading] = useState(false);
   const requestController = useRef<AbortController | null>(null);
   const requestGeneration = useRef(0);
-  const sessionIds = useRef<Partial<Record<ProviderId, string>>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -55,20 +60,19 @@ export function useProviderChat() {
     setLoading(true);
     setError(null);
     try {
+      const sessionId = sessionStore.get(selectedProvider);
       const response = await sendProviderChat({
         provider: selectedProvider,
         drawingPath,
         message: trimmedMessage,
-        ...(sessionIds.current[selectedProvider]
-          ? { sessionId: sessionIds.current[selectedProvider] }
-          : {})
+        ...(sessionId ? { sessionId } : {})
       }, controller.signal);
       if (
         controller.signal.aborted ||
         requestGeneration.current !== generation
       ) return;
       if (response.sessionId) {
-        sessionIds.current[selectedProvider] = response.sessionId;
+        sessionStore.set(selectedProvider, response.sessionId);
       }
       setResult(response);
       setMessage("");
@@ -98,7 +102,7 @@ export function useProviderChat() {
     setMessage("");
     setResult(null);
     setError(null);
-    sessionIds.current = {};
+    sessionStore.clear();
   }
 
   return {
