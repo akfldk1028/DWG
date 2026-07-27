@@ -18,6 +18,7 @@ import type {
 } from "../../shared/types";
 import { ChatComposer } from "./ChatComposer";
 import { ProviderSwitch } from "./ProviderSwitch";
+import "./styles.css";
 
 interface Props {
   scenario: Scenario;

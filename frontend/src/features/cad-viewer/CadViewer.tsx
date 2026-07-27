@@ -2,6 +2,7 @@ import { Crosshair, Focus, Grid3X3, Maximize2, Minimize2, MousePointer2 } from "
 import { useEffect, useMemo, useState } from "react";
 
 import type { CadEntity, CadIndex, Scenario } from "../../shared/types";
+import "./styles.css";
 
 interface Props {
   index: CadIndex;

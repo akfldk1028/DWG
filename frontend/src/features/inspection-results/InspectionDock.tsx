@@ -2,6 +2,7 @@ import { AlertTriangle, Box, CheckCircle2, FileCheck2, ScanSearch } from "lucide
 import { useState } from "react";
 
 import type { CadEntity, Scenario } from "../../shared/types";
+import "./styles.css";
 
 interface Props {
   scenario: Scenario;

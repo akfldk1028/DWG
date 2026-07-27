@@ -12,7 +12,7 @@ import {
 import { useRef, useState } from "react";
 
 import type { CadIndex } from "../../shared/types";
-import "./layer-visibility.css";
+import "./styles.css";
 
 interface Props {
   index: CadIndex;
