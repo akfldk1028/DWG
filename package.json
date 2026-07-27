@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node --import tsx --test \"agent/**/*.test.ts\"",
-    "harness": "tsx agent/harness/run-case.ts"
+    "harness": "tsx agent/harness/run-case.ts",
+    "mcp": "tsx agent/src/mcp/stdio.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
