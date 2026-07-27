@@ -59,6 +59,9 @@ export class ClaudeCliProvider implements ChatProvider {
   }
 
   async chat(request: ProviderChatRequest): Promise<ProviderChatResult> {
+    const resumeArgs = request.sessionId
+      ? ["--resume", request.sessionId]
+      : [];
     const result = await this.runner.run({
       command: this.command,
       args: [
@@ -69,12 +72,13 @@ export class ClaudeCliProvider implements ChatProvider {
         "plan",
         "--tools",
         "",
-        "--no-session-persistence"
+        ...resumeArgs
       ],
       cwd: this.cwd,
       env: createOAuthOnlyEnvironment(),
       stdin: buildProviderPrompt(request),
-      timeoutMs: 180_000
+      timeoutMs: 180_000,
+      signal: request.signal
     });
     if (result.exitCode !== 0) {
       throw new Error(`Claude provider failed: ${describeCliFailure(result.errorCode)}`);

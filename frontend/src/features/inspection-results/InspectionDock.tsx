@@ -1,4 +1,5 @@
 import { AlertTriangle, Box, CheckCircle2, FileCheck2, ScanSearch } from "lucide-react";
+import { useState } from "react";
 
 import type { CadEntity, Scenario } from "../../shared/types";
 
@@ -10,17 +11,18 @@ interface Props {
 
 export function InspectionDock({ scenario, selected, onSelectFinding }: Props) {
   const warning = scenario === "warning";
+  const [activeTab, setActiveTab] = useState<"overview" | "evidence" | "warnings">("overview");
 
   return (
     <section className="inspection-dock" aria-label="검사 결과">
       <div className="dock-tabs">
-        <button className="dock-tab active"><ScanSearch size={13} /> Findings <b>1</b></button>
-        <button className="dock-tab"><FileCheck2 size={13} /> Evidence <b>{selected ? 1 : 0}</b></button>
-        <button className={`dock-tab ${warning ? "has-warning" : ""}`}><AlertTriangle size={13} /> Warnings <b>{warning ? 1 : 0}</b></button>
+        <button className={`dock-tab ${activeTab === "overview" ? "active" : ""}`} onClick={() => setActiveTab("overview")}><ScanSearch size={13} /> Findings <b>1</b></button>
+        <button className={`dock-tab ${activeTab === "evidence" ? "active" : ""}`} onClick={() => setActiveTab("evidence")}><FileCheck2 size={13} /> Evidence <b>{selected ? 1 : 0}</b></button>
+        <button className={`dock-tab ${activeTab === "warnings" ? "active" : ""} ${warning ? "has-warning" : ""}`} onClick={() => setActiveTab("warnings")}><AlertTriangle size={13} /> Warnings <b>{warning ? 1 : 0}</b></button>
       </div>
 
       <div className="dock-content">
-        <button className={`finding-row ${selected ? "selected" : ""}`} onClick={onSelectFinding}>
+        {activeTab === "overview" && <button className={`finding-row ${selected ? "selected" : ""}`} onClick={onSelectFinding}>
           <span className="finding-severity"><CheckCircle2 size={14} /></span>
           <span className="finding-main">
             <strong>0 레이어 주요 형상 확인</strong>
@@ -28,9 +30,9 @@ export function InspectionDock({ scenario, selected, onSelectFinding }: Props) {
           </span>
           <span className="finding-rule">IDX-LAYER-001</span>
           <span className="finding-status">VERIFIED</span>
-        </button>
+        </button>}
 
-        <div className="evidence-card" data-testid="evidence-card">
+        {(activeTab === "overview" || activeTab === "evidence") && <div className="evidence-card" data-testid="evidence-card">
           {selected ? (
             <>
               <div className="evidence-title"><Box size={14} /> Entity evidence <strong>{selected.id}</strong></div>
@@ -44,15 +46,16 @@ export function InspectionDock({ scenario, selected, onSelectFinding }: Props) {
           ) : (
             <div className="empty-evidence">Finding을 선택하면 객체 근거와 bounding box가 표시됩니다.</div>
           )}
-        </div>
+        </div>}
 
-        {warning && (
+        {(activeTab === "overview" || activeTab === "warnings") && warning && (
           <div className="warning-card" role="alert">
             <AlertTriangle size={14} />
             <div><strong>부분 지원 객체</strong><span>AEC 프록시 객체의 형상 경계를 읽을 수 없습니다.</span></div>
             <code>bbox-not-implemented</code>
           </div>
         )}
+        {activeTab === "warnings" && !warning && <div className="dock-empty">경고가 없습니다.</div>}
       </div>
     </section>
   );

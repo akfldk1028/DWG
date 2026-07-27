@@ -19,7 +19,7 @@ const chatService = createChatService({
 
 const server = createProviderGateway({
   getStatuses: () => getProviderStatuses(providers),
-  chat: (request) => chatService.chat(request)
+  chat: (request, signal) => chatService.chat(request, signal)
 });
 
 const port = Number(process.env.DWG_GATEWAY_PORT ?? 4317);

@@ -13,6 +13,7 @@ interface ProviderChatRequest {
   provider: ProviderId;
   drawingPath: string;
   message: string;
+  sessionId?: string;
 }
 
 export async function loadProviderStatuses(signal?: AbortSignal) {

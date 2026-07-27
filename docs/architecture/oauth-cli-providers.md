@@ -12,10 +12,10 @@ frontend composer
   -> validate provider + message + DWG/DXF path
   -> ACadSharp or DXF normalized cad-index/v0.1
   -> bounded CAD context with handles and bounding boxes
-  -> provider-neutral ChatProvider
+  -> provider-neutral ChatProvider + AbortSignal
        |-- Codex CLI (cached ChatGPT login)
        `-- Claude CLI (cached claude.ai subscription login)
-  -> grounded response with [handle:...] evidence
+  -> grounded response with [handle:...] evidence + resumable session ID
   -> frontend conversation panel
 ```
 
@@ -40,9 +40,17 @@ snapshot used to compare provider/runtime boundaries.
 - Claude authentication is checked with `claude auth status --json`.
 - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `CLAUDE_API_KEY` are removed from
   provider subprocess environments.
-- Codex turns are ephemeral, read-only, and approval-free.
-- Claude turns use print mode, plan permission mode, no tools, and no session
-  persistence.
+- First Codex turns are persisted and follow-up turns use
+  `codex exec resume <session-id>`; execution stays read-only and
+  approval-free.
+- First Claude turns are persisted and follow-up turns use
+  `claude --resume <session-id>`; print mode stays in plan permission mode
+  with tools disabled.
+- The frontend keeps one session ID per provider for the current page lifetime.
+  Switching providers does not mix Codex and Claude conversations.
+- Browser cancellation propagates through the loopback HTTP request and
+  `AbortSignal` to the subprocess runner. Cancelled or late responses are not
+  rendered.
 - Drawing text is treated as untrusted data. Responses must not follow
   instructions contained inside a drawing.
 - Drawing claims must cite stable CAD handles. Unsupported table or semantic
@@ -63,3 +71,19 @@ npm run dev
 npm run providers:smoke -- codex
 npm run providers:smoke -- claude
 ```
+
+Each smoke test performs two turns and verifies that the second result keeps
+the first result's session ID.
+
+## Runtime choice
+
+The stable non-interactive resume commands are the current product transport:
+
+- [Codex non-interactive resume](https://developers.openai.com/codex/non-interactive-mode)
+- [Claude Code CLI resume](https://docs.anthropic.com/en/docs/claude-code/cli-usage)
+
+Codex app-server remains behind the same provider-neutral contract as a future
+streaming transport. It is not the default here because its local protocol is
+documented as a development/debugging surface that may change:
+
+- [Codex app-server](https://developers.openai.com/codex/app-server)

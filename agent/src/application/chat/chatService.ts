@@ -12,6 +12,7 @@ export interface GroundedChatRequest {
   provider: ProviderId;
   drawingPath: string;
   message: string;
+  sessionId?: string | null;
 }
 
 interface ChatServiceDependencies {
@@ -21,7 +22,10 @@ interface ChatServiceDependencies {
 
 export function createChatService(dependencies: ChatServiceDependencies) {
   return {
-    async chat(request: GroundedChatRequest): Promise<ProviderChatResult> {
+    async chat(
+      request: GroundedChatRequest,
+      signal?: AbortSignal
+    ): Promise<ProviderChatResult> {
       validateRequest(request);
       const provider = dependencies.providers.get(request.provider);
       if (!provider) throw new Error(`Unknown provider: ${request.provider}`);
@@ -34,6 +38,8 @@ export function createChatService(dependencies: ChatServiceDependencies) {
       const index = await dependencies.loadIndex(request.drawingPath);
       return provider.chat({
         message: request.message.trim(),
+        sessionId: request.sessionId,
+        signal,
         context: buildCadContext(index),
         systemPrompt: [
           "당신은 DWG Intelligence의 CAD 분석 보조자입니다.",

@@ -66,6 +66,13 @@ async function assertWorkspaceFits(page: Page) {
   expect(result).toEqual({ bodyOverflow: false, offenders: [] });
 }
 
+test("serves the application favicon without a missing-resource error", async ({ request }) => {
+  const response = await request.get("/favicon.svg");
+
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("image/svg+xml");
+});
+
 for (const viewport of [
   { name: "loaded-1280x800", width: 1280, height: 800 },
   { name: "loaded-1440x900", width: 1440, height: 900 },
@@ -74,12 +81,24 @@ for (const viewport of [
   test(`${viewport.name} real DWG workspace`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await mockProviderStatus(page);
+    const consoleErrors: string[] = [];
+    const failedResponses: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        failedResponses.push(`${response.status()} ${response.url()}`);
+      }
+    });
     await page.goto("/");
 
     await expect(page.getByText("export_sample.dwg", { exact: true }).first()).toBeVisible();
     await expect(page.getByLabel("CAD 뷰어")).toBeVisible();
     await expect(page.locator(".cad-entity")).toHaveCount(22);
     await expect(page.getByText("Drawing Index", { exact: true })).toBeVisible();
+    expect(consoleErrors).toEqual([]);
+    expect(failedResponses).toEqual([]);
     await assertWorkspaceFits(page);
     await capture(page, viewport.name);
   });
@@ -113,10 +132,10 @@ test("agent run, highlight, evidence, and warning states", async ({ page }) => {
 test("switches OAuth provider and renders a grounded response", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockProviderStatus(page);
+  const chatRequests: Array<Record<string, unknown>> = [];
   await page.route("**/api/chat", async (route) => {
     const request = route.request().postDataJSON();
-    expect(request.provider).toBe("claude");
-    expect(request.drawingPath).toBe("tests/fixtures/dwg/export_sample.dwg");
+    chatRequests.push(request);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -135,6 +154,21 @@ test("switches OAuth provider and renders a grounded response", async ({ page })
   await expect(page.getByTestId("live-response")).toContainText("Hello");
   await expect(page.getByTestId("live-response")).toContainText("[handle:591]");
   await expect(page.getByText("CLAUDE · OAUTH", { exact: true })).toBeVisible();
+  await page.getByLabel("AI 질문").fill("앞 질문에 이어서 설명해줘");
+  await page.getByRole("button", { name: "전송" }).click();
+  await expect(page.getByTestId("live-response")).toContainText("Hello");
+  expect(chatRequests).toHaveLength(2);
+  expect(chatRequests[0]).toEqual({
+    provider: "claude",
+    drawingPath: "tests/fixtures/dwg/export_sample.dwg",
+    message: "도면의 텍스트를 알려줘"
+  });
+  expect(chatRequests[1]).toEqual({
+    provider: "claude",
+    drawingPath: "tests/fixtures/dwg/export_sample.dwg",
+    message: "앞 질문에 이어서 설명해줘",
+    sessionId: "oauth-session-test"
+  });
   const responseBox = await page.getByTestId("live-response").boundingBox();
   const composerBox = await page.locator(".composer").boundingBox();
   expect(responseBox).not.toBeNull();
@@ -142,4 +176,91 @@ test("switches OAuth provider and renders a grounded response", async ({ page })
   expect(responseBox!.y + responseBox!.height).toBeLessThanOrEqual(composerBox!.y);
   await capture(page, "oauth-claude-response-1440x900");
   await assertWorkspaceFits(page);
+});
+
+test("cancels an in-flight OAuth provider request from the composer", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockProviderStatus(page);
+  let releaseResponse!: () => void;
+  await page.route("**/api/chat", async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: "codex",
+        text: "too late",
+        sessionId: "cancelled-session"
+      })
+    });
+  });
+  await page.goto("/");
+
+  await page.getByLabel("AI 질문").fill("긴 분석을 취소해줘");
+  await page.getByRole("button", { name: "전송" }).click();
+  await expect(page.getByRole("button", { name: "응답 취소" })).toBeVisible();
+  await page.getByRole("button", { name: "응답 취소" }).click();
+
+  await expect(page.getByLabel("AI 질문")).toBeEnabled({ timeout: 1_000 });
+  await expect(page.getByRole("button", { name: "응답 취소" })).toBeHidden({ timeout: 1_000 });
+  await expect(page.getByTestId("live-response")).toHaveCount(0);
+  releaseResponse();
+  await page.waitForTimeout(50);
+  await expect(page.getByTestId("live-response")).toHaveCount(0);
+});
+
+test("workspace controls change visible state instead of remaining inert", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockProviderStatus(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "알림" }).click();
+  await expect(page.getByRole("status")).toContainText("새 알림이 없습니다");
+
+  await page.getByRole("button", { name: "설정" }).click();
+  await expect(page.getByRole("dialog", { name: "뷰어 설정" })).toBeVisible();
+
+  await page.getByRole("button", { name: "도면 검색", exact: true }).click();
+  await page.getByLabel("레이어 검색").fill("control");
+  await expect(page.locator(".layer-row")).toHaveCount(1);
+
+  await page.getByLabel("전체 도면 검색").fill("239");
+  await expect(page.locator(".cad-entity.highlighted")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "그리드" }).click();
+  await expect(page.getByRole("button", { name: "그리드" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".cad-grid")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(page.getByTestId("cad-canvas")).toHaveAttribute("data-view", "fit");
+
+  await page.getByRole("button", { name: "최대화" }).click();
+  await expect(page.getByLabel("CAD 뷰어")).toHaveClass(/viewer-maximized/);
+  await page.getByRole("button", { name: "최대화 종료" }).click();
+  await expect(page.getByLabel("CAD 뷰어")).not.toHaveClass(/viewer-maximized/);
+
+  await page.getByRole("button", { name: "Evidence", exact: false }).click();
+  await expect(page.getByTestId("evidence-card")).toBeVisible();
+  await page.getByRole("button", { name: "Warnings", exact: false }).click();
+  await expect(page.getByText("경고가 없습니다.")).toBeVisible();
+
+  await page.getByLabel("AI 질문").fill("기존 질문");
+  await page.getByRole("button", { name: "새 대화" }).click();
+  await expect(page.getByLabel("AI 질문")).toHaveValue("");
+  await page.getByRole("button", { name: "에이전트 멘션" }).click();
+  await expect(page.getByLabel("AI 질문")).toHaveValue("@drawing-index-agent ");
+  await page.getByLabel("첨부 파일 선택").setInputFiles({
+    name: "review-note.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("check handle 239")
+  });
+  await expect(page.locator(".attachment-chip")).toContainText("review-note.txt");
+  await page.getByRole("button", { name: "첨부 제거" }).click();
+  await expect(page.locator(".attachment-chip")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "패널 닫기" }).click();
+  await expect(page.getByLabel("에이전트 워크스페이스")).toBeHidden();
+  await page.getByRole("button", { name: "패널 열기" }).click();
+  await expect(page.getByLabel("에이전트 워크스페이스")).toBeVisible();
 });

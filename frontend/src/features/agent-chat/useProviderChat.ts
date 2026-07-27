@@ -20,6 +20,8 @@ export function useProviderChat() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const requestController = useRef<AbortController | null>(null);
+  const requestGeneration = useRef(0);
+  const sessionIds = useRef<Partial<Record<ProviderId, string>>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -48,6 +50,7 @@ export function useProviderChat() {
     if (!trimmedMessage || loading) return;
 
     const controller = new AbortController();
+    const generation = ++requestGeneration.current;
     requestController.current = controller;
     setLoading(true);
     setError(null);
@@ -55,19 +58,47 @@ export function useProviderChat() {
       const response = await sendProviderChat({
         provider: selectedProvider,
         drawingPath,
-        message: trimmedMessage
+        message: trimmedMessage,
+        ...(sessionIds.current[selectedProvider]
+          ? { sessionId: sessionIds.current[selectedProvider] }
+          : {})
       }, controller.signal);
+      if (
+        controller.signal.aborted ||
+        requestGeneration.current !== generation
+      ) return;
+      if (response.sessionId) {
+        sessionIds.current[selectedProvider] = response.sessionId;
+      }
       setResult(response);
       setMessage("");
     } catch (reason) {
       if (reason instanceof Error && reason.name === "AbortError") return;
       setError(reason instanceof Error ? reason.message : "AI 응답에 실패했습니다.");
     } finally {
-      if (requestController.current === controller) {
+      if (
+        requestController.current === controller &&
+        requestGeneration.current === generation
+      ) {
         requestController.current = null;
         setLoading(false);
       }
     }
+  }
+
+  function cancel() {
+    requestGeneration.current += 1;
+    requestController.current?.abort();
+    requestController.current = null;
+    setLoading(false);
+  }
+
+  function reset() {
+    cancel();
+    setMessage("");
+    setResult(null);
+    setError(null);
+    sessionIds.current = {};
   }
 
   return {
@@ -79,6 +110,8 @@ export function useProviderChat() {
     result,
     error,
     loading,
-    submit
+    submit,
+    cancel,
+    reset
   };
 }

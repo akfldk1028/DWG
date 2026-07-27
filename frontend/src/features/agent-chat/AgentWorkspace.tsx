@@ -27,6 +27,8 @@ interface Props {
   message: string;
   onMessageChange(message: string): void;
   onSubmit(): void;
+  onCancel(): void;
+  onNewChat(): void;
   chatLoading: boolean;
   chatResult: ProviderChatResult | null;
   chatError: string | null;
@@ -40,6 +42,8 @@ export function AgentWorkspace({
   message,
   onMessageChange,
   onSubmit,
+  onCancel,
+  onNewChat,
   chatLoading,
   chatResult,
   chatError
@@ -56,7 +60,7 @@ export function AgentWorkspace({
     <aside className="panel agent-workspace" aria-label="에이전트 워크스페이스">
       <div className="agent-tabs">
         <button className="agent-tab active"><Bot size={14} /> 검사 #1</button>
-        <button className="agent-tab icon-tab" aria-label="새 대화"><MessageSquarePlus size={14} /></button>
+        <button className="agent-tab icon-tab" aria-label="새 대화" onClick={onNewChat}><MessageSquarePlus size={14} /></button>
       </div>
 
       <div className="agent-context">
@@ -135,6 +139,7 @@ export function AgentWorkspace({
         loading={chatLoading}
         onMessageChange={onMessageChange}
         onSubmit={onSubmit}
+        onCancel={onCancel}
       />
     </aside>
   );

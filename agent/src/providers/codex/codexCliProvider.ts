@@ -55,26 +55,37 @@ export class CodexCliProvider implements ChatProvider {
   }
 
   async chat(request: ProviderChatRequest): Promise<ProviderChatResult> {
+    const turnArgs = request.sessionId
+      ? [
+          "resume",
+          "--json",
+          "--skip-git-repo-check",
+          request.sessionId,
+          "-"
+        ]
+      : [
+          "--json",
+          "--skip-git-repo-check",
+          "-C",
+          this.cwd,
+          "-"
+        ];
     const result = await this.runner.run({
       command: this.command,
       args: [
         ...this.prefixArgs,
         "--ask-for-approval",
         "never",
-        "exec",
-        "--json",
-        "--ephemeral",
         "--sandbox",
         "read-only",
-        "--skip-git-repo-check",
-        "-C",
-        this.cwd,
-        "-"
+        "exec",
+        ...turnArgs
       ],
       cwd: this.cwd,
       env: createOAuthOnlyEnvironment(),
       stdin: buildProviderPrompt(request),
-      timeoutMs: 180_000
+      timeoutMs: 180_000,
+      signal: request.signal
     });
     if (result.exitCode !== 0) {
       throw new Error(`Codex provider failed: ${describeCliFailure(result.errorCode)}`);

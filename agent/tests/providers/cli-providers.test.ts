@@ -68,13 +68,16 @@ test("Codex adapter detects ChatGPT login and normalizes JSONL output", async ()
   assert.equal(status.authMethod, "chatgpt");
   assert.equal(result.text, "핸들 23D는 LINE입니다.");
   assert.equal(result.sessionId, "thread-1");
-  assert.deepEqual(runner.calls[1]?.args.slice(0, 5), [
+  assert.deepEqual(runner.calls[1]?.args.slice(0, 7), [
     "--ask-for-approval",
     "never",
+    "--sandbox",
+    "read-only",
     "exec",
     "--json",
-    "--ephemeral"
+    "--skip-git-repo-check"
   ]);
+  assert.equal(runner.calls[1]?.args.includes("--ephemeral"), false);
   assert.equal(runner.calls[1]?.stdin?.includes("h:23D LINE"), true);
 });
 
@@ -122,4 +125,58 @@ test("provider adapters surface sanitized CLI failures", async () => {
   assert.equal(status.authenticated, false);
   assert.match(status.detail, /login unavailable/i);
   assert.doesNotMatch(status.detail, /abc123/);
+});
+
+test("Codex adapter resumes the requested persisted session", async () => {
+  const runner = new FakeRunner([
+    ok([
+      JSON.stringify({ type: "thread.started", thread_id: "thread-1" }),
+      JSON.stringify({
+        type: "item.completed",
+        item: { type: "agent_message", text: "후속 응답" }
+      })
+    ].join("\n"))
+  ]);
+  const provider = new CodexCliProvider(runner, "C:\\DK\\DWG", "codex");
+
+  await provider.chat({
+    message: "앞 질문에 이어서 설명해줘",
+    systemPrompt: "CAD 근거만 사용",
+    context: "handle=23D",
+    sessionId: "019d0000-0000-7000-8000-000000000001"
+  });
+
+  assert.deepEqual(runner.calls[0]?.args.slice(-5), [
+    "resume",
+    "--json",
+    "--skip-git-repo-check",
+    "019d0000-0000-7000-8000-000000000001",
+    "-"
+  ]);
+});
+
+test("Claude adapter resumes the requested persisted session", async () => {
+  const runner = new FakeRunner([
+    ok(JSON.stringify({
+      type: "result",
+      subtype: "success",
+      result: "후속 응답",
+      session_id: "019d0000-0000-7000-8000-000000000002"
+    }))
+  ]);
+  const provider = new ClaudeCliProvider(runner, "C:\\DK\\DWG", "claude");
+
+  await provider.chat({
+    message: "앞 질문에 이어서 설명해줘",
+    systemPrompt: "CAD 근거만 사용",
+    context: "handle=23D",
+    sessionId: "019d0000-0000-7000-8000-000000000002"
+  });
+
+  assert.equal(runner.calls[0]?.args.includes("--resume"), true);
+  assert.equal(
+    runner.calls[0]?.args[runner.calls[0]!.args.indexOf("--resume") + 1],
+    "019d0000-0000-7000-8000-000000000002"
+  );
+  assert.equal(runner.calls[0]?.args.includes("--no-session-persistence"), false);
 });

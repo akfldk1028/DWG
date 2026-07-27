@@ -12,7 +12,7 @@ const maxBodyBytes = 64 * 1024;
 
 interface GatewayDependencies {
   getStatuses(): Promise<ProviderStatus[]>;
-  chat(request: GroundedChatRequest): Promise<ProviderChatResult>;
+  chat(request: GroundedChatRequest, signal?: AbortSignal): Promise<ProviderChatResult>;
 }
 
 export function createProviderGateway(dependencies: GatewayDependencies) {
@@ -31,7 +31,17 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
         if (!isChatRequest(body)) {
           return sendJson(response, 400, { error: "Invalid chat request" });
         }
-        return sendJson(response, 200, await dependencies.chat(body));
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        request.once("aborted", abort);
+        response.once("close", () => {
+          if (!response.writableEnded) abort();
+        });
+        return sendJson(
+          response,
+          200,
+          await dependencies.chat(body, controller.signal)
+        );
       }
       return sendJson(response, 404, { error: "Not found" });
     } catch (error) {
@@ -75,7 +85,19 @@ function isChatRequest(value: unknown): value is GroundedChatRequest {
     typeof request.drawingPath === "string" &&
     request.drawingPath.length > 0 &&
     typeof request.message === "string" &&
-    request.message.length > 0
+    request.message.length > 0 &&
+    (
+      request.sessionId === undefined ||
+      request.sessionId === null ||
+      isSessionId(request.sessionId)
+    )
+  );
+}
+
+function isSessionId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
   );
 }
 

@@ -19,3 +19,4 @@ tests/visual/test-results/
 agent/.cache/
 
 .worktrees/
+.playwright-mcp/

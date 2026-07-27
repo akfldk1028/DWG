@@ -54,3 +54,9 @@ frontend/src/
   call `fetch` directly.
 - OAuth provider status is cached briefly by `CachedChatProvider`; the actual
   chat call remains uncached and provider-specific.
+- Session IDs belong to the frontend chat feature and cross the provider
+  contract as opaque values. Application and HTTP layers must not interpret
+  provider session IDs.
+- Cancellation flows in the opposite direction through one `AbortSignal`:
+  frontend request -> HTTP gateway -> chat service -> provider -> process
+  runner.

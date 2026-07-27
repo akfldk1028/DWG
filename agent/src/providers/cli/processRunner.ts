@@ -16,9 +16,15 @@ export const defaultProcessRunner: ProcessRunner = {
 
 export function runProcess(spec: ProcessRunSpec): Promise<ProcessResult> {
   return new Promise((resolve) => {
+    if (spec.signal?.aborted) {
+      resolve(cancelledResult());
+      return;
+    }
+
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let timer: NodeJS.Timeout | undefined;
     const child = spawn(spec.command, spec.args, {
       cwd: spec.cwd,
       env: spec.env,
@@ -30,8 +36,13 @@ export function runProcess(spec: ProcessRunSpec): Promise<ProcessResult> {
     const finish = (result: ProcessResult) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      spec.signal?.removeEventListener("abort", abort);
       resolve(result);
+    };
+    const abort = () => {
+      child.kill();
+      finish(cancelledResult(stdout));
     };
 
     child.stdout.setEncoding("utf8");
@@ -60,7 +71,8 @@ export function runProcess(spec: ProcessRunSpec): Promise<ProcessResult> {
       child.stdin.end();
     }
 
-    const timer = setTimeout(() => {
+    spec.signal?.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(() => {
       child.kill();
       finish({
         exitCode: null,
@@ -70,4 +82,13 @@ export function runProcess(spec: ProcessRunSpec): Promise<ProcessResult> {
       });
     }, spec.timeoutMs ?? defaultTimeoutMs);
   });
+}
+
+function cancelledResult(stdout = ""): ProcessResult {
+  return {
+    exitCode: null,
+    stdout,
+    stderr: "Provider process cancelled",
+    errorCode: "ABORT_ERR"
+  };
 }

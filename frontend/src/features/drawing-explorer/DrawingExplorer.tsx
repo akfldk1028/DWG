@@ -5,8 +5,10 @@ import {
   FileBox,
   Layers3,
   LayoutTemplate,
-  Search
+  Search,
+  X
 } from "lucide-react";
+import { useRef, useState } from "react";
 
 import type { CadIndex } from "../../shared/types";
 
@@ -15,12 +17,47 @@ interface Props {
 }
 
 export function DrawingExplorer({ index }: Props) {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const visibleLayers = index.layers.filter((layer) =>
+    layer.name.toLowerCase().includes(query.trim().toLowerCase())
+  );
+
+  function toggleSearch() {
+    setSearchOpen((open) => {
+      if (!open) window.setTimeout(() => searchRef.current?.focus(), 0);
+      if (open) setQuery("");
+      return !open;
+    });
+  }
+
   return (
     <aside className="panel explorer" aria-label="도면 탐색기">
       <div className="panel-heading">
         <span>DRAWING</span>
-        <button className="icon-button" aria-label="도면 검색"><Search size={14} /></button>
+        <button
+          aria-expanded={searchOpen}
+          aria-label="도면 검색"
+          className={`icon-button ${searchOpen ? "active" : ""}`}
+          onClick={toggleSearch}
+        >
+          {searchOpen ? <X size={14} /> : <Search size={14} />}
+        </button>
       </div>
+
+      {searchOpen && (
+        <label className="explorer-search">
+          <Search size={13} />
+          <input
+            aria-label="레이어 검색"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="레이어 검색"
+            ref={searchRef}
+            value={query}
+          />
+        </label>
+      )}
 
       <div className="tree-row tree-root">
         <ChevronDown size={14} />
@@ -49,14 +86,15 @@ export function DrawingExplorer({ index }: Props) {
           <span>Layers</span>
           <span className="count">{index.layers.length}</span>
         </div>
-        {index.layers.map((layer) => (
-          <div className="tree-row tree-child" key={layer.name}>
+        {visibleLayers.map((layer) => (
+          <div className="tree-row tree-child layer-row" key={layer.name}>
             <Eye size={13} />
             <span className="layer-swatch" />
             <span className="truncate">{layer.name === "0" ? "0 · Default" : layer.name}</span>
             <span className="count">{layer.entityCount}</span>
           </div>
         ))}
+        {visibleLayers.length === 0 && <div className="tree-empty">일치하는 레이어가 없습니다.</div>}
       </div>
 
       <div className="explorer-summary">

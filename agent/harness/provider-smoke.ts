@@ -27,11 +27,29 @@ for (const provider of providerIds) {
   });
   assert.ok(result.text.length > 0, `${provider} returned an empty response`);
   assert.match(result.text, /\[handle:[0-9A-F]+\]/i, `${provider} response has no CAD handle evidence`);
+  assert.ok(result.sessionId, `${provider} did not return a resumable session ID`);
+  const resumed = await service.chat({
+    provider,
+    drawingPath,
+    sessionId: result.sessionId,
+    message: "같은 세션을 이어서, 앞 응답에서 확인한 첫 번째 TEXT 또는 MTEXT의 handle만 [handle:값] 형식으로 다시 답해줘."
+  });
+  assert.equal(
+    resumed.sessionId,
+    result.sessionId,
+    `${provider} changed the session ID while resuming`
+  );
+  assert.match(
+    resumed.text,
+    /\[handle:[0-9A-F]+\]/i,
+    `${provider} resumed response has no CAD handle evidence`
+  );
   console.log(JSON.stringify({
     provider,
     authMethod: status.authMethod,
     subscription: status.subscription,
     sessionId: result.sessionId,
-    response: result.text
+    response: result.text,
+    resumedResponse: resumed.text
   }, null, 2));
 }

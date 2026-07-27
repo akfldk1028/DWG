@@ -14,6 +14,8 @@ export interface ProviderChatRequest {
   message: string;
   systemPrompt: string;
   context: string;
+  sessionId?: string | null;
+  signal?: AbortSignal;
 }
 
 export interface ProviderChatResult {
@@ -35,6 +37,7 @@ export interface ProcessRunSpec {
   env: NodeJS.ProcessEnv;
   stdin?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface ProcessResult {

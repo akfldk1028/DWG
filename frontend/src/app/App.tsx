@@ -12,7 +12,7 @@ import {
   Search,
   Settings2
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AgentWorkspace } from "../features/agent-chat/AgentWorkspace";
 import { useProviderChat } from "../features/agent-chat/useProviderChat";
@@ -27,8 +27,38 @@ export function App() {
   const chat = useProviderChat();
   const [scenario, setScenario] = useState<Scenario>("loaded");
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
+  const [agentPanelOpen, setAgentPanelOpen] = useState(true);
+  const [activePopover, setActivePopover] = useState<"notifications" | "settings" | null>(null);
+  const [gridVisible, setGridVisible] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const topActionsRef = useRef<HTMLDivElement>(null);
 
   const selected = index?.entities.find((entity) => entity.handle === selectedHandle) ?? null;
+
+  useEffect(() => {
+    function focusSearch(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape") {
+        setActivePopover(null);
+      }
+    }
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
+
+  useEffect(() => {
+    function closePopover(event: PointerEvent) {
+      if (!topActionsRef.current?.contains(event.target as Node)) {
+        setActivePopover(null);
+      }
+    }
+    window.addEventListener("pointerdown", closePopover);
+    return () => window.removeEventListener("pointerdown", closePopover);
+  }, []);
 
   function chooseScenario(next: Scenario) {
     setScenario(next);
@@ -49,11 +79,60 @@ export function App() {
         <div className="project-switcher"><FolderOpen size={14} /><span>Sample review</span><ChevronDown size={12} /></div>
         <div className="file-pill"><span className="file-icon">DWG</span><strong>{index.source.displayName}</strong><span>·</span><span>Model</span></div>
         <div className="index-health"><CheckCircle2 size={13} /><span>Indexed</span><b>{index.summary.entityCount}</b></div>
-        <label className="global-search"><Search size={14} /><input aria-label="도면 검색" placeholder="객체, handle, layer 검색" /><kbd>⌘ K</kbd></label>
-        <div className="top-actions">
-          <button aria-label="알림"><Bell size={15} /></button>
-          <button aria-label="패널"><PanelRight size={15} /></button>
-          <button aria-label="설정"><Settings2 size={15} /></button>
+        <label className="global-search">
+          <Search size={14} />
+          <input
+            aria-label="전체 도면 검색"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="객체, handle, layer 검색"
+            ref={searchRef}
+            value={searchQuery}
+          />
+          <kbd>⌘ K</kbd>
+        </label>
+        <div className="top-actions" ref={topActionsRef}>
+          <button
+            aria-expanded={activePopover === "notifications"}
+            aria-label="알림"
+            className={activePopover === "notifications" ? "active" : ""}
+            onClick={() => setActivePopover((current) => current === "notifications" ? null : "notifications")}
+          >
+            <Bell size={15} />
+          </button>
+          <button
+            aria-label={agentPanelOpen ? "패널 닫기" : "패널 열기"}
+            aria-pressed={agentPanelOpen}
+            onClick={() => setAgentPanelOpen((open) => !open)}
+          >
+            <PanelRight size={15} />
+          </button>
+          <button
+            aria-expanded={activePopover === "settings"}
+            aria-label="설정"
+            className={activePopover === "settings" ? "active" : ""}
+            onClick={() => setActivePopover((current) => current === "settings" ? null : "settings")}
+          >
+            <Settings2 size={15} />
+          </button>
+          {activePopover === "notifications" && (
+            <div className="action-popover notification-popover" role="status">
+              <strong>알림</strong>
+              <span>새 알림이 없습니다.</span>
+            </div>
+          )}
+          {activePopover === "settings" && (
+            <div aria-label="뷰어 설정" className="action-popover settings-popover" role="dialog">
+              <strong>뷰어 설정</strong>
+              <label>
+                <input
+                  checked={gridVisible}
+                  onChange={(event) => setGridVisible(event.target.checked)}
+                  type="checkbox"
+                />
+                그리드 표시
+              </label>
+            </div>
+          )}
         </div>
       </header>
 
@@ -65,21 +144,32 @@ export function App() {
         <button className={scenario === "warning" ? "active" : ""} onClick={() => chooseScenario("warning")}>Warning</button>
       </nav>
 
-      <div className="workspace-grid">
+      <div className={`workspace-grid ${agentPanelOpen ? "" : "agent-panel-hidden"}`}>
         <DrawingExplorer index={index} />
-        <CadViewer index={index} scenario={scenario} selectedHandle={selectedHandle} />
-        <AgentWorkspace
+        <CadViewer
+          gridVisible={gridVisible}
+          index={index}
+          onGridVisibleChange={setGridVisible}
           scenario={scenario}
-          providers={chat.providers}
-          selectedProvider={chat.selectedProvider}
-          onProviderChange={chat.setSelectedProvider}
-          message={chat.message}
-          onMessageChange={chat.setMessage}
-          onSubmit={chat.submit}
-          chatLoading={chat.loading}
-          chatResult={chat.result}
-          chatError={chat.error}
+          searchQuery={searchQuery}
+          selectedHandle={selectedHandle}
         />
+        {agentPanelOpen && (
+          <AgentWorkspace
+            scenario={scenario}
+            providers={chat.providers}
+            selectedProvider={chat.selectedProvider}
+            onProviderChange={chat.setSelectedProvider}
+            message={chat.message}
+            onMessageChange={chat.setMessage}
+            onSubmit={chat.submit}
+            onCancel={chat.cancel}
+            onNewChat={chat.reset}
+            chatLoading={chat.loading}
+            chatResult={chat.result}
+            chatError={chat.error}
+          />
+        )}
         <InspectionDock
           scenario={scenario}
           selected={selected}

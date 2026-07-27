@@ -71,9 +71,14 @@ button { color: inherit; }
 }
 .global-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font-size: 11px; }
 kbd { font-size: 9px; padding: 2px 4px; border: 1px solid var(--border); background: #fff; border-radius: 3px; }
-.top-actions { display: flex; }
+.top-actions { position: relative; display: flex; }
 .top-actions button, .icon-button, .composer button { border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
 .top-actions button { width: 28px; height: 28px; color: #5b6874; }
+.top-actions > button:hover, .top-actions > button.active, .icon-button.active { color: var(--accent); background: var(--accent-soft); border-radius: 4px; }
+.action-popover { position: absolute; z-index: 20; top: 34px; right: 0; width: 210px; padding: 11px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; box-shadow: 0 8px 24px rgba(32,48,60,.14); font-size: 10px; }
+.action-popover strong { font-size: 10px; }
+.action-popover span { color: var(--muted); }
+.settings-popover label { display: flex; align-items: center; gap: 7px; color: #43515e; }
 
 .scenario-bar {
   display: flex;
@@ -108,6 +113,9 @@ kbd { font-size: 9px; padding: 2px 4px; border: 1px solid var(--border); backgro
   background: var(--border);
   border-bottom: 1px solid var(--border);
 }
+.workspace-grid.agent-panel-hidden { grid-template-columns: 220px minmax(480px, 1fr); }
+.workspace-grid.agent-panel-hidden .viewer-shell { grid-column: 2; }
+.workspace-grid.agent-panel-hidden .inspection-dock { grid-column: 1 / 3; }
 
 .panel, .viewer-shell, .inspection-dock { background: #fff; min-width: 0; min-height: 0; }
 .explorer { grid-column: 1; grid-row: 1; overflow: hidden; }
@@ -117,6 +125,9 @@ kbd { font-size: 9px; padding: 2px 4px; border: 1px solid var(--border); backgro
 
 .panel-heading { height: 35px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-soft); color: #778490; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
 .icon-button { width: 25px; height: 25px; color: #667480; }
+.explorer-search { height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 9px; color: var(--muted); border-bottom: 1px solid var(--border-soft); }
+.explorer-search input { width: 100%; min-width: 0; border: 0; outline: 0; font-size: 10px; }
+.tree-empty { padding: 14px 10px; color: #8a969f; font-size: 9px; text-align: center; }
 .tree-row { height: 30px; padding: 0 10px; display: flex; align-items: center; gap: 7px; color: #475665; font-size: 11px; }
 .tree-row:hover { background: #f6f9fa; }
 .tree-root { height: 34px; color: #203140; font-weight: 650; border-bottom: 1px solid var(--border-soft); }
@@ -152,6 +163,7 @@ line.cad-entity { fill: none; }
 .axis-x { right: -9px; bottom: -4px; color: #c64a4a; }
 .scale-readout { position: absolute; right: 12px; bottom: 10px; padding: 3px 6px; color: #6f7d88; background: rgba(255,255,255,.9); border: 1px solid var(--border-soft); border-radius: 3px; font: 9px ui-monospace, monospace; }
 .viewer-status { padding: 0 9px; gap: 14px; border-top: 1px solid var(--border-soft); border-bottom: 0; color: #77838e; font-size: 9px; }
+.viewer-maximized { position: fixed; z-index: 50; inset: 0; grid-template-rows: 35px minmax(0, 1fr) 26px; box-shadow: 0 0 0 1px var(--border); }
 .viewer-status span { display: flex; align-items: center; gap: 5px; }
 .status-dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; }
 .status-dot.ready { background: #29a06d; box-shadow: 0 0 0 2px #ddf3e9; }
@@ -204,6 +216,10 @@ line.cad-entity { fill: none; }
 .agent-state { font-size: 7px !important; font-weight: 800; text-transform: uppercase; }
 .agent-state.active { color: #26845d; }
 .composer { margin: 0 9px 9px; padding: 9px; border: 1px solid #cfd8df; border-radius: 7px; box-shadow: 0 1px 3px rgba(28,39,51,.05); }
+.visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+.attachment-chip { max-width: 100%; height: 22px; margin-top: 7px; padding: 0 3px 0 6px; display: flex; align-items: center; gap: 5px; color: #49616c; background: #f2f7f9; border: 1px solid #d8e7eb; border-radius: 4px; font-size: 8px; }
+.attachment-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip button { width: 18px; height: 18px; margin-left: auto; }
 .composer > input { width: 100%; padding: 0; color: #344451; border: 0; outline: 0; background: transparent; font-size: 10px; }
 .composer > input::placeholder { color: #929da6; }
 .composer-actions { margin-top: 18px; display: flex; justify-content: space-between; align-items: center; }
@@ -219,6 +235,7 @@ line.cad-entity { fill: none; }
 .dock-tab b { min-width: 15px; padding: 1px 4px; border-radius: 7px; background: #e9eef2; font-size: 7px; }
 .dock-tab.has-warning { color: var(--warning); }
 .dock-content { min-height: 0; display: grid; grid-template-columns: minmax(300px, 1.25fr) minmax(300px, 1fr); gap: 8px; padding: 8px; overflow: hidden; background: #f7f9fa; }
+.dock-empty { grid-column: 1 / -1; display: grid; place-items: center; color: #8a969f; font-size: 9px; }
 .finding-row { min-width: 0; height: 59px; display: grid; grid-template-columns: 24px minmax(160px, 1fr) auto auto; align-items: center; gap: 8px; padding: 7px 9px; text-align: left; border: 1px solid var(--border); border-radius: 5px; background: #fff; cursor: pointer; }
 .finding-row:hover, .finding-row.selected { border-color: #87c9d8; box-shadow: 0 0 0 1px #d5f0f5; }
 .finding-severity { width: 22px; height: 22px; display: grid; place-items: center; color: var(--success); background: #e8f6ef; border-radius: 50%; }
@@ -254,4 +271,5 @@ line.cad-entity { fill: none; }
   .agent-workspace { grid-template-rows: 35px 58px minmax(0, 1fr) 78px; }
   .specialist-row { height: 31px; }
   .dock-content { grid-template-columns: minmax(280px, 1fr) minmax(300px, 1fr); }
+  .workspace-grid.agent-panel-hidden { grid-template-columns: 196px minmax(460px, 1fr); }
 }

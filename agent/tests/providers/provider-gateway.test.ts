@@ -67,5 +67,59 @@ test("gateway rejects oversized or malformed requests without invoking chat", as
     body: "{"
   });
   assert.equal(malformed.status, 400);
+  const invalidSession = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "codex",
+      drawingPath: "drawing.dwg",
+      message: "test",
+      sessionId: "--last"
+    })
+  });
+  assert.equal(invalidSession.status, 400);
   assert.equal(calls, 0);
+});
+
+test("gateway aborts provider work when the browser cancels the request", async (context) => {
+  let providerAborted = false;
+  let chatStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    chatStarted = resolve;
+  });
+  const server = createProviderGateway({
+    getStatuses: async () => [],
+    chat: async (_request, signal) => new Promise((resolve) => {
+      chatStarted();
+      signal?.addEventListener("abort", () => {
+        providerAborted = true;
+        resolve({ provider: "codex", text: "", sessionId: null });
+      }, { once: true });
+      if (!signal) {
+        resolve({ provider: "codex", text: "signal missing", sessionId: null });
+      }
+    })
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  const controller = new AbortController();
+  const request = fetch(`http://127.0.0.1:${address.port}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "codex",
+      drawingPath: "drawing.dwg",
+      message: "취소 테스트"
+    }),
+    signal: controller.signal
+  });
+  await started;
+  controller.abort();
+  await assert.rejects(request, /abort/i);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(providerAborted, true);
 });
