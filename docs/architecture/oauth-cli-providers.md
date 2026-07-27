@@ -27,9 +27,11 @@ frontend composer
 - `agent/src/providers/claude/`: Claude CLI auth and JSON response adapter.
 - `agent/src/application/chat/`: CAD context construction and grounded prompt policy.
 - `agent/src/http/`: loopback gateway and production composition.
+- `packages/contracts/src/provider.ts`: shared browser/gateway DTOs and UUID validation.
 - `agent/tests/providers/`: fake-CLI contract and gateway integration tests.
 - `agent/harness/provider-smoke.ts`: explicit live authenticated smoke test.
-- `frontend/src/features/agent-chat/`: provider selection, composer, and response UI.
+- `frontend/src/features/agent-chat/`: provider selection, tab-scoped session
+  storage, composer, response UI, and feature CSS.
 
 Product code never imports from `clone/`. `clone/claudian` is a research-only
 snapshot used to compare provider/runtime boundaries.
@@ -46,8 +48,10 @@ snapshot used to compare provider/runtime boundaries.
 - First Claude turns are persisted and follow-up turns use
   `claude --resume <session-id>`; print mode stays in plan permission mode
   with tools disabled.
-- The frontend keeps one session ID per provider for the current page lifetime.
-  Switching providers does not mix Codex and Claude conversations.
+- The frontend keeps one validated UUID session ID per provider in browser
+  `sessionStorage`. Reloads in the same tab resume the conversation, reset
+  clears both IDs, and switching providers never mixes Codex and Claude
+  sessions.
 - Browser cancellation propagates through the loopback HTTP request and
   `AbortSignal` to the subprocess runner. Cancelled or late responses are not
   rendered.
@@ -70,10 +74,16 @@ npm run dev
 # Explicit real-login smoke tests
 npm run providers:smoke -- codex
 npm run providers:smoke -- claude
+
+# Real browser reload/resume test and 1440x900 evidence PNG
+Set-Location frontend
+npm run test:live-oauth-browser
 ```
 
 Each smoke test performs two turns and verifies that the second result keeps
-the first result's session ID.
+the first result's session ID. The browser harness uses the running loopback
+gateway without route mocks, reloads the page between turns, checks for console
+errors, and writes `tests/visual/artifacts/oauth-codex-persistent-browser-e2e.png`.
 
 ## Runtime choice
 
