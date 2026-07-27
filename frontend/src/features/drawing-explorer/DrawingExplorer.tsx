@@ -2,6 +2,7 @@ import {
   Box,
   ChevronDown,
   Eye,
+  EyeOff,
   FileBox,
   Layers3,
   LayoutTemplate,
@@ -11,12 +12,19 @@ import {
 import { useRef, useState } from "react";
 
 import type { CadIndex } from "../../shared/types";
+import "./layer-visibility.css";
 
 interface Props {
   index: CadIndex;
+  hiddenLayers: ReadonlySet<string>;
+  onToggleLayer(layerName: string): void;
 }
 
-export function DrawingExplorer({ index }: Props) {
+export function DrawingExplorer({
+  index,
+  hiddenLayers,
+  onToggleLayer
+}: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -88,7 +96,15 @@ export function DrawingExplorer({ index }: Props) {
         </div>
         {visibleLayers.map((layer) => (
           <div className="tree-row tree-child layer-row" key={layer.name}>
-            <Eye size={13} />
+            <button
+              aria-label={`${layer.name} 레이어 ${hiddenLayers.has(layer.name) ? "표시" : "숨기기"}`}
+              aria-pressed={hiddenLayers.has(layer.name)}
+              className="layer-visibility-button"
+              onClick={() => onToggleLayer(layer.name)}
+              type="button"
+            >
+              {hiddenLayers.has(layer.name) ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
             <span className="layer-swatch" />
             <span className="truncate">{layer.name === "0" ? "0 · Default" : layer.name}</span>
             <span className="count">{layer.entityCount}</span>

@@ -19,12 +19,16 @@ import { useProviderChat } from "../features/agent-chat/useProviderChat";
 import { CadViewer } from "../features/cad-viewer/CadViewer";
 import { DrawingExplorer } from "../features/drawing-explorer/DrawingExplorer";
 import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
+import { useLayerVisibility } from "../features/drawing-explorer/useLayerVisibility";
 import { InspectionDock } from "../features/inspection-results/InspectionDock";
 import type { Scenario } from "../shared/types";
 
 export function App() {
   const { index, error } = useDrawingIndex();
   const chat = useProviderChat();
+  const layerVisibility = useLayerVisibility(
+    index?.layers.map((layer) => layer.name) ?? []
+  );
   const [scenario, setScenario] = useState<Scenario>("loaded");
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
@@ -145,9 +149,14 @@ export function App() {
       </nav>
 
       <div className={`workspace-grid ${agentPanelOpen ? "" : "agent-panel-hidden"}`}>
-        <DrawingExplorer index={index} />
+        <DrawingExplorer
+          hiddenLayers={layerVisibility.hiddenLayers}
+          index={index}
+          onToggleLayer={layerVisibility.toggleLayer}
+        />
         <CadViewer
           gridVisible={gridVisible}
+          hiddenLayers={layerVisibility.hiddenLayers}
           index={index}
           onGridVisibleChange={setGridVisible}
           scenario={scenario}

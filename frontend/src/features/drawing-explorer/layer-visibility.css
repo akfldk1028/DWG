@@ -1,0 +1,19 @@
+.layer-visibility-button {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 3px;
+  color: #667480;
+  background: transparent;
+  cursor: pointer;
+}
+
+.layer-visibility-button:hover,
+.layer-visibility-button[aria-pressed="true"] {
+  color: #067e9b;
+  background: #e4f4f7;
+}

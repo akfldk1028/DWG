@@ -9,6 +9,7 @@ interface Props {
   selectedHandle: string | null;
   searchQuery: string;
   gridVisible: boolean;
+  hiddenLayers: ReadonlySet<string>;
   onGridVisibleChange(visible: boolean): void;
 }
 
@@ -20,6 +21,7 @@ export function CadViewer({
   selectedHandle,
   searchQuery,
   gridVisible,
+  hiddenLayers,
   onGridVisibleChange
 }: Props) {
   const [viewMode, setViewMode] = useState<"default" | "fit">("default");
@@ -111,13 +113,15 @@ export function CadViewer({
             />
           )}
           <g transform="translate(0 102) scale(1 -1)">
-            {index.entities.map((entity) => (
+            {index.entities
+              .filter((entity) => !hiddenLayers.has(entity.layer))
+              .map((entity) => (
               <EntityShape
                 entity={entity}
                 highlighted={Boolean(entity.handle && highlightSet.has(entity.handle))}
                 key={entity.id}
               />
-            ))}
+              ))}
           </g>
         </svg>
 
