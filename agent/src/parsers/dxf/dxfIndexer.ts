@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { basename } from "node:path";
 
-import type { CadEntityIndex, CadEntityIndexItem, CadPointBox, UnsupportedCadEntity } from "./types.js";
+import type {
+  CadEntityIndex,
+  CadEntityIndexItem,
+  CadPointBox,
+  UnsupportedCadEntity
+} from "../../domain/cad-index/types.js";
 
 const require = createRequire(import.meta.url);
 const DxfParser = require("dxf-parser");

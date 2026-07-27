@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
-import { buildIndexFromDxfText } from "../src/cad-index/dxfIndexer.js";
-import { createCadToolRuntime } from "../src/cad-tools/runtime.js";
+import { createCadToolRuntime } from "../src/application/cad-tools/runtime.js";
+import { buildIndexFromDxfText } from "../src/parsers/dxf/dxfIndexer.js";
 
 test("builds a cad-index/v0.1 entity index from a DXF fixture", async () => {
   const dxfText = await readFile("agent/fixtures/minimal-architectural.dxf", "utf8");

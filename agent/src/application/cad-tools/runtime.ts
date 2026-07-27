@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { buildIndexFromDxfFileName } from "../cad-index/dxfIndexer.js";
-import type { CadEntityIndex, CadEntityIndexItem, CadToolMatch } from "../cad-index/types.js";
+import { buildIndexFromDxfFileName } from "../../parsers/dxf/dxfIndexer.js";
+import type {
+  CadEntityIndex,
+  CadEntityIndexItem,
+  CadToolMatch
+} from "../../domain/cad-index/types.js";
 
 type ToolArguments = Record<string, unknown>;
 
