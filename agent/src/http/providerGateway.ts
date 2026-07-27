@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { isProviderChatPayload } from "@dwg/contracts";
 
 import type {
   GroundedChatRequest
@@ -28,7 +29,7 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
       }
       if (request.method === "POST" && url.pathname === "/api/chat") {
         const body = await readJsonBody(request);
-        if (!isChatRequest(body)) {
+        if (!isProviderChatPayload(body)) {
           return sendJson(response, 400, { error: "Invalid chat request" });
         }
         const controller = new AbortController();
@@ -75,30 +76,6 @@ function readJsonBody(request: IncomingMessage): Promise<unknown> {
     });
     request.on("error", reject);
   });
-}
-
-function isChatRequest(value: unknown): value is GroundedChatRequest {
-  if (!value || typeof value !== "object") return false;
-  const request = value as Record<string, unknown>;
-  return (
-    (request.provider === "codex" || request.provider === "claude") &&
-    typeof request.drawingPath === "string" &&
-    request.drawingPath.length > 0 &&
-    typeof request.message === "string" &&
-    request.message.length > 0 &&
-    (
-      request.sessionId === undefined ||
-      request.sessionId === null ||
-      isSessionId(request.sessionId)
-    )
-  );
-}
-
-function isSessionId(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-  );
 }
 
 function setSecurityHeaders(response: ServerResponse) {

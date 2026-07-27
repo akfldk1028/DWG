@@ -1,14 +1,14 @@
-export type ProviderId = "codex" | "claude";
+import type {
+  ProviderChatResult,
+  ProviderId,
+  ProviderStatus
+} from "@dwg/contracts";
 
-export interface ProviderStatus {
-  id: ProviderId;
-  label: string;
-  installed: boolean;
-  authenticated: boolean;
-  authMethod: "chatgpt" | "claude.ai" | "unknown";
-  subscription?: string;
-  detail: string;
-}
+export type {
+  ProviderChatResult,
+  ProviderId,
+  ProviderStatus
+} from "@dwg/contracts";
 
 export interface ProviderChatRequest {
   message: string;
@@ -16,12 +16,6 @@ export interface ProviderChatRequest {
   context: string;
   sessionId?: string | null;
   signal?: AbortSignal;
-}
-
-export interface ProviderChatResult {
-  provider: ProviderId;
-  text: string;
-  sessionId: string | null;
 }
 
 export interface ChatProvider {

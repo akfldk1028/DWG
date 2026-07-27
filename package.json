@@ -11,6 +11,7 @@
     "providers:smoke": "tsx agent/harness/provider-smoke.ts"
   },
   "dependencies": {
+    "@dwg/contracts": "file:packages/contracts",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ajv": "^8.17.1",
     "dxf-parser": "^1.1.2",

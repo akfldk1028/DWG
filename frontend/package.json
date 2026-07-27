@@ -11,6 +11,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@dwg/contracts": "file:../packages/contracts",
     "lucide-react": "1.27.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
