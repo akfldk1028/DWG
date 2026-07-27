@@ -76,3 +76,12 @@ frontend/src/
 - Cancellation flows in the opposite direction through one `AbortSignal`:
   frontend request -> HTTP gateway -> chat service -> provider -> process
   runner.
+
+## Automated enforcement
+
+`agent/src/architecture/moduleBoundaryChecker.ts` scans static TypeScript
+imports under `packages/contracts/src`, `agent/src`, and `frontend/src`.
+The default `npm test` suite rejects runtime dependencies from contracts,
+agent/frontend coupling, shared-to-feature imports, and cross-feature imports.
+Integration adapters must therefore meet at `@dwg/contracts`, agent application
+boundaries, or frontend `shared/api` instead of bypassing module ownership.
