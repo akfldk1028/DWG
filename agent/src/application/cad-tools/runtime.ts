@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { extname, resolve } from "node:path";
 
 import { buildIndexFromDxfFileName } from "../../parsers/dxf/dxfIndexer.js";
+import { buildIndexFromDwgFile } from "../../parsers/dwg/acadSharpIndexer.js";
 import type {
   CadEntityIndex,
   CadEntityIndexItem,
@@ -47,8 +48,7 @@ export function createCadToolRuntime() {
 async function openDrawing(args: ToolArguments, drawings: Map<string, OpenedDrawing>) {
   const path = asString(args.path, "path");
   const fullPath = resolve(path);
-  const text = await readFile(fullPath, "utf8");
-  const index = buildIndexFromDxfFileName(text, fullPath);
+  const index = await buildIndexForPath(fullPath);
   drawings.set(index.drawingId, { path: fullPath, index });
 
   return {
@@ -61,8 +61,7 @@ async function openDrawing(args: ToolArguments, drawings: Map<string, OpenedDraw
 async function buildIndex(args: ToolArguments, drawings: Map<string, OpenedDrawing>) {
   const drawing = requireDrawing(args, drawings);
   if (!drawing.index) {
-    const text = await readFile(drawing.path, "utf8");
-    drawing.index = buildIndexFromDxfFileName(text, drawing.path);
+    drawing.index = await buildIndexForPath(drawing.path);
   }
 
   return {
@@ -70,6 +69,17 @@ async function buildIndex(args: ToolArguments, drawings: Map<string, OpenedDrawi
     indexUri: `cad://drawings/${drawing.index.drawingId}/index`,
     summary: drawing.index.summary
   };
+}
+
+async function buildIndexForPath(path: string): Promise<CadEntityIndex> {
+  const extension = extname(path).toLowerCase();
+  if (extension === ".dwg") {
+    return buildIndexFromDwgFile(path);
+  }
+  if (extension === ".dxf") {
+    return buildIndexFromDxfFileName(await readFile(path, "utf8"), path);
+  }
+  throw new Error(`Unsupported drawing format: ${extension || "(none)"}`);
 }
 
 function findEntitiesByLayer(args: ToolArguments, drawings: Map<string, OpenedDrawing>) {
