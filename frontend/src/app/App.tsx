@@ -12,7 +12,7 @@ import {
   Search,
   Settings2
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { AgentWorkspace } from "../features/agent-chat/AgentWorkspace";
 import { useProviderChat } from "../features/agent-chat/useProviderChat";
@@ -22,47 +22,29 @@ import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
 import { useLayerVisibility } from "../features/drawing-explorer/useLayerVisibility";
 import { InspectionDock } from "../features/inspection-results/InspectionDock";
 import type { Scenario } from "../shared/types";
+import { useWorkspaceControls } from "./useWorkspaceControls";
 
 export function App() {
   const { index, error } = useDrawingIndex();
   const chat = useProviderChat();
+  const {
+    agentPanelOpen,
+    activePopover,
+    gridVisible,
+    searchQuery,
+    searchRef,
+    topActionsRef,
+    setActivePopover,
+    setAgentPanelOpen,
+    setGridVisible,
+    setSearchQuery
+  } = useWorkspaceControls();
   const layerVisibility = useLayerVisibility(
     index?.layers.map((layer) => layer.name) ?? []
   );
   const [scenario, setScenario] = useState<Scenario>("loaded");
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
-  const [agentPanelOpen, setAgentPanelOpen] = useState(true);
-  const [activePopover, setActivePopover] = useState<"notifications" | "settings" | null>(null);
-  const [gridVisible, setGridVisible] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-  const topActionsRef = useRef<HTMLDivElement>(null);
-
   const selected = index?.entities.find((entity) => entity.handle === selectedHandle) ?? null;
-
-  useEffect(() => {
-    function focusSearch(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (event.key === "Escape") {
-        setActivePopover(null);
-      }
-    }
-    window.addEventListener("keydown", focusSearch);
-    return () => window.removeEventListener("keydown", focusSearch);
-  }, []);
-
-  useEffect(() => {
-    function closePopover(event: PointerEvent) {
-      if (!topActionsRef.current?.contains(event.target as Node)) {
-        setActivePopover(null);
-      }
-    }
-    window.addEventListener("pointerdown", closePopover);
-    return () => window.removeEventListener("pointerdown", closePopover);
-  }, []);
 
   function chooseScenario(next: Scenario) {
     setScenario(next);
