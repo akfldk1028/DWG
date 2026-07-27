@@ -4,6 +4,35 @@ import { resolve } from "node:path";
 
 const artifacts = resolve("../tests/visual/artifacts");
 
+async function mockProviderStatus(page: Page) {
+  await page.route("**/api/providers", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        providers: [
+          {
+            id: "codex",
+            label: "GPT · Codex",
+            installed: true,
+            authenticated: true,
+            authMethod: "chatgpt",
+            detail: "기존 ChatGPT 로그인 세션"
+          },
+          {
+            id: "claude",
+            label: "Claude",
+            installed: true,
+            authenticated: true,
+            authMethod: "claude.ai",
+            subscription: "max",
+            detail: "기존 Claude 로그인 세션 · max"
+          }
+        ]
+      })
+    })
+  );
+}
+
 async function stabilize(page: Page) {
   await page.addStyleTag({
     content: "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}"
@@ -17,7 +46,7 @@ async function capture(page: Page, name: string) {
   await expect(page).toHaveScreenshot(`${name}.png`, {
     animations: "disabled",
     caret: "hide",
-    maxDiffPixelRatio: 0.01
+    maxDiffPixelRatio: 0
   });
 }
 
@@ -44,6 +73,7 @@ for (const viewport of [
 ]) {
   test(`${viewport.name} real DWG workspace`, async ({ page }) => {
     await page.setViewportSize(viewport);
+    await mockProviderStatus(page);
     await page.goto("/");
 
     await expect(page.getByText("export_sample.dwg", { exact: true }).first()).toBeVisible();
@@ -57,6 +87,7 @@ for (const viewport of [
 
 test("agent run, highlight, evidence, and warning states", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await mockProviderStatus(page);
   await page.goto("/");
 
   await page.getByRole("button", { name: "Run agents" }).click();
@@ -76,5 +107,39 @@ test("agent run, highlight, evidence, and warning states", async ({ page }) => {
   await page.getByRole("button", { name: "Warning", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("bbox-not-implemented");
   await capture(page, "unsupported-warning-1440x900");
+  await assertWorkspaceFits(page);
+});
+
+test("switches OAuth provider and renders a grounded response", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockProviderStatus(page);
+  await page.route("**/api/chat", async (route) => {
+    const request = route.request().postDataJSON();
+    expect(request.provider).toBe("claude");
+    expect(request.drawingPath).toBe("tests/fixtures/dwg/export_sample.dwg");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: "claude",
+        text: "TEXT Hello를 확인했습니다. [handle:591]",
+        sessionId: "oauth-session-test"
+      })
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Claude", exact: true }).click();
+  await page.getByLabel("AI 질문").fill("도면의 텍스트를 알려줘");
+  await page.getByRole("button", { name: "전송" }).click();
+
+  await expect(page.getByTestId("live-response")).toContainText("Hello");
+  await expect(page.getByTestId("live-response")).toContainText("[handle:591]");
+  await expect(page.getByText("CLAUDE · OAUTH", { exact: true })).toBeVisible();
+  const responseBox = await page.getByTestId("live-response").boundingBox();
+  const composerBox = await page.locator(".composer").boundingBox();
+  expect(responseBox).not.toBeNull();
+  expect(composerBox).not.toBeNull();
+  expect(responseBox!.y + responseBox!.height).toBeLessThanOrEqual(composerBox!.y);
+  await capture(page, "oauth-claude-response-1440x900");
   await assertWorkspaceFits(page);
 });

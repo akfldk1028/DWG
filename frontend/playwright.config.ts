@@ -11,11 +11,20 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure"
   },
-  webServer: {
-    command: "npm run dev",
-    url: "http://127.0.0.1:4173",
-    reuseExistingServer: true,
-    timeout: 60_000
-  },
+  webServer: [
+    {
+      command: "npm run gateway",
+      cwd: "..",
+      url: "http://127.0.0.1:4317/api/health",
+      reuseExistingServer: true,
+      timeout: 60_000
+    },
+    {
+      command: "npm run dev",
+      url: "http://127.0.0.1:4173",
+      reuseExistingServer: true,
+      timeout: 60_000
+    }
+  ],
   reporter: [["list"]]
 });

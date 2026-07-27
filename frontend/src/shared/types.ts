@@ -37,3 +37,21 @@ export interface CadIndex {
   entities: CadEntity[];
   unsupported: Array<{ type: string; count: number; reason: string }>;
 }
+
+export type ProviderId = "codex" | "claude";
+
+export interface ProviderStatus {
+  id: ProviderId;
+  label: string;
+  installed: boolean;
+  authenticated: boolean;
+  authMethod: "chatgpt" | "claude.ai" | "unknown";
+  subscription?: string;
+  detail: string;
+}
+
+export interface ProviderChatResult {
+  provider: ProviderId;
+  text: string;
+  sessionId: string | null;
+}

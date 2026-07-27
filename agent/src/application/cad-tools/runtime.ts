@@ -48,7 +48,7 @@ export function createCadToolRuntime() {
 async function openDrawing(args: ToolArguments, drawings: Map<string, OpenedDrawing>) {
   const path = asString(args.path, "path");
   const fullPath = resolve(path);
-  const index = await buildIndexForPath(fullPath);
+  const index = await buildCadIndexForPath(fullPath);
   drawings.set(index.drawingId, { path: fullPath, index });
 
   return {
@@ -61,7 +61,7 @@ async function openDrawing(args: ToolArguments, drawings: Map<string, OpenedDraw
 async function buildIndex(args: ToolArguments, drawings: Map<string, OpenedDrawing>) {
   const drawing = requireDrawing(args, drawings);
   if (!drawing.index) {
-    drawing.index = await buildIndexForPath(drawing.path);
+    drawing.index = await buildCadIndexForPath(drawing.path);
   }
 
   return {
@@ -71,7 +71,7 @@ async function buildIndex(args: ToolArguments, drawings: Map<string, OpenedDrawi
   };
 }
 
-async function buildIndexForPath(path: string): Promise<CadEntityIndex> {
+export async function buildCadIndexForPath(path: string): Promise<CadEntityIndex> {
   const extension = extname(path).toLowerCase();
   if (extension === ".dwg") {
     return buildIndexFromDwgFile(path);
