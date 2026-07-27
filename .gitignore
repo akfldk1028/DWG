@@ -3,6 +3,7 @@ dist/
 build/
 coverage/
 .cache/
+*.tsbuildinfo
 .env
 .env.*
 
@@ -14,6 +15,7 @@ backend/obj/
 backend/**/bin/
 backend/**/obj/
 frontend/node_modules/
+tests/visual/test-results/
 agent/.cache/
 
 .worktrees/

@@ -1,0 +1,595 @@
+{
+  "schemaVersion": "cad-index/v0.1",
+  "drawingId": "dwg:b60b4a7242e43b34ca35561b",
+  "source": {
+    "kind": "dwg",
+    "displayName": "export_sample.dwg",
+    "parser": "acadsharp@3.6.35"
+  },
+  "summary": {
+    "entityCount": 22,
+    "layerCount": 4,
+    "unsupportedCount": 0,
+    "modelSpaceCount": 22,
+    "paperSpaceCount": 0
+  },
+  "layers": [
+    {
+      "name": "0",
+      "entityCount": 22,
+      "visible": true,
+      "frozen": false
+    },
+    {
+      "name": "Defpoints",
+      "entityCount": 0,
+      "visible": true,
+      "frozen": false
+    },
+    {
+      "name": "control",
+      "entityCount": 0,
+      "visible": true,
+      "frozen": false
+    },
+    {
+      "name": "out-margin",
+      "entityCount": 0,
+      "visible": true,
+      "frozen": false
+    }
+  ],
+  "entities": [
+    {
+      "id": "h:239",
+      "handle": "239",
+      "type": "LWPOLYLINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          100,
+          100,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:23A",
+      "handle": "23A",
+      "type": "LINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          50,
+          100,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:23B",
+      "handle": "23B",
+      "type": "LINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          50,
+          0,
+          0
+        ],
+        "max": [
+          100,
+          100,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:23C",
+      "handle": "23C",
+      "type": "CIRCLE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          -1.4210854715202004e-14,
+          0,
+          0
+        ],
+        "max": [
+          100.00000000000003,
+          100.00000000000004,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:23D",
+      "handle": "23D",
+      "type": "LINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          25,
+          50,
+          0
+        ],
+        "max": [
+          75,
+          50,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:23E",
+      "handle": "23E",
+      "type": "ARC",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          32.24693918808244,
+          37.39309116401414,
+          0
+        ],
+        "max": [
+          67.75306081191758,
+          67.7526658358666,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:23F",
+      "handle": "23F",
+      "type": "POINT",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          50,
+          19.99999999999999,
+          0
+        ],
+        "max": [
+          50,
+          19.99999999999999,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:240",
+      "handle": "240",
+      "type": "ARC",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          50,
+          50,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:241",
+      "handle": "241",
+      "type": "ARC",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          50,
+          0,
+          0
+        ],
+        "max": [
+          100,
+          50,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:281",
+      "handle": "281",
+      "type": "LINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          -50,
+          -50,
+          0
+        ],
+        "max": [
+          50,
+          50,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:282",
+      "handle": "282",
+      "type": "LINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          -50,
+          -50,
+          0
+        ],
+        "max": [
+          50,
+          50,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:2D5",
+      "handle": "2D5",
+      "type": "LINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          -16.46031844895622,
+          -0.6364322744802848,
+          0
+        ],
+        "max": [
+          116.46031938030717,
+          100.63643320583145,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:2D6",
+      "handle": "2D6",
+      "type": "LINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          -16.46031844895622,
+          -0.6364322744802848,
+          0
+        ],
+        "max": [
+          116.46031938030717,
+          100.63643320583145,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:33A",
+      "handle": "33A",
+      "type": "LWPOLYLINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          40.151080505089475,
+          67.75342644108068,
+          0
+        ],
+        "max": [
+          59.848919494910525,
+          80.30216101017895,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:347",
+      "handle": "347",
+      "type": "HATCH",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          40.151080505089475,
+          67.75342644108068,
+          0
+        ],
+        "max": [
+          59.848919494910525,
+          80.30216101017895,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:3B6",
+      "handle": "3B6",
+      "type": "INSERT",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          4.820087905162958,
+          0.12166608575347392,
+          0
+        ],
+        "max": [
+          8.033349257958617,
+          3.334927438549133,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": "my_block",
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:3D6",
+      "handle": "3D6",
+      "type": "ELLIPSE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          25,
+          30,
+          0
+        ],
+        "max": [
+          75,
+          70,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:58F",
+      "handle": "58F",
+      "type": "LWPOLYLINE",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          10.228414186593032,
+          63.793103448275865,
+          0
+        ],
+        "max": [
+          89.77158581340697,
+          80.30216101017895,
+          0
+        ]
+      },
+      "text": null,
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:591",
+      "handle": "591",
+      "type": "TEXT",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          22.707449971798837,
+          82.28810939360596,
+          0
+        ],
+        "max": [
+          22.707449971798837,
+          82.28810939360596,
+          0
+        ]
+      },
+      "text": "Hello",
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:594",
+      "handle": "594",
+      "type": "MTEXT",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          11.821359386218038,
+          78.70921581055393,
+          0
+        ],
+        "max": [
+          11.821359386218038,
+          78.70921581055393,
+          0
+        ]
+      },
+      "text": "Mtext\nline1\\Pline2\\Pline3",
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:595",
+      "handle": "595",
+      "type": "MTEXT",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          88.17864061378197,
+          78.70921581055393,
+          0
+        ],
+        "max": [
+          88.17864061378197,
+          78.70921581055393,
+          0
+        ]
+      },
+      "text": "Mtext\nline1\\Pline2\\Pline3",
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    },
+    {
+      "id": "h:59D",
+      "handle": "59D",
+      "type": "TEXT",
+      "layer": "0",
+      "space": "model",
+      "layout": "Model",
+      "bbox": {
+        "min": [
+          61.376790300321204,
+          82.28810939360596,
+          0
+        ],
+        "max": [
+          61.376790300321204,
+          82.28810939360596,
+          0
+        ]
+      },
+      "text": "Goodbye",
+      "blockName": null,
+      "attributes": {},
+      "geometry": {},
+      "warnings": []
+    }
+  ],
+  "unsupported": []
+}
