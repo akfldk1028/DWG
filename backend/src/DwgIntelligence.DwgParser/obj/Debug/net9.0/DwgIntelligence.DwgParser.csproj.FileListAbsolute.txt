@@ -1,0 +1,17 @@
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.csproj.AssemblyReference.cache
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.GeneratedMSBuildEditorConfig.editorconfig
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.AssemblyInfoInputs.cache
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.AssemblyInfo.cs
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.csproj.CoreCompileInputs.cache
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\bin\Debug\net9.0\DwgIntelligence.DwgParser.exe
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\bin\Debug\net9.0\DwgIntelligence.DwgParser.deps.json
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\bin\Debug\net9.0\DwgIntelligence.DwgParser.runtimeconfig.json
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\bin\Debug\net9.0\DwgIntelligence.DwgParser.dll
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\bin\Debug\net9.0\DwgIntelligence.DwgParser.pdb
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\bin\Debug\net9.0\ACadSharp.dll
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntel.11564682.Up2Date
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.dll
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\refint\DwgIntelligence.DwgParser.dll
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.pdb
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\DwgIntelligence.DwgParser.genruntimeconfig.cache
+C:\DK\DWG\.worktrees\dwg-parser\backend\src\DwgIntelligence.DwgParser\obj\Debug\net9.0\ref\DwgIntelligence.DwgParser.dll

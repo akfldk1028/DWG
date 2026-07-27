@@ -1,0 +1,166 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\tests\\DwgIntelligence.DwgParser.Tests\\DwgIntelligence.DwgParser.Tests.csproj": {}
+  },
+  "projects": {
+    "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\src\\DwgIntelligence.DwgParser\\DwgIntelligence.DwgParser.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\src\\DwgIntelligence.DwgParser\\DwgIntelligence.DwgParser.csproj",
+        "projectName": "DwgIntelligence.DwgParser",
+        "projectPath": "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\src\\DwgIntelligence.DwgParser\\DwgIntelligence.DwgParser.csproj",
+        "packagesPath": "C:\\Users\\User\\.nuget\\packages\\",
+        "outputPath": "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\src\\DwgIntelligence.DwgParser\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\User\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "ACadSharp": {
+              "target": "Package",
+              "version": "[3.6.35, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.311/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\tests\\DwgIntelligence.DwgParser.Tests\\DwgIntelligence.DwgParser.Tests.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\tests\\DwgIntelligence.DwgParser.Tests\\DwgIntelligence.DwgParser.Tests.csproj",
+        "projectName": "DwgIntelligence.DwgParser.Tests",
+        "projectPath": "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\tests\\DwgIntelligence.DwgParser.Tests\\DwgIntelligence.DwgParser.Tests.csproj",
+        "packagesPath": "C:\\Users\\User\\.nuget\\packages\\",
+        "outputPath": "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\tests\\DwgIntelligence.DwgParser.Tests\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\User\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {
+              "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\src\\DwgIntelligence.DwgParser\\DwgIntelligence.DwgParser.csproj": {
+                "projectPath": "C:\\DK\\DWG\\.worktrees\\dwg-parser\\backend\\src\\DwgIntelligence.DwgParser\\DwgIntelligence.DwgParser.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "Microsoft.NET.Test.Sdk": {
+              "target": "Package",
+              "version": "[17.14.1, )"
+            },
+            "xunit": {
+              "target": "Package",
+              "version": "[2.9.3, )"
+            },
+            "xunit.runner.visualstudio": {
+              "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[3.1.4, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.311/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
