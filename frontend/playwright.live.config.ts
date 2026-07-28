@@ -1,14 +1,16 @@
 import { defineConfig } from "@playwright/test";
 
-const frontendPort = Number(process.env.DWG_FRONTEND_PORT ?? 4173);
-const gatewayPort = Number(process.env.DWG_GATEWAY_PORT ?? 4317);
+const frontendPort = Number(process.env.DWG_LIVE_FRONTEND_PORT ?? 4183);
+const gatewayPort = Number(process.env.DWG_LIVE_GATEWAY_PORT ?? 4327);
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testIgnore: "**/live-oauth-cli.spec.ts",
-  outputDir: "../tests/visual/test-results",
-  timeout: 30_000,
-  expect: { timeout: 5_000 },
+  testMatch: "live-oauth-cli.spec.ts",
+  outputDir: "../tests/visual/test-results/live-oauth",
+  timeout: 300_000,
+  expect: { timeout: 240_000 },
+  fullyParallel: false,
+  workers: 1,
   use: {
     baseURL: `http://127.0.0.1:${frontendPort}`,
     colorScheme: "light",
@@ -24,7 +26,7 @@ export default defineConfig({
         DWG_GATEWAY_PORT: String(gatewayPort)
       },
       url: `http://127.0.0.1:${gatewayPort}/api/health`,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60_000
     },
     {
@@ -35,7 +37,7 @@ export default defineConfig({
         DWG_GATEWAY_PORT: String(gatewayPort)
       },
       url: `http://127.0.0.1:${frontendPort}`,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60_000
     }
   ],

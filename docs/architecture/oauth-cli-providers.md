@@ -64,26 +64,27 @@ snapshot used to compare provider/runtime boundaries.
 ## Commands
 
 ```powershell
-# Terminal 1
-npm run gateway
-
-# Terminal 2
-Set-Location frontend
-npm run dev
-
 # Explicit real-login smoke tests
 npm run providers:smoke -- codex
 npm run providers:smoke -- claude
 
-# Real browser reload/resume test and 1440x900 evidence PNG
+# Real Codex + Claude browser reload/resume tests and 1440x900 evidence PNGs
 Set-Location frontend
+npm run test:live-oauth-browser
+
+# Optional: run one provider or override the isolated ports
+$env:DWG_LIVE_PROVIDER = "codex"
+$env:DWG_LIVE_FRONTEND_PORT = "4183"
+$env:DWG_LIVE_GATEWAY_PORT = "4327"
 npm run test:live-oauth-browser
 ```
 
 Each smoke test performs two turns and verifies that the second result keeps
-the first result's session ID. The browser harness uses the running loopback
-gateway without route mocks, reloads the page between turns, checks for console
-errors, and writes `tests/visual/artifacts/oauth-codex-persistent-browser-e2e.png`.
+the first result's session ID. The browser harness starts isolated loopback
+gateway and Vite processes from the current checkout without route mocks,
+preflights both health and drawing routes, reloads the page between turns,
+checks for console errors, and writes provider-specific evidence PNGs under
+`tests/visual/artifacts/oauth-*-persistent-browser-e2e.png`.
 
 ## Runtime choice
 

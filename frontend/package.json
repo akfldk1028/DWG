@@ -9,7 +9,7 @@
     "typecheck": "tsc -b --pretty false",
     "generate:fixture": "node scripts/generate-fixture.mjs",
     "test:e2e": "playwright test",
-    "test:live-oauth-browser": "node scripts/verify-live-oauth-browser.mjs"
+    "test:live-oauth-browser": "playwright test --config playwright.live.config.ts"
   },
   "dependencies": {
     "@dwg/contracts": "file:../packages/contracts",
