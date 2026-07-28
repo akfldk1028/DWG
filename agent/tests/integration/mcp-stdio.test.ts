@@ -8,8 +8,8 @@ import { CAD_TOOL_NAMES } from "../../src/mcp/toolDefinitions.js";
 
 test("serves the CAD tool surface over a spawned stdio process", async (t) => {
   const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ["--import", "tsx", "agent/src/mcp/stdio.ts"],
+    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    args: ["run", "mcp", "--silent"],
     cwd: process.cwd(),
     stderr: "pipe"
   });
@@ -25,5 +25,15 @@ test("serves the CAD tool surface over a spawned stdio process", async (t) => {
   assert.deepEqual(
     result.tools.map((tool) => tool.name).sort(),
     [...CAD_TOOL_NAMES].sort()
+  );
+
+  const opened = await client.callTool({
+    name: "cad.open_drawing",
+    arguments: { path: "tests/fixtures/dwg/export_sample.dwg" }
+  });
+  assert.equal(opened.isError, undefined);
+  assert.equal(
+    typeof (opened.structuredContent as { drawingId?: unknown }).drawingId,
+    "string"
   );
 });

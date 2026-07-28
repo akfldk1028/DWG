@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 
 import type {
@@ -20,9 +20,6 @@ export function createDrawingWorkspace(
   configuredPath: string
 ): DrawingWorkspace {
   const drawingPath = resolveWorkspaceDrawingPath(workspaceRoot, configuredPath);
-  if (!existsSync(drawingPath)) {
-    throw new Error(`Drawing not found: ${configuredPath}`);
-  }
 
   const orchestrator = createInspectionOrchestrator();
   return {
@@ -35,8 +32,23 @@ export function resolveWorkspaceDrawingPath(
   workspaceRoot: string,
   configuredPath: string
 ) {
-  const root = resolve(workspaceRoot);
-  const drawingPath = resolve(root, configuredPath);
+  const root = realpathSync(resolve(workspaceRoot));
+  const lexicalPath = resolve(root, configuredPath);
+  assertContained(root, lexicalPath);
+  if (!existsSync(lexicalPath)) {
+    throw new Error(`Drawing not found: ${configuredPath}`);
+  }
+  const drawingPath = realpathSync(lexicalPath);
+  assertContained(root, drawingPath);
+
+  const extension = extname(drawingPath).toLowerCase();
+  if (extension !== ".dwg" && extension !== ".dxf") {
+    throw new Error(`Unsupported drawing format: ${extension || "(none)"}`);
+  }
+  return drawingPath;
+}
+
+function assertContained(root: string, drawingPath: string) {
   const relativePath = relative(root, drawingPath);
   if (
     relativePath === ".." ||
@@ -46,10 +58,4 @@ export function resolveWorkspaceDrawingPath(
   ) {
     throw new Error("Drawing path is outside workspace");
   }
-
-  const extension = extname(drawingPath).toLowerCase();
-  if (extension !== ".dwg" && extension !== ".dxf") {
-    throw new Error(`Unsupported drawing format: ${extension || "(none)"}`);
-  }
-  return drawingPath;
 }
