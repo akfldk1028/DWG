@@ -19,4 +19,5 @@ tests/visual/test-results/
 agent/.cache/
 
 .worktrees/
+.superpowers/
 .playwright-mcp/
