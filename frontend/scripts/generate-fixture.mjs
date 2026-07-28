@@ -17,9 +17,9 @@ const output = execFileSync(
 const index = JSON.parse(output);
 
 if (
-  index.schemaVersion !== "cad-index/v0.1" ||
+  index.schemaVersion !== "cad-index/v0.2" ||
   index.source?.kind !== "dwg" ||
-  index.entities?.length !== 22
+  index.entities?.length !== index.summary?.entityCount
 ) {
   throw new Error("Generated fixture does not match the verified DWG index contract");
 }

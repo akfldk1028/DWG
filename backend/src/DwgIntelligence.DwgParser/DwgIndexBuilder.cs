@@ -16,11 +16,21 @@ public static class DwgIndexBuilder
         var unsupported = new Dictionary<(string Type, string Reason), int>();
         var entities = new List<CadEntityItem>();
 
-        int entityIndex = 0;
-        foreach (Entity entity in document.Entities)
+        LayoutEnumerationResult located =
+            LayoutEntityEnumerator.Enumerate(document);
+        foreach (LocatedCadEntity item in located.Entities)
         {
-            entities.Add(ConvertEntity(entity, entityIndex, unsupported));
-            entityIndex += 1;
+            entities.Add(ConvertEntity(item, unsupported));
+        }
+        foreach (
+            KeyValuePair<string, int> duplicate
+            in located.DuplicateHandles)
+        {
+            AddUnsupported(
+                unsupported,
+                "ENTITY",
+                $"duplicate-handle:{duplicate.Key}",
+                duplicate.Value);
         }
 
         IReadOnlyList<CadLayerItem> layers = document.Layers
@@ -42,7 +52,7 @@ public static class DwgIndexBuilder
             .ToArray();
 
         return new CadIndex(
-            "cad-index/v0.1",
+            "cad-index/v0.2",
             CreateDrawingId(fullPath),
             new CadIndexSource(
                 "dwg",
@@ -52,18 +62,18 @@ public static class DwgIndexBuilder
                 entities.Count,
                 layers.Count,
                 unsupportedItems.Sum(item => item.Count),
-                entities.Count,
-                0),
+                entities.Count(entity => entity.Space == "model"),
+                entities.Count(entity => entity.Space == "paper")),
             layers,
             entities,
             unsupportedItems);
     }
 
     private static CadEntityItem ConvertEntity(
-        Entity entity,
-        int entityIndex,
+        LocatedCadEntity located,
         IDictionary<(string Type, string Reason), int> unsupported)
     {
+        Entity entity = located.Entity;
         string type = string.IsNullOrWhiteSpace(entity.ObjectName)
             ? entity.GetType().Name.ToUpperInvariant()
             : entity.ObjectName;
@@ -71,10 +81,28 @@ public static class DwgIndexBuilder
             ? null
             : entity.Handle.ToString("X");
         string id = handle is null
-            ? $"generated:{type}:{entityIndex}"
+            ? $"generated:{located.Layout}:{type}:{located.EncounterIndex}"
             : $"h:{handle}";
         var warnings = new List<string>();
         CadBoundingBox? bbox = GetBoundingBox(entity, type, warnings, unsupported);
+        GeometryExtraction geometry =
+            EntityGeometryExtractor.Extract(entity, bbox);
+        AddWarnings(
+            warnings,
+            geometry.Warnings,
+            unsupported,
+            type);
+
+        InsertAttributeResult attributes = entity is Insert insertEntity
+            ? InsertAttributeExtractor.Extract(insertEntity)
+            : new InsertAttributeResult(
+                new Dictionary<string, string>(),
+                []);
+        AddWarnings(
+            warnings,
+            attributes.Warnings,
+            unsupported,
+            type);
 
         if (handle is null)
         {
@@ -87,16 +115,41 @@ public static class DwgIndexBuilder
             handle,
             type,
             entity.Layer?.Name ?? "0",
-            "model",
-            "Model",
+            located.Space,
+            located.Layout,
             bbox,
-            entity is IText text ? text.Value : null,
+            GetText(entity),
             entity is Insert insert ? insert.Block?.Name : null,
-            new Dictionary<string, string>(),
-            new UnavailableGeometry(
-                "unavailable",
-                "geometry-not-extracted"),
+            attributes.Attributes,
+            geometry.Geometry,
             warnings);
+    }
+
+    private static string? GetText(Entity entity)
+    {
+        return entity switch
+        {
+            MText text => text.PlainText,
+            IText text => text.Value,
+            _ => null
+        };
+    }
+
+    private static void AddWarnings(
+        ICollection<string> warnings,
+        IEnumerable<string> additions,
+        IDictionary<(string Type, string Reason), int> unsupported,
+        string type)
+    {
+        foreach (string warning in additions)
+        {
+            if (warnings.Contains(warning))
+            {
+                continue;
+            }
+            warnings.Add(warning);
+            AddUnsupported(unsupported, type, warning);
+        }
     }
 
     private static CadBoundingBox? GetBoundingBox(
@@ -136,12 +189,13 @@ public static class DwgIndexBuilder
     private static void AddUnsupported(
         IDictionary<(string Type, string Reason), int> unsupported,
         string type,
-        string reason)
+        string reason,
+        int increment = 1)
     {
         var key = (type, reason);
         unsupported[key] = unsupported.TryGetValue(key, out int count)
-            ? count + 1
-            : 1;
+            ? count + increment
+            : increment;
     }
 
     private static string CreateDrawingId(string path)

@@ -2,15 +2,20 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
 
-import type { CadEntityIndex } from "../../domain/cad-index/types.js";
+import {
+  isCadEntityIndexV02,
+  type CadEntityIndexV02
+} from "@dwg/contracts";
 
 const execFileAsync = promisify(execFile);
 const parserProject = resolve(
   "backend/src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj"
 );
-const indexByPath = new Map<string, Promise<CadEntityIndex>>();
+const indexByPath = new Map<string, Promise<CadEntityIndexV02>>();
 
-export async function buildIndexFromDwgFile(path: string): Promise<CadEntityIndex> {
+export async function buildIndexFromDwgFile(
+  path: string
+): Promise<CadEntityIndexV02> {
   const fullPath = resolve(path);
   const existing = indexByPath.get(fullPath);
   if (existing) return existing;
@@ -23,7 +28,7 @@ export async function buildIndexFromDwgFile(path: string): Promise<CadEntityInde
   return pending;
 }
 
-async function runDwgParser(fullPath: string): Promise<CadEntityIndex> {
+async function runDwgParser(fullPath: string): Promise<CadEntityIndexV02> {
   let stdout: string;
   try {
     const result = await execFileAsync(
@@ -58,25 +63,9 @@ async function runDwgParser(fullPath: string): Promise<CadEntityIndex> {
     throw new Error("DWG parser returned invalid JSON");
   }
 
-  if (!isCadDwgIndex(parsed)) {
+  if (!isCadEntityIndexV02(parsed) || parsed.source.kind !== "dwg") {
     throw new Error("DWG parser returned an incompatible cad-index document");
   }
 
   return parsed;
-}
-
-function isCadDwgIndex(value: unknown): value is CadEntityIndex {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const candidate = value as Partial<CadEntityIndex>;
-  return (
-    candidate.schemaVersion === "cad-index/v0.1" &&
-    candidate.source?.kind === "dwg" &&
-    typeof candidate.drawingId === "string" &&
-    Array.isArray(candidate.layers) &&
-    Array.isArray(candidate.entities) &&
-    Array.isArray(candidate.unsupported)
-  );
 }

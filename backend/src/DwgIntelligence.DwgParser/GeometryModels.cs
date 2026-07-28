@@ -1,5 +1,17 @@
+using System.Text.Json.Serialization;
+
 namespace DwgIntelligence.DwgParser;
 
+[JsonPolymorphic]
+[JsonDerivedType(typeof(LineGeometry))]
+[JsonDerivedType(typeof(CircleGeometry))]
+[JsonDerivedType(typeof(ArcGeometry))]
+[JsonDerivedType(typeof(LwPolylineGeometry))]
+[JsonDerivedType(typeof(PointGeometry))]
+[JsonDerivedType(typeof(TextGeometry))]
+[JsonDerivedType(typeof(InsertGeometry))]
+[JsonDerivedType(typeof(BboxGeometry))]
+[JsonDerivedType(typeof(UnavailableGeometry))]
 public abstract record CadEntityGeometry(string Kind);
 
 public sealed record LineGeometry(

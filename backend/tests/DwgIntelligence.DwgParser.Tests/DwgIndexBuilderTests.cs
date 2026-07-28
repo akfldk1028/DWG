@@ -6,25 +6,80 @@ namespace DwgIntelligence.DwgParser.Tests;
 public sealed class DwgIndexBuilderTests
 {
     [Fact]
-    public void BuildsNormalizedIndexFromRealDwgWithoutChangingSource()
+    public void BuildsV02GeometryFromRealDwgWithoutChangingSource()
     {
-        string path = Path.Combine(
-            AppContext.BaseDirectory,
-            "Fixtures",
-            "export_sample.dwg");
+        string path = FixturePath("export_sample.dwg");
         string before = Sha256(path);
 
         CadIndex index = DwgIndexBuilder.Build(path);
 
         string after = Sha256(path);
-        Assert.Equal("cad-index/v0.1", index.SchemaVersion);
+        Assert.Equal("cad-index/v0.2", index.SchemaVersion);
         Assert.Equal("dwg", index.Source.Kind);
         Assert.Equal("acadsharp@3.6.35", index.Source.Parser);
-        Assert.NotEmpty(index.Entities);
+        Assert.Equal(before, after);
+
+        CadEntityItem line = Assert.Single(
+            index.Entities,
+            entity => entity.Handle == "23D");
+        var lineGeometry = Assert.IsType<LineGeometry>(line.Geometry);
+        double[][] endpoints = [lineGeometry.Start, lineGeometry.End];
+        Assert.Contains(
+            endpoints,
+            point => point.SequenceEqual([25d, 50d, 0d]));
+        Assert.Contains(
+            endpoints,
+            point => point.SequenceEqual([75d, 50d, 0d]));
+
+        CadEntityItem circle = Assert.Single(
+            index.Entities,
+            entity => entity.Handle == "23C");
+        var circleGeometry = Assert.IsType<CircleGeometry>(circle.Geometry);
+        Assert.Equal(50, circleGeometry.Center[0], 10);
+        Assert.Equal(50, circleGeometry.Center[1], 10);
+        Assert.Equal(0, circleGeometry.Center[2], 10);
+        Assert.Equal(50, circleGeometry.Radius, 10);
+
+        CadEntityItem arc = Assert.Single(
+            index.Entities,
+            entity => entity.Handle == "23E");
+        Assert.IsType<ArcGeometry>(arc.Geometry);
+
+        CadEntityItem text = Assert.Single(
+            index.Entities,
+            entity => entity.Handle == "591");
+        Assert.Equal("Hello", text.Text);
+        Assert.IsType<TextGeometry>(text.Geometry);
+
+        CadEntityItem insert = Assert.Single(
+            index.Entities,
+            entity => entity.Handle == "3B6");
+        Assert.Equal("my_block", insert.BlockName);
+        Assert.IsType<InsertGeometry>(insert.Geometry);
+
+        CadEntityItem hatch = Assert.Single(
+            index.Entities,
+            entity => entity.Handle == "347");
+        Assert.IsType<BboxGeometry>(hatch.Geometry);
+        Assert.Contains("geometry-fallback:HATCH", hatch.Warnings);
+
+        Assert.Equal(
+            index.Entities.Count(entity => entity.Space == "model"),
+            index.Summary.ModelSpaceCount);
+        Assert.Equal(
+            index.Entities.Count(entity => entity.Space == "paper"),
+            index.Summary.PaperSpaceCount);
         Assert.Contains(
             index.Entities,
-            entity => entity.Handle is not null && entity.Id == $"h:{entity.Handle}");
-        Assert.Equal(before, after);
+            entity => entity.Space == "paper" && entity.Type == "VIEWPORT");
+    }
+
+    private static string FixturePath(string name)
+    {
+        return Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            name);
     }
 
     private static string Sha256(string path)
