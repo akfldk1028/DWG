@@ -13,6 +13,7 @@ interface Props {
   gridVisible: boolean;
   hiddenLayers: ReadonlySet<string>;
   onGridVisibleChange(visible: boolean): void;
+  showMaximize?: boolean;
 }
 
 const view = { minX: -24, minY: -12, width: 148, height: 126 };
@@ -24,7 +25,8 @@ export function CadViewer({
   searchQuery,
   gridVisible,
   hiddenLayers,
-  onGridVisibleChange
+  onGridVisibleChange,
+  showMaximize = true
 }: Props) {
   const [viewMode, setViewMode] = useState<"default" | "fit">("default");
   const [maximized, setMaximized] = useState(false);
@@ -114,13 +116,13 @@ export function CadViewer({
           </button>
         </div>
         <div className="viewer-crumb">Model <span>/</span> World UCS</div>
-        <button
+        {showMaximize && <button
           className={`tool-button ${maximized ? "active" : ""}`}
           aria-label={maximized ? "최대화 종료" : "최대화"}
           onClick={() => setMaximized((value) => !value)}
         >
           {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-        </button>
+        </button>}
       </div>
 
       <div className="canvas-wrap" data-testid="cad-canvas" data-view={viewMode}>

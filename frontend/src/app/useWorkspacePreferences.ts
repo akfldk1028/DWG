@@ -1,0 +1,55 @@
+import { useEffect, useMemo, useState } from "react";
+
+import {
+  createWorkspacePreferencesStore,
+  defaultWorkspacePreferences,
+  resolveTheme,
+  type ThemePreference,
+  type WorkspacePreferences
+} from "./workspacePreferences";
+
+const browserStore = typeof window === "undefined"
+  ? null
+  : createWorkspacePreferencesStore(window.localStorage);
+
+export function useWorkspacePreferences() {
+  const [preferences, setPreferences] = useState<WorkspacePreferences>(
+    () => browserStore?.load() ?? defaultWorkspacePreferences
+  );
+  const [systemDark, setSystemDark] = useState(
+    () => typeof window !== "undefined" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemDark(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  function update(next: WorkspacePreferences) {
+    setPreferences(next);
+    browserStore?.save(next);
+  }
+
+  return useMemo(() => ({
+    preferences,
+    resolvedTheme: resolveTheme(preferences.theme, systemDark),
+    setTheme(theme: ThemePreference) {
+      update({ ...preferences, theme });
+    },
+    setArtifactWidth(artifactWidth: number) {
+      update({ ...preferences, artifactWidth });
+    },
+    toggleSection(section: keyof WorkspacePreferences["sidebarSections"]) {
+      update({
+        ...preferences,
+        sidebarSections: {
+          ...preferences.sidebarSections,
+          [section]: !preferences.sidebarSections[section]
+        }
+      });
+    }
+  }), [preferences, systemDark]);
+}

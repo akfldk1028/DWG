@@ -5,7 +5,7 @@ import {
   appendWorkspaceMessage,
   createWorkspaceSession,
   createWorkspaceSessionStore
-} from "../../src/features/workspace-sessions/workspaceSessionStore.js";
+} from "../../src/features/agent-chat/workspaceSessionStore.js";
 
 const codexSessionId = "019fa7ba-415a-7a90-8e86-7370a2dd4a2f";
 

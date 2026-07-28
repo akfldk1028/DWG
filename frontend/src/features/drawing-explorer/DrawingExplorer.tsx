@@ -44,7 +44,7 @@ export function DrawingExplorer({
   }
 
   return (
-    <aside className="panel explorer" aria-label="도면 탐색기">
+    <section className="drawing-tree explorer" aria-label="도면 트리">
       <div className="panel-heading">
         <span>DRAWING</span>
         <button
@@ -131,6 +131,6 @@ export function DrawingExplorer({
           <strong>{index.schemaVersion.replace("cad-index/", "")}</strong>
         </div>
       </div>
-    </aside>
+    </section>
   );
 }

@@ -18,9 +18,11 @@ test("captures the single workspace route in its key states", async ({ page }) =
 
   await page.getByRole("button", { name: "Run agents" }).click();
   await expect(page.getByText("VERIFIED RESULT")).toBeVisible();
+  await page.getByRole("tab", { name: /Findings/ }).click();
   await capture(page, "02-inspection-complete.png");
 
-  await page.getByRole("button", { name: "Loaded" }).click();
+  await page.getByRole("button", { name: "검사 초기화" }).click();
+  await page.getByRole("tab", { name: /CAD Preview/ }).click();
   const layerToggle = page.locator(".layer-visibility-button").first();
   await layerToggle.click();
   await expect(layerToggle).toHaveAccessibleName("0 레이어 표시");
@@ -32,6 +34,11 @@ test("captures the single workspace route in its key states", async ({ page }) =
   await claudeButton.click();
   await expect(claudeButton).toHaveClass(/active/);
   await capture(page, "04-claude-selected.png");
+
+  await page.getByRole("button", { name: "설정" }).click();
+  await page.getByLabel("테마").selectOption("dark");
+  await expect(page.getByTestId("cad-canvas")).toHaveCSS("background-color", "rgb(23, 26, 28)");
+  await capture(page, "05-dark-theme.png");
 });
 
 test("renders a single overview contact sheet", async ({ page }) => {
@@ -39,7 +46,7 @@ test("renders a single overview contact sheet", async ({ page }) => {
   await page.goto(
     pathToFileURL(resolve(captureDirectory, "index.html")).toString()
   );
-  await expect(page.locator("img")).toHaveCount(4);
+  await expect(page.locator("img")).toHaveCount(5);
   await expect(page.locator("img").last()).toBeVisible();
   await page.screenshot({
     path: resolve(captureDirectory, "00-overview.png"),

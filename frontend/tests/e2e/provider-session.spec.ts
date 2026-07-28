@@ -49,7 +49,7 @@ test("continues the selected OAuth provider session after reload", async ({ page
   await expect(page.getByTestId("live-response")).toContainText("grounded response");
 
   await page.reload();
-  await page.getByRole("button", { name: "Claude", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Claude", exact: true })).toHaveClass(/active/);
   await page.locator(".composer input:not([type=file])").fill("follow-up");
   await page.locator(".composer .send-button").click();
 
@@ -64,4 +64,14 @@ test("continues the selected OAuth provider session after reload", async ({ page
     message: "follow-up",
     sessionId
   });
+
+  await page.getByRole("button", { name: "새 대화" }).click();
+  await page.locator(".composer input:not([type=file])").fill("fresh thread");
+  await page.locator(".composer .send-button").click();
+  await expect.poll(() => chatRequests.length).toBe(3);
+  expect(chatRequests[2]).toMatchObject({
+    provider: "claude",
+    message: "fresh thread"
+  });
+  expect(chatRequests[2]).not.toHaveProperty("sessionId");
 });

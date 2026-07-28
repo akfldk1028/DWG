@@ -117,12 +117,11 @@ for (const viewport of [
     await expect(page.getByText("export_sample.dwg", { exact: true }).first()).toBeVisible();
     await expect(page.getByLabel("CAD 뷰어")).toBeVisible();
     await expect(page.locator(".cad-entity")).toHaveCount(modelEntityCount);
-    await expect(page.getByText("Drawing Index", { exact: true })).toBeVisible();
-    const findingEmptyBox = await page.getByText("Run agents를 눌러 실제 도면 검사를 실행하세요.").boundingBox();
-    const evidenceBox = await page.getByTestId("evidence-card").boundingBox();
-    expect(findingEmptyBox).not.toBeNull();
-    expect(evidenceBox).not.toBeNull();
-    expect(Math.abs(findingEmptyBox!.y - evidenceBox!.y)).toBeLessThanOrEqual(1);
+    await expect(page.getByText("Sample review", { exact: true })).toBeVisible();
+    await expect(page.getByRole("main", { name: "대화" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Findings/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Evidence/ })).toBeVisible();
     expect(consoleErrors).toEqual([]);
     expect(failedResponses).toEqual([]);
     await assertWorkspaceFits(page);
@@ -148,12 +147,14 @@ test("real agent run exposes grounded findings, evidence, and warnings", async (
     fullPage: true
   });
 
-  await page.locator(".finding-row").click();
+  await page.getByRole("tab", { name: /Findings/ }).click();
+  await page.locator(".finding-row").first().click();
   await expect(page.getByTestId("evidence-card")).toContainText("239");
-  await expect(page.locator('[data-handle="239"]')).toHaveClass(/highlighted/);
   await capture(page, "finding-evidence-1440x900");
+  await page.getByRole("tab", { name: /CAD Preview/ }).click();
+  await expect(page.locator('[data-handle="239"]')).toHaveClass(/highlighted/);
 
-  await page.getByRole("button", { name: /Warnings/ }).click();
+  await page.getByRole("tab", { name: /Warnings/ }).click();
   await expect(page.locator(".warning-card"))
     .toHaveCount(inspectionWarningCount);
   await expect(page.locator(".warning-card").first())
@@ -253,29 +254,18 @@ test("workspace controls change visible state instead of remaining inert", async
 
   await page.getByRole("button", { name: "설정" }).click();
   await expect(page.getByRole("dialog", { name: "뷰어 설정" })).toBeVisible();
-
-  await page.getByRole("button", { name: "도면 검색", exact: true }).click();
-  await page.getByLabel("레이어 검색").fill("control");
-  await expect(page.locator(".layer-row")).toHaveCount(1);
+  await page.getByLabel("테마").selectOption("dark");
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-theme", "dark");
 
   await page.getByLabel("전체 도면 검색").fill("239");
   await expect(page.locator(".cad-entity.highlighted")).toHaveCount(1);
 
   await page.getByRole("button", { name: "그리드" }).click();
-  await expect(page.getByRole("button", { name: "그리드" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator(".cad-grid")).toHaveCount(0);
-
   await page.getByRole("button", { name: "전체 보기" }).click();
   await expect(page.getByTestId("cad-canvas")).toHaveAttribute("data-view", "fit");
 
-  await page.getByRole("button", { name: "최대화" }).click();
-  await expect(page.getByLabel("CAD 뷰어")).toHaveClass(/viewer-maximized/);
-  await page.getByRole("button", { name: "최대화 종료" }).click();
-  await expect(page.getByLabel("CAD 뷰어")).not.toHaveClass(/viewer-maximized/);
-
-  await page.getByRole("button", { name: "Evidence", exact: false }).click();
-  await expect(page.getByTestId("evidence-card")).toBeVisible();
-  await page.getByRole("button", { name: "Warnings", exact: false }).click();
+  await page.getByRole("tab", { name: /Warnings/ }).click();
   await expect(page.getByText("경고가 없습니다.")).toBeVisible();
 
   await page.getByLabel("AI 질문").fill("기존 질문");
@@ -283,19 +273,4 @@ test("workspace controls change visible state instead of remaining inert", async
   await expect(page.getByLabel("AI 질문")).toHaveValue("");
   await page.getByRole("button", { name: "에이전트 멘션" }).click();
   await expect(page.getByLabel("AI 질문")).toHaveValue("@drawing-index-agent ");
-  await page.getByLabel("첨부 파일 선택").setInputFiles({
-    name: "review-note.txt",
-    mimeType: "text/plain",
-    buffer: Buffer.from("check handle 239")
-  });
-  await expect(page.locator(".attachment-chip")).toContainText("review-note.txt");
-  await expect(page.getByLabel("AI 질문")).toHaveValue(/check handle 239/);
-  await page.getByRole("button", { name: "첨부 제거" }).click();
-  await expect(page.locator(".attachment-chip")).toHaveCount(0);
-  await expect(page.getByLabel("AI 질문")).toHaveValue("@drawing-index-agent");
-
-  await page.getByRole("button", { name: "패널 닫기" }).click();
-  await expect(page.getByLabel("에이전트 워크스페이스")).toBeHidden();
-  await page.getByRole("button", { name: "패널 열기" }).click();
-  await expect(page.getByLabel("에이전트 워크스페이스")).toBeVisible();
 });

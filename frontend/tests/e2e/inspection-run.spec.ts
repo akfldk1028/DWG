@@ -73,16 +73,18 @@ test("runs the real inspection API and renders returned evidence", async ({ page
 
   await expect(page.getByText("5개 주요 객체")).toBeVisible();
   await expect(page.locator(".cad-entity.highlighted")).toHaveCount(5);
-  await expect(page.getByRole("button", { name: /0 레이어 검사 결과 5개/ })).toBeVisible();
+  await page.getByRole("tab", { name: /Findings/ }).click();
+  await expect(page.getByRole("button", { name: /0 레이어 검사 결과 5개/ }).first()).toBeVisible();
   expect(requests).toEqual([
     { checks: [{ kind: "layer", value: "0" }] }
   ]);
 
-  await page.getByRole("button", { name: /0 레이어 검사 결과 5개/ }).click();
+  await page.getByRole("button", { name: /0 레이어 검사 결과 5개/ }).first().click();
   await expect(page.getByTestId("evidence-card")).toContainText("239");
+  await page.getByRole("tab", { name: /CAD Preview/ }).click();
   await expect(page.locator('[data-handle="239"]')).toHaveClass(/highlighted/);
 
-  await page.getByRole("button", { name: "Loaded" }).click();
+  await page.getByRole("button", { name: "검사 초기화" }).click();
   await expect(page.locator(".cad-entity.highlighted")).toHaveCount(0);
   await expect(page.getByText("VERIFIED RESULT")).toBeHidden();
 });
