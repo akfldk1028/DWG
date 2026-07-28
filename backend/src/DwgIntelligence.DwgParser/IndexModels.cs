@@ -42,7 +42,7 @@ public sealed record CadEntityItem(
     string? Text,
     string? BlockName,
     IReadOnlyDictionary<string, string> Attributes,
-    IReadOnlyDictionary<string, object?> Geometry,
+    CadEntityGeometry Geometry,
     IReadOnlyList<string> Warnings);
 
 public sealed record UnsupportedCadEntity(

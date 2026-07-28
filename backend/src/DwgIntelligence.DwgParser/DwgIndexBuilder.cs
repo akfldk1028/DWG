@@ -93,7 +93,9 @@ public static class DwgIndexBuilder
             entity is IText text ? text.Value : null,
             entity is Insert insert ? insert.Block?.Name : null,
             new Dictionary<string, string>(),
-            new Dictionary<string, object?>(),
+            new UnavailableGeometry(
+                "unavailable",
+                "geometry-not-extracted"),
             warnings);
     }
 
