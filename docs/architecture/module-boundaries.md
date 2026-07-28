@@ -23,7 +23,7 @@ by the browser and agent runtimes.
 
 ```text
 packages/contracts/
-  src/cad.ts      Public cad-index/v0.1 DTOs
+  src/cad.ts      Public cad-index/v0.1 input + typed v0.2 DTOs/validators
   src/provider.ts Public provider DTOs and transport validators
 
 agent/src/
@@ -43,7 +43,7 @@ frontend/src/
     useWorkspaceControls.ts  Browser keyboard, popover, grid, and panel state
   features/
     drawing-explorer/  Index loading, drawing tree, layer visibility, local CSS
-    cad-viewer/        Indexed entity rendering and local CSS
+    cad-viewer/        Typed SVG geometry, fallback rendering, local CSS
     agent-chat/        Provider sessions, chat UI, composer, switch, local CSS
     inspection-results/ Findings, evidence, and local CSS
   shared/
@@ -56,7 +56,9 @@ frontend/src/
 - Add a provider by implementing `ChatProvider`; keep shared CLI behavior in
   `providers/cli` and register the adapter in `providerRegistry.ts`.
 - Add a CAD format by implementing an index adapter under `parsers`; application
-  and UI consume `cad-index/v0.1` and must not depend on parser-specific objects.
+  and UI consume the versioned public index union and must not depend on
+  parser-specific objects. DWG emits `cad-index/v0.2`; the legacy DXF adapter
+  may emit `cad-index/v0.1` during migration.
 - Add an agent by declaring its identity and bounded tool set in
   `orchestration/agentRegistry.ts`; do not call provider CLIs from specialists.
 - Add frontend network calls only through `shared/api`; React components do not
@@ -73,6 +75,12 @@ frontend/src/
   tab-scoped `sessionStorage`; application and HTTP layers only forward them.
 - Layer visibility is view state in `useLayerVisibility`; it filters viewer
   rendering without mutating the normalized index or its summary counts.
+- ACadSharp layout traversal, geometry extraction, and INSERT attribute
+  extraction stay in the .NET backend. Contracts contain serializable evidence
+  only; SVG arc/bulge conversion stays in `frontend/features/cad-viewer`.
+- The v0.2 viewer displays the Model layout by default. Paper Space remains in
+  the same index for layout browsing, deterministic inspection, and AI
+  evidence, but is not overlaid on Model geometry.
 - Cancellation flows in the opposite direction through one `AbortSignal`:
   frontend request -> HTTP gateway -> chat service -> provider -> process
   runner.

@@ -17,7 +17,7 @@ const AGENT_MANIFESTS = [
   {
     id: "drawing-index-agent",
     displayName: "Drawing Index Agent",
-    purpose: "Open source drawings read-only, build cad-index/v0.1, and surface unsupported content.",
+    purpose: "Open source drawings read-only, build the versioned CAD index, and surface unsupported content.",
     execution: "tool-driven",
     readiness: "active",
     allowedTools: [

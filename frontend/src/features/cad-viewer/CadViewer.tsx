@@ -2,6 +2,7 @@ import { Crosshair, Focus, Grid3X3, Maximize2, Minimize2, MousePointer2 } from "
 import { useEffect, useMemo, useState } from "react";
 
 import type { CadEntity, CadIndex } from "../../shared/types";
+import { EntityGeometry } from "./geometry/EntityGeometry";
 import "./styles.css";
 
 interface Props {
@@ -27,7 +28,14 @@ export function CadViewer({
 }: Props) {
   const [viewMode, setViewMode] = useState<"default" | "fit">("default");
   const [maximized, setMaximized] = useState(false);
-  const fitView = useMemo(() => calculateFitView(index.entities), [index.entities]);
+  const modelEntities = useMemo(
+    () => index.entities.filter((entity) => entity.layout === "Model"),
+    [index.entities]
+  );
+  const fitView = useMemo(
+    () => calculateFitView(modelEntities),
+    [modelEntities]
+  );
   const activeView = viewMode === "fit" ? fitView : view;
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const highlightSet = new Set(highlightedHandles);
@@ -53,6 +61,36 @@ export function CadViewer({
     window.addEventListener("keydown", exitMaximized);
     return () => window.removeEventListener("keydown", exitMaximized);
   }, [maximized]);
+
+  const renderedEntities = index.schemaVersion === "cad-index/v0.2"
+    ? index.entities
+        .filter((entity) =>
+          entity.layout === "Model" && !hiddenLayers.has(entity.layer)
+        )
+        .map((entity) => (
+          <EntityGeometry
+            entity={entity}
+            highlighted={Boolean(
+              entity.handle && highlightSet.has(entity.handle)
+            )}
+            key={entity.id}
+            schemaVersion="cad-index/v0.2"
+          />
+        ))
+    : index.entities
+        .filter((entity) =>
+          entity.layout === "Model" && !hiddenLayers.has(entity.layer)
+        )
+        .map((entity) => (
+          <EntityGeometry
+            entity={entity}
+            highlighted={Boolean(
+              entity.handle && highlightSet.has(entity.handle)
+            )}
+            key={entity.id}
+            schemaVersion="cad-index/v0.1"
+          />
+        ));
 
   return (
     <main className={`viewer-shell ${maximized ? "viewer-maximized" : ""}`} aria-label="CAD 뷰어">
@@ -90,7 +128,7 @@ export function CadViewer({
           className="cad-canvas"
           viewBox={`${activeView.minX} ${activeView.minY} ${activeView.width} ${activeView.height}`}
           role="img"
-          aria-label={`${index.summary.entityCount}개 객체가 표시된 DWG 도면`}
+          aria-label={`${index.summary.modelSpaceCount}개 객체가 표시된 DWG 도면`}
         >
           <defs>
             <pattern id="minor-grid" width="5" height="5" patternUnits="userSpaceOnUse">
@@ -112,15 +150,7 @@ export function CadViewer({
             />
           )}
           <g transform="translate(0 102) scale(1 -1)">
-            {index.entities
-              .filter((entity) => !hiddenLayers.has(entity.layer))
-              .map((entity) => (
-              <EntityShape
-                entity={entity}
-                highlighted={Boolean(entity.handle && highlightSet.has(entity.handle))}
-                key={entity.id}
-              />
-              ))}
+            {renderedEntities}
           </g>
         </svg>
 
@@ -133,7 +163,7 @@ export function CadViewer({
 
       <div className="viewer-status">
         <span><i className="status-dot ready" /> Indexed</span>
-        <span>{index.summary.entityCount} entities</span>
+        <span>{index.summary.modelSpaceCount} entities</span>
         <span>Model space</span>
         <span className="coordinates">X 50.000&nbsp;&nbsp; Y 50.000&nbsp;&nbsp; Z 0.000</span>
       </div>
@@ -157,27 +187,4 @@ function calculateFitView(entities: CadEntity[]) {
     width: width + padding * 2,
     height: height + padding * 2
   };
-}
-
-function EntityShape({ entity, highlighted }: { entity: CadEntity; highlighted: boolean }) {
-  if (!entity.bbox) return null;
-  const [x1, y1] = entity.bbox.min;
-  const [x2, y2] = entity.bbox.max;
-  const width = Math.max(x2 - x1, 0.7);
-  const height = Math.max(y2 - y1, 0.7);
-  const className = `cad-entity ${highlighted ? "highlighted" : ""}`;
-
-  if (entity.type === "CIRCLE") {
-    return <ellipse className={className} data-handle={entity.handle} cx={(x1 + x2) / 2} cy={(y1 + y2) / 2} rx={width / 2} ry={height / 2} />;
-  }
-  if (entity.type === "ELLIPSE" || entity.type === "ARC") {
-    return <ellipse className={className} data-handle={entity.handle} cx={(x1 + x2) / 2} cy={(y1 + y2) / 2} rx={width / 2} ry={height / 2} fill="none" />;
-  }
-  if (entity.type === "POINT" || entity.type.includes("TEXT")) {
-    return <circle className={className} data-handle={entity.handle} cx={x1} cy={y1} r={entity.type === "POINT" ? 1.8 : 1.2} />;
-  }
-  if (entity.type === "LINE") {
-    return <line className={className} data-handle={entity.handle} x1={x1} y1={y1} x2={x2} y2={y2} />;
-  }
-  return <rect className={className} data-handle={entity.handle} x={x1} y={y1} width={width} height={height} fill="none" />;
 }

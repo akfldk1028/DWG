@@ -9,9 +9,15 @@
 .cad-canvas { display: block; width: 100%; height: 100%; background: #fbfcfd; }
 .minor-grid { fill: none; stroke: #edf1f4; stroke-width: .22; }
 .major-grid { fill: none; stroke: #dde4e9; stroke-width: .35; }
-.cad-entity { vector-effect: non-scaling-stroke; stroke: #334d5b; stroke-width: 1.15; fill: rgba(51,77,91,.025); transition: stroke .1s, stroke-width .1s, fill .1s; }
+.cad-entity, .cad-entity * { vector-effect: non-scaling-stroke; }
+.cad-entity { stroke: #334d5b; stroke-width: 1.15; fill: none; transition: stroke .1s, stroke-width .1s, fill .1s; }
 line.cad-entity { fill: none; }
-.cad-entity.highlighted { stroke: #00a6c8; stroke-width: 3; fill: rgba(0,166,200,.14); filter: drop-shadow(0 0 1.5px rgba(0,166,200,.45)); }
+.cad-entity.highlighted { stroke: #00a6c8; stroke-width: 3; fill: none; filter: drop-shadow(0 0 1.5px rgba(0,166,200,.45)); }
+.cad-entity[data-geometry-kind="point"] { fill: #334d5b; }
+.cad-entity[data-geometry-kind="point"].highlighted { fill: #00a6c8; }
+.cad-entity.geometry-fallback { stroke-dasharray: 2 1.5; opacity: .72; }
+.cad-text { fill: #334d5b; stroke: none; font-family: "Segoe UI", sans-serif; pointer-events: visiblePainted; }
+.cad-text.highlighted { fill: #00a6c8; stroke: none; }
 .axis-gizmo { position: absolute; left: 14px; bottom: 13px; width: 38px; height: 38px; color: #546370; border-left: 2px solid #3ba66d; border-bottom: 2px solid #d85c5c; }
 .axis-gizmo svg { position: absolute; left: -8px; bottom: -8px; background: #fff; }
 .axis-gizmo span { position: absolute; font-size: 8px; font-weight: 800; }

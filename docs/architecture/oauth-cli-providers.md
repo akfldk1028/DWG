@@ -10,7 +10,7 @@ frontend composer
   -> Vite /api proxy
   -> 127.0.0.1:4317 provider gateway
   -> validate provider + message + DWG/DXF path
-  -> ACadSharp or DXF normalized cad-index/v0.1
+  -> ACadSharp v0.2 or legacy DXF v0.1 normalized CAD index
   -> bounded CAD context with handles and bounding boxes
   -> provider-neutral ChatProvider + AbortSignal
        |-- Codex CLI (cached ChatGPT login)

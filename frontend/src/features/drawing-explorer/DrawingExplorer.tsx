@@ -31,6 +31,9 @@ export function DrawingExplorer({
   const visibleLayers = index.layers.filter((layer) =>
     layer.name.toLowerCase().includes(query.trim().toLowerCase())
   );
+  const layouts = [...new Set(
+    index.entities.map((entity) => entity.layout)
+  )];
 
   function toggleSearch() {
     setSearchOpen((open) => {
@@ -78,13 +81,20 @@ export function DrawingExplorer({
           <ChevronDown size={13} />
           <LayoutTemplate size={14} />
           <span>Layouts</span>
-          <span className="count">1</span>
+          <span className="count">{layouts.length}</span>
         </div>
-        <div className="tree-row tree-child selected-row">
-          <span className="tree-guide" />
-          <Box size={13} />
-          <span>Model</span>
-        </div>
+        {layouts.map((layout) => (
+          <div
+            className={`tree-row tree-child layout-row ${
+              layout === "Model" ? "selected-row" : ""
+            }`}
+            key={layout}
+          >
+            <span className="tree-guide" />
+            <Box size={13} />
+            <span>{layout}</span>
+          </div>
+        ))}
       </div>
 
       <div className="tree-section">
@@ -116,7 +126,10 @@ export function DrawingExplorer({
       <div className="explorer-summary">
         <div><span>Objects</span><strong>{index.summary.entityCount}</strong></div>
         <div><span>Parser</span><strong>ACadSharp</strong></div>
-        <div><span>Schema</span><strong>v0.1</strong></div>
+        <div>
+          <span>Schema</span>
+          <strong>{index.schemaVersion.replace("cad-index/", "")}</strong>
+        </div>
       </div>
     </aside>
   );

@@ -1,8 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const artifacts = resolve("../tests/visual/artifacts");
+const indexFixture = JSON.parse(readFileSync(
+  fileURLToPath(
+    new URL("../../public/data/export_sample.index.json", import.meta.url)
+  ),
+  "utf8"
+)) as {
+  summary: { modelSpaceCount: number };
+  layers: Array<{ name: string; entityCount: number }>;
+  entities: Array<{ layout: string; layer: string }>;
+  unsupported: unknown[];
+};
+const modelEntityCount = indexFixture.summary.modelSpaceCount;
+const visibleDefaultLayerCount = indexFixture.entities.filter(
+  (entity) => entity.layout === "Model" && entity.layer === "0"
+).length;
+const defaultLayerEntityCount = indexFixture.layers.find(
+  (layer) => layer.name === "0"
+)!.entityCount;
+const inspectionWarningCount = indexFixture.unsupported.length + 1;
 
 async function mockProviderStatus(page: Page) {
   await page.route("**/api/providers", (route) =>
@@ -95,7 +116,7 @@ for (const viewport of [
 
     await expect(page.getByText("export_sample.dwg", { exact: true }).first()).toBeVisible();
     await expect(page.getByLabel("CAD 뷰어")).toBeVisible();
-    await expect(page.locator(".cad-entity")).toHaveCount(22);
+    await expect(page.locator(".cad-entity")).toHaveCount(modelEntityCount);
     await expect(page.getByText("Drawing Index", { exact: true })).toBeVisible();
     const findingEmptyBox = await page.getByText("Run agents를 눌러 실제 도면 검사를 실행하세요.").boundingBox();
     const evidenceBox = await page.getByTestId("evidence-card").boundingBox();
@@ -116,18 +137,28 @@ test("real agent run exposes grounded findings, evidence, and warnings", async (
 
   await page.getByRole("button", { name: "Run agents" }).click();
   await expect(page.getByText("VERIFIED RESULT")).toBeVisible();
-  await expect(page.getByText("22개 주요 객체")).toBeVisible();
-  await expect(page.locator(".cad-entity.highlighted")).toHaveCount(22);
+  await expect(page.getByText(
+    `${defaultLayerEntityCount}개 주요 객체`
+  )).toBeVisible();
+  await expect(page.locator(".cad-entity.highlighted"))
+    .toHaveCount(visibleDefaultLayerCount);
   await capture(page, "real-inspection-1440x900");
+  await page.screenshot({
+    path: resolve(artifacts, "geometry-inspection-1440x900.png"),
+    fullPage: true
+  });
 
-  await page.getByRole("button", { name: /0 레이어 검사 결과 22개/ }).click();
+  await page.locator(".finding-row").click();
   await expect(page.getByTestId("evidence-card")).toContainText("239");
   await expect(page.locator('[data-handle="239"]')).toHaveClass(/highlighted/);
   await capture(page, "finding-evidence-1440x900");
 
   await page.getByRole("button", { name: /Warnings/ }).click();
-  await expect(page.getByText("경고가 없습니다.")).toBeVisible();
-  await capture(page, "no-warning-1440x900");
+  await expect(page.locator(".warning-card"))
+    .toHaveCount(inspectionWarningCount);
+  await expect(page.locator(".warning-card").first())
+    .toContainText("unsupported-entities-present");
+  await capture(page, "geometry-warning-1440x900");
   await assertWorkspaceFits(page);
 });
 

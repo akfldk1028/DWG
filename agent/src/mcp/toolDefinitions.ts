@@ -31,7 +31,7 @@ export const CAD_TOOL_DEFINITIONS: readonly CadToolDefinition[] = [
   },
   {
     name: "cad.build_index",
-    description: "Build or retrieve the normalized cad-index/v0.1 for an opened drawing.",
+    description: "Build or retrieve the normalized versioned CAD index for an opened drawing.",
     inputSchema: { drawingId }
   },
   {
