@@ -8,10 +8,22 @@ const execFileAsync = promisify(execFile);
 const parserProject = resolve(
   "backend/src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj"
 );
+const indexByPath = new Map<string, Promise<CadEntityIndex>>();
 
 export async function buildIndexFromDwgFile(path: string): Promise<CadEntityIndex> {
   const fullPath = resolve(path);
+  const existing = indexByPath.get(fullPath);
+  if (existing) return existing;
 
+  const pending = runDwgParser(fullPath).catch((error) => {
+    indexByPath.delete(fullPath);
+    throw error;
+  });
+  indexByPath.set(fullPath, pending);
+  return pending;
+}
+
+async function runDwgParser(fullPath: string): Promise<CadEntityIndex> {
   let stdout: string;
   try {
     const result = await execFileAsync(

@@ -97,6 +97,11 @@ for (const viewport of [
     await expect(page.getByLabel("CAD 뷰어")).toBeVisible();
     await expect(page.locator(".cad-entity")).toHaveCount(22);
     await expect(page.getByText("Drawing Index", { exact: true })).toBeVisible();
+    const findingEmptyBox = await page.getByText("Run agents를 눌러 실제 도면 검사를 실행하세요.").boundingBox();
+    const evidenceBox = await page.getByTestId("evidence-card").boundingBox();
+    expect(findingEmptyBox).not.toBeNull();
+    expect(evidenceBox).not.toBeNull();
+    expect(Math.abs(findingEmptyBox!.y - evidenceBox!.y)).toBeLessThanOrEqual(1);
     expect(consoleErrors).toEqual([]);
     expect(failedResponses).toEqual([]);
     await assertWorkspaceFits(page);
@@ -104,28 +109,25 @@ for (const viewport of [
   });
 }
 
-test("agent run, highlight, evidence, and warning states", async ({ page }) => {
+test("real agent run exposes grounded findings, evidence, and warnings", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockProviderStatus(page);
   await page.goto("/");
 
   await page.getByRole("button", { name: "Run agents" }).click();
-  await expect(page.getByText("RUNNING")).toBeVisible();
-  await capture(page, "agent-running-1440x900");
-
-  await page.getByRole("button", { name: "Highlight" }).click();
-  await expect(page.locator(".cad-entity.highlighted")).toHaveCount(4);
   await expect(page.getByText("VERIFIED RESULT")).toBeVisible();
-  await capture(page, "layer-highlighted-1440x900");
+  await expect(page.getByText("22개 주요 객체")).toBeVisible();
+  await expect(page.locator(".cad-entity.highlighted")).toHaveCount(22);
+  await capture(page, "real-inspection-1440x900");
 
-  await page.getByRole("button", { name: /0 레이어 주요 형상 확인/ }).click();
-  await expect(page.getByTestId("evidence-card")).toContainText("23D");
-  await expect(page.locator('[data-handle="23D"]')).toHaveClass(/highlighted/);
+  await page.getByRole("button", { name: /0 레이어 검사 결과 22개/ }).click();
+  await expect(page.getByTestId("evidence-card")).toContainText("239");
+  await expect(page.locator('[data-handle="239"]')).toHaveClass(/highlighted/);
   await capture(page, "finding-evidence-1440x900");
 
-  await page.getByRole("button", { name: "Warning", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("bbox-not-implemented");
-  await capture(page, "unsupported-warning-1440x900");
+  await page.getByRole("button", { name: /Warnings/ }).click();
+  await expect(page.getByText("경고가 없습니다.")).toBeVisible();
+  await capture(page, "no-warning-1440x900");
   await assertWorkspaceFits(page);
 });
 

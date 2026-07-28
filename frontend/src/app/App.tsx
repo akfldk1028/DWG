@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Command,
-  FileSearch,
   FolderOpen,
   PanelRight,
   Play,
@@ -51,9 +50,10 @@ export function App() {
     inspection.run?.findings.flatMap((finding) => finding.handle ? [finding.handle] : []) ?? []
   );
 
-  function chooseScenario(next: Scenario) {
-    setScenario(next);
-    if (next !== "finding") setSelectedHandle(null);
+  function resetInspection() {
+    inspection.reset();
+    setSelectedHandle(null);
+    setScenario("loaded");
   }
 
   async function runAgents() {
@@ -137,11 +137,9 @@ export function App() {
       </header>
 
       <nav className="scenario-bar" aria-label="검증 시나리오">
-        <span><Command size={13} /> VISUAL LOOP</span>
-        <button className={scenario === "loaded" ? "active" : ""} onClick={() => chooseScenario("loaded")}><RotateCcw size={12} /> Loaded</button>
+        <span><Command size={13} /> REAL INSPECTION</span>
+        <button className={scenario === "loaded" ? "active" : ""} onClick={resetInspection}><RotateCcw size={12} /> Loaded</button>
         <button className={scenario === "running" ? "active" : ""} onClick={() => void runAgents()}><Play size={12} /> Run agents</button>
-        <button className={scenario === "highlighted" ? "active" : ""} onClick={() => chooseScenario("highlighted")}><FileSearch size={12} /> Highlight</button>
-        <button className={scenario === "warning" ? "active" : ""} onClick={() => chooseScenario("warning")}>Warning</button>
       </nav>
 
       <div className={`workspace-grid ${agentPanelOpen ? "" : "agent-panel-hidden"}`}>

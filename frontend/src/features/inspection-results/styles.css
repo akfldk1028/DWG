@@ -5,6 +5,7 @@
 .dock-tab.has-warning { color: var(--warning); }
 .dock-content { min-height: 0; display: grid; grid-template-columns: minmax(300px, 1.25fr) minmax(300px, 1fr); gap: 8px; padding: 8px; overflow: hidden; background: #f7f9fa; }
 .dock-empty { grid-column: 1 / -1; display: grid; place-items: center; color: #8a969f; font-size: 9px; }
+.dock-empty.finding-empty { grid-column: auto; height: 104px; }
 .finding-row { min-width: 0; height: 59px; display: grid; grid-template-columns: 24px minmax(160px, 1fr) auto auto; align-items: center; gap: 8px; padding: 7px 9px; text-align: left; border: 1px solid var(--border); border-radius: 5px; background: #fff; cursor: pointer; }
 .finding-row:hover, .finding-row.selected { border-color: #87c9d8; box-shadow: 0 0 0 1px #d5f0f5; }
 .finding-severity { width: 22px; height: 22px; display: grid; place-items: center; color: var(--success); background: #e8f6ef; border-radius: 50%; }

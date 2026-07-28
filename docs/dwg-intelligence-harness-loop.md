@@ -289,3 +289,41 @@ DXF 샘플 열기
 - 샘플 DXF에서 entity index JSON 생성
 - layer 검색 결과가 `id`, `handle`, `type`, `layer`, `bbox`를 포함
 - unsupported entity가 있으면 실패하지 않고 요약에 집계
+
+## 10. 2026-07-28 실제 브라우저 검사 루프
+
+현재 프론트 검사는 데모 scenario 문자열이 아니라 다음 경로를 사용한다.
+
+```text
+GET /api/drawing
+  -> 서버가 관리하는 동일 DWG의 cad-index/v0.1
+  -> Run agents
+  -> POST /api/inspections
+  -> createInspectionOrchestrator
+  -> cad.open_drawing / cad.build_index / cad.find_entities_by_layer
+  -> verifyMatches
+  -> events / findings / issues / warnings
+  -> viewer highlight + evidence dock
+```
+
+브라우저는 로컬 파일 경로를 검사 API로 보내지 않는다. 서버의 `DrawingWorkspace`가 workspace 내부 DWG만 선택하며, workspace 밖 상대경로는 거부한다.
+
+검증 명령:
+
+```powershell
+$env:DWG_FRONTEND_PORT='4174'
+$env:DWG_GATEWAY_PORT='4318'
+Set-Location frontend
+npx playwright test
+```
+
+`DWG_FRONTEND_PORT`와 `DWG_GATEWAY_PORT`는 기존 개발 서버를 종료하지 않고 격리된 worktree 검증을 실행하기 위한 포트다.
+
+유지할 시각 증거:
+
+- `tests/visual/artifacts/loaded-1440x900.png`
+- `tests/visual/artifacts/real-inspection-1440x900.png`
+- `tests/visual/artifacts/finding-evidence-1440x900.png`
+- `tests/visual/artifacts/no-warning-1440x900.png`
+
+실제 DWG 인덱스는 경로별 in-flight Promise를 공유한다. 병렬 브라우저가 같은 도면을 요청해도 `dotnet run` 빌드가 중복 실행되지 않으며, parser 실패 시에는 캐시를 제거해 다음 요청이 재시도할 수 있다.

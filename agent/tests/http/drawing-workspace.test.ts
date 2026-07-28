@@ -12,3 +12,17 @@ test("drawing workspace rejects configured paths outside its root", () => {
     /outside workspace/i
   );
 });
+
+test("drawing workspace shares one indexed result across concurrent readers", async () => {
+  const workspaceRoot = process.cwd();
+  const drawingWorkspace = createDrawingWorkspace(
+    workspaceRoot,
+    "tests/fixtures/dwg/export_sample.dwg"
+  );
+
+  const indexes = await Promise.all(
+    Array.from({ length: 5 }, () => drawingWorkspace.getIndex())
+  );
+
+  assert.equal(indexes.every((index) => index === indexes[0]), true);
+});

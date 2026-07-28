@@ -9,6 +9,7 @@ test("workspace keyboard and outside-click controls remain stable", async ({ pag
   );
   await page.goto("/");
 
+  await expect(page.getByLabel("전체 도면 검색")).toBeVisible();
   await page.keyboard.press("Control+K");
   await expect(page.getByLabel("전체 도면 검색")).toBeFocused();
 

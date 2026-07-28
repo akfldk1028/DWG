@@ -81,4 +81,8 @@ test("runs the real inspection API and renders returned evidence", async ({ page
   await page.getByRole("button", { name: /0 레이어 검사 결과 5개/ }).click();
   await expect(page.getByTestId("evidence-card")).toContainText("239");
   await expect(page.locator('[data-handle="239"]')).toHaveClass(/highlighted/);
+
+  await page.getByRole("button", { name: "Loaded" }).click();
+  await expect(page.locator(".cad-entity.highlighted")).toHaveCount(0);
+  await expect(page.getByText("VERIFIED RESULT")).toBeHidden();
 });
