@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "generate:fixture": "node scripts/generate-fixture.mjs",
+    "capture:docs": "playwright test --config playwright.docs.config.ts",
     "test:e2e": "playwright test",
     "test:live-oauth-browser": "playwright test --config playwright.live.config.ts"
   },
