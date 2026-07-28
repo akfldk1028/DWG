@@ -1,8 +1,13 @@
+import type {
+  InspectionCheck,
+  InspectionEvent,
+  InspectionRun
+} from "@dwg/contracts";
+
 import { createCadToolRuntime } from "../application/cad-tools/runtime.js";
 import type { CadToolMatch } from "../domain/cad-index/types.js";
 import {
-  verifyMatches,
-  type EvidenceIssue
+  verifyMatches
 } from "./evidenceVerifier.js";
 import type { AgentId } from "./types.js";
 
@@ -12,30 +17,9 @@ export interface OrchestrationCadRuntime {
   call(name: string, args: ToolArguments): Promise<unknown>;
 }
 
-export type InspectionCheck =
-  | { kind: "layer"; value: string }
-  | { kind: "type"; value: string }
-  | { kind: "text"; value: string; regex?: boolean };
-
 export interface InspectionRequest {
   path: string;
   checks: readonly InspectionCheck[];
-}
-
-export interface AgentEvent {
-  sequence: number;
-  agentId: AgentId;
-  action: string;
-  status: "planned" | "completed" | "rejected";
-}
-
-export interface InspectionRun {
-  status: "completed" | "rejected";
-  drawingId: string;
-  events: AgentEvent[];
-  findings: CadToolMatch[];
-  issues: EvidenceIssue[];
-  warnings: string[];
 }
 
 export function createInspectionOrchestrator(
@@ -43,11 +27,11 @@ export function createInspectionOrchestrator(
 ) {
   return {
     async run(request: InspectionRequest): Promise<InspectionRun> {
-      const events: AgentEvent[] = [];
+      const events: InspectionEvent[] = [];
       const pushEvent = (
         agentId: AgentId,
         action: string,
-        status: AgentEvent["status"]
+        status: InspectionEvent["status"]
       ) => {
         events.push({
           sequence: events.length + 1,
