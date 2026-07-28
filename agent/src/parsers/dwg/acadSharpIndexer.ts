@@ -32,6 +32,7 @@ async function runDwgParser(fullPath: string): Promise<CadEntityIndex> {
         "run",
         "--project",
         parserProject,
+        "--no-build",
         "--no-launch-profile",
         "--",
         "index",

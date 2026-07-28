@@ -4,10 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:parser": "dotnet build backend/src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj --nologo",
+    "pretest": "npm run build:parser",
     "test": "node --import tsx --test \"agent/**/*.test.ts\" \"frontend/tests/unit/**/*.test.ts\"",
     "harness": "tsx agent/harness/run-case.ts",
     "mcp": "tsx agent/src/mcp/stdio.ts",
+    "pregateway": "npm run build:parser",
     "gateway": "tsx agent/src/http/gateway.ts",
+    "preproviders:smoke": "npm run build:parser",
     "providers:smoke": "tsx agent/harness/provider-smoke.ts"
   },
   "dependencies": {

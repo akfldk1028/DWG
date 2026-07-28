@@ -1,4 +1,5 @@
 export type ProviderId = "codex" | "claude";
+export const MAX_PROVIDER_MESSAGE_CHARS = 8_000;
 
 export interface ProviderStatus {
   id: ProviderId;
@@ -39,6 +40,7 @@ export function isProviderChatPayload(value: unknown): value is ProviderChatPayl
     request.drawingPath.length > 0 &&
     typeof request.message === "string" &&
     request.message.length > 0 &&
+    request.message.length <= MAX_PROVIDER_MESSAGE_CHARS &&
     (
       request.sessionId === undefined ||
       request.sessionId === null ||

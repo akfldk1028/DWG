@@ -4,7 +4,8 @@ import test from "node:test";
 import {
   isInspectionPayload,
   isProviderChatPayload,
-  isProviderSessionId
+  isProviderSessionId,
+  MAX_PROVIDER_MESSAGE_CHARS
 } from "@dwg/contracts";
 
 test("public provider contract accepts only bounded UUID sessions", () => {
@@ -23,6 +24,20 @@ test("public provider contract accepts only bounded UUID sessions", () => {
     provider: "other",
     drawingPath: "drawing.dwg",
     message: "도면 설명"
+  }), false);
+});
+
+test("public provider contract rejects messages above the shared limit", () => {
+  assert.equal(MAX_PROVIDER_MESSAGE_CHARS, 8_000);
+  assert.equal(isProviderChatPayload({
+    provider: "codex",
+    drawingPath: "drawing.dwg",
+    message: "x".repeat(MAX_PROVIDER_MESSAGE_CHARS)
+  }), true);
+  assert.equal(isProviderChatPayload({
+    provider: "codex",
+    drawingPath: "drawing.dwg",
+    message: "x".repeat(MAX_PROVIDER_MESSAGE_CHARS + 1)
   }), false);
 });
 

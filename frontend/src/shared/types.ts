@@ -1,5 +1,7 @@
 export type Scenario = "loaded" | "running" | "highlighted" | "finding" | "warning";
 
+export { MAX_PROVIDER_MESSAGE_CHARS } from "@dwg/contracts";
+
 export type {
   CadEntity,
   CadIndex,

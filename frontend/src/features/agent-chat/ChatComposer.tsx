@@ -7,7 +7,11 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { ProviderId } from "../../shared/types";
+import {
+  MAX_PROVIDER_MESSAGE_CHARS,
+  type ProviderId
+} from "../../shared/types";
+import { buildAttachmentMessage } from "./attachmentMessage";
 
 interface Props {
   provider: ProviderId;
@@ -47,15 +51,19 @@ export function ChatComposer({
 
   async function attachFile(file: File | undefined) {
     if (!file) return;
-    const content = await file.text();
-    const clippedContent = content.slice(0, 12_000);
-    const block = `\n\n[첨부: ${file.name}]\n${clippedContent}${content.length > clippedContent.length ? "\n[내용 일부 생략]" : ""}`;
-    const messageWithoutPreviousAttachment = attachmentBlock
-      ? message.replace(attachmentBlock, "")
-      : message;
+    const readableSlice = file.slice(0, MAX_PROVIDER_MESSAGE_CHARS * 4);
+    const content = await readableSlice.text();
+    const next = buildAttachmentMessage({
+      message,
+      previousAttachmentBlock: attachmentBlock,
+      fileName: file.name,
+      content,
+      sourceWasTruncated: readableSlice.size < file.size
+    });
+    if (!next.attachmentBlock) return;
     setAttachmentName(file.name);
-    setAttachmentBlock(block);
-    onMessageChange(`${messageWithoutPreviousAttachment.trimEnd()}${block}`);
+    setAttachmentBlock(next.attachmentBlock);
+    onMessageChange(next.message);
   }
 
   function removeAttachment() {
@@ -70,6 +78,7 @@ export function ChatComposer({
       <input
         aria-label="AI 질문"
         disabled={loading}
+        maxLength={MAX_PROVIDER_MESSAGE_CHARS}
         onChange={(event) => onMessageChange(event.target.value)}
         placeholder="도면에 대해 질문하세요…"
         ref={messageInputRef}

@@ -1,5 +1,7 @@
 import { extname } from "node:path";
 
+import { MAX_PROVIDER_MESSAGE_CHARS } from "@dwg/contracts";
+
 import type { CadEntityIndex } from "../../domain/cad-index/types.js";
 import type {
   ChatProvider,
@@ -60,5 +62,7 @@ function validateRequest(request: GroundedChatRequest) {
     throw new Error(`Unsupported drawing format: ${extension || "(none)"}`);
   }
   if (!request.message.trim()) throw new Error("Message is required");
-  if (request.message.length > 8_000) throw new Error("Message exceeds 8000 characters");
+  if (request.message.length > MAX_PROVIDER_MESSAGE_CHARS) {
+    throw new Error(`Message exceeds ${MAX_PROVIDER_MESSAGE_CHARS} characters`);
+  }
 }
