@@ -1,12 +1,12 @@
 import { Crosshair, Focus, Grid3X3, Maximize2, Minimize2, MousePointer2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { CadEntity, CadIndex, Scenario } from "../../shared/types";
+import type { CadEntity, CadIndex } from "../../shared/types";
 import "./styles.css";
 
 interface Props {
   index: CadIndex;
-  scenario: Scenario;
+  highlightedHandles: ReadonlySet<string>;
   selectedHandle: string | null;
   searchQuery: string;
   gridVisible: boolean;
@@ -18,7 +18,7 @@ const view = { minX: -24, minY: -12, width: 148, height: 126 };
 
 export function CadViewer({
   index,
-  scenario,
+  highlightedHandles,
   selectedHandle,
   searchQuery,
   gridVisible,
@@ -30,10 +30,8 @@ export function CadViewer({
   const fitView = useMemo(() => calculateFitView(index.entities), [index.entities]);
   const activeView = viewMode === "fit" ? fitView : view;
   const normalizedQuery = searchQuery.trim().toLowerCase();
-  const highlightSet =
-    scenario === "highlighted"
-      ? new Set(["239", "23A", "23B", "23D"])
-      : new Set(selectedHandle ? [selectedHandle] : []);
+  const highlightSet = new Set(highlightedHandles);
+  if (selectedHandle) highlightSet.add(selectedHandle);
 
   if (normalizedQuery) {
     index.entities.forEach((entity) => {

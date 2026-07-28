@@ -21,12 +21,14 @@ import { DrawingExplorer } from "../features/drawing-explorer/DrawingExplorer";
 import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
 import { useLayerVisibility } from "../features/drawing-explorer/useLayerVisibility";
 import { InspectionDock } from "../features/inspection-results/InspectionDock";
+import { useInspectionRun } from "../features/inspection-results/useInspectionRun";
 import type { Scenario } from "../shared/types";
 import { useWorkspaceControls } from "./useWorkspaceControls";
 
 export function App() {
   const { index, error } = useDrawingIndex();
   const chat = useProviderChat();
+  const inspection = useInspectionRun();
   const {
     agentPanelOpen,
     activePopover,
@@ -45,10 +47,22 @@ export function App() {
   const [scenario, setScenario] = useState<Scenario>("loaded");
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const selected = index?.entities.find((entity) => entity.handle === selectedHandle) ?? null;
+  const highlightedHandles = new Set(
+    inspection.run?.findings.flatMap((finding) => finding.handle ? [finding.handle] : []) ?? []
+  );
 
   function chooseScenario(next: Scenario) {
     setScenario(next);
-    setSelectedHandle(next === "finding" ? "23D" : null);
+    if (next !== "finding") setSelectedHandle(null);
+  }
+
+  async function runAgents() {
+    setScenario("running");
+    setSelectedHandle(null);
+    const result = await inspection.start([{ kind: "layer", value: "0" }]);
+    if (result) {
+      setScenario(result.warnings.length > 0 ? "warning" : "highlighted");
+    }
   }
 
   if (error) {
@@ -125,7 +139,7 @@ export function App() {
       <nav className="scenario-bar" aria-label="검증 시나리오">
         <span><Command size={13} /> VISUAL LOOP</span>
         <button className={scenario === "loaded" ? "active" : ""} onClick={() => chooseScenario("loaded")}><RotateCcw size={12} /> Loaded</button>
-        <button className={scenario === "running" ? "active" : ""} onClick={() => chooseScenario("running")}><Play size={12} /> Run agents</button>
+        <button className={scenario === "running" ? "active" : ""} onClick={() => void runAgents()}><Play size={12} /> Run agents</button>
         <button className={scenario === "highlighted" ? "active" : ""} onClick={() => chooseScenario("highlighted")}><FileSearch size={12} /> Highlight</button>
         <button className={scenario === "warning" ? "active" : ""} onClick={() => chooseScenario("warning")}>Warning</button>
       </nav>
@@ -138,16 +152,18 @@ export function App() {
         />
         <CadViewer
           gridVisible={gridVisible}
+          highlightedHandles={highlightedHandles}
           hiddenLayers={layerVisibility.hiddenLayers}
           index={index}
           onGridVisibleChange={setGridVisible}
-          scenario={scenario}
           searchQuery={searchQuery}
           selectedHandle={selectedHandle}
         />
         {agentPanelOpen && (
           <AgentWorkspace
-            scenario={scenario}
+            inspectionRun={inspection.run}
+            inspectionLoading={inspection.loading}
+            inspectionError={inspection.error}
             providers={chat.providers}
             selectedProvider={chat.selectedProvider}
             onProviderChange={chat.setSelectedProvider}
@@ -162,9 +178,12 @@ export function App() {
           />
         )}
         <InspectionDock
-          scenario={scenario}
+          run={inspection.run}
           selected={selected}
-          onSelectFinding={() => chooseScenario("finding")}
+          onSelectFinding={(handle) => {
+            setSelectedHandle(handle);
+            setScenario("finding");
+          }}
         />
       </div>
     </div>

@@ -3,6 +3,11 @@ export type Scenario = "loaded" | "running" | "highlighted" | "finding" | "warni
 export type {
   CadEntity,
   CadIndex,
+  InspectionCheck,
+  InspectionEvent,
+  InspectionFinding,
+  InspectionPayload,
+  InspectionRun,
   PointBox,
   ProviderChatPayload,
   ProviderChatResult,

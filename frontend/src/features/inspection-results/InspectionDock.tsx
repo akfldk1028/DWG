@@ -1,37 +1,45 @@
 import { AlertTriangle, Box, CheckCircle2, FileCheck2, ScanSearch } from "lucide-react";
 import { useState } from "react";
 
-import type { CadEntity, Scenario } from "../../shared/types";
+import type { CadEntity, InspectionRun } from "../../shared/types";
 import "./styles.css";
 
 interface Props {
-  scenario: Scenario;
+  run: InspectionRun | null;
   selected: CadEntity | null;
-  onSelectFinding: () => void;
+  onSelectFinding: (handle: string) => void;
 }
 
-export function InspectionDock({ scenario, selected, onSelectFinding }: Props) {
-  const warning = scenario === "warning";
+export function InspectionDock({ run, selected, onSelectFinding }: Props) {
+  const firstFinding = run?.findings.find((finding) => finding.handle) ?? null;
+  const warnings = run?.warnings ?? [];
   const [activeTab, setActiveTab] = useState<"overview" | "evidence" | "warnings">("overview");
 
   return (
     <section className="inspection-dock" aria-label="검사 결과">
       <div className="dock-tabs">
-        <button className={`dock-tab ${activeTab === "overview" ? "active" : ""}`} onClick={() => setActiveTab("overview")}><ScanSearch size={13} /> Findings <b>1</b></button>
+        <button className={`dock-tab ${activeTab === "overview" ? "active" : ""}`} onClick={() => setActiveTab("overview")}><ScanSearch size={13} /> Findings <b>{run?.findings.length ?? 0}</b></button>
         <button className={`dock-tab ${activeTab === "evidence" ? "active" : ""}`} onClick={() => setActiveTab("evidence")}><FileCheck2 size={13} /> Evidence <b>{selected ? 1 : 0}</b></button>
-        <button className={`dock-tab ${activeTab === "warnings" ? "active" : ""} ${warning ? "has-warning" : ""}`} onClick={() => setActiveTab("warnings")}><AlertTriangle size={13} /> Warnings <b>{warning ? 1 : 0}</b></button>
+        <button className={`dock-tab ${activeTab === "warnings" ? "active" : ""} ${warnings.length > 0 ? "has-warning" : ""}`} onClick={() => setActiveTab("warnings")}><AlertTriangle size={13} /> Warnings <b>{warnings.length}</b></button>
       </div>
 
       <div className="dock-content">
-        {activeTab === "overview" && <button className={`finding-row ${selected ? "selected" : ""}`} onClick={onSelectFinding}>
+        {activeTab === "overview" && firstFinding && <button
+          aria-label={`${firstFinding.layer} 레이어 검사 결과 ${run?.findings.length ?? 0}개`}
+          className={`finding-row ${selected ? "selected" : ""}`}
+          onClick={() => onSelectFinding(firstFinding.handle!)}
+        >
           <span className="finding-severity"><CheckCircle2 size={14} /></span>
           <span className="finding-main">
-            <strong>0 레이어 주요 형상 확인</strong>
-            <small>검색 결과 4개 · 증거 검증 통과</small>
+            <strong>{firstFinding.layer} 레이어 주요 형상 확인</strong>
+            <small>검색 결과 {run?.findings.length ?? 0}개 · 증거 검증 통과</small>
           </span>
           <span className="finding-rule">IDX-LAYER-001</span>
           <span className="finding-status">VERIFIED</span>
         </button>}
+        {activeTab === "overview" && !firstFinding && (
+          <div className="dock-empty">Run agents를 눌러 실제 도면 검사를 실행하세요.</div>
+        )}
 
         {(activeTab === "overview" || activeTab === "evidence") && <div className="evidence-card" data-testid="evidence-card">
           {selected ? (
@@ -49,14 +57,13 @@ export function InspectionDock({ scenario, selected, onSelectFinding }: Props) {
           )}
         </div>}
 
-        {(activeTab === "overview" || activeTab === "warnings") && warning && (
-          <div className="warning-card" role="alert">
+        {(activeTab === "overview" || activeTab === "warnings") && warnings.map((warning) => (
+          <div className="warning-card" role="alert" key={warning}>
             <AlertTriangle size={14} />
-            <div><strong>부분 지원 객체</strong><span>AEC 프록시 객체의 형상 경계를 읽을 수 없습니다.</span></div>
-            <code>bbox-not-implemented</code>
+            <div><strong>부분 지원 객체</strong><span>{warning}</span></div>
           </div>
-        )}
-        {activeTab === "warnings" && !warning && <div className="dock-empty">경고가 없습니다.</div>}
+        ))}
+        {activeTab === "warnings" && warnings.length === 0 && <div className="dock-empty">경고가 없습니다.</div>}
       </div>
     </section>
   );

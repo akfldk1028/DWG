@@ -11,17 +11,19 @@ import { useEffect, useRef } from "react";
 
 import { agents } from "../../shared/agents";
 import type {
+  InspectionRun,
   ProviderChatResult,
   ProviderId,
-  ProviderStatus,
-  Scenario
+  ProviderStatus
 } from "../../shared/types";
 import { ChatComposer } from "./ChatComposer";
 import { ProviderSwitch } from "./ProviderSwitch";
 import "./styles.css";
 
 interface Props {
-  scenario: Scenario;
+  inspectionRun: InspectionRun | null;
+  inspectionLoading: boolean;
+  inspectionError: string | null;
   providers: ProviderStatus[];
   selectedProvider: ProviderId;
   onProviderChange(provider: ProviderId): void;
@@ -36,7 +38,9 @@ interface Props {
 }
 
 export function AgentWorkspace({
-  scenario,
+  inspectionRun,
+  inspectionLoading,
+  inspectionError,
   providers,
   selectedProvider,
   onProviderChange,
@@ -49,8 +53,6 @@ export function AgentWorkspace({
   chatResult,
   chatError
 }: Props) {
-  const running = scenario === "running";
-  const completed = scenario === "highlighted" || scenario === "finding" || scenario === "warning";
   const liveResponseRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,25 +91,40 @@ export function AgentWorkspace({
         </div>
 
         <div className="tool-stack" aria-label="에이전트 실행 상태">
-          <ToolStep label="drawing-index-agent" tool="cad.build_index" state="done" />
-          <ToolStep
-            label="search-agent"
-            tool="cad.find_entities_by_layer"
-            state={running ? "running" : completed ? "done" : "idle"}
-          />
-          <ToolStep
-            label="evidence-agent"
-            tool="verify handles + bbox"
-            state={completed ? "done" : "idle"}
-          />
+          {inspectionLoading && (
+            <ToolStep label="orchestrator" tool="POST /api/inspections" state="running" />
+          )}
+          {!inspectionLoading && !inspectionRun && (
+            <ToolStep label="orchestrator" tool="검사 실행 대기" state="idle" />
+          )}
+          {inspectionRun?.events.map((event) => (
+            <ToolStep
+              key={`${event.sequence}:${event.agentId}:${event.action}`}
+              label={event.agentId}
+              tool={event.action}
+              state={
+                event.status === "completed"
+                  ? "done"
+                  : event.status === "rejected"
+                    ? "rejected"
+                    : "idle"
+              }
+            />
+          ))}
         </div>
 
-        {completed && (
+        {inspectionRun?.status === "completed" && (
           <div className="message agent-message response-message">
             <div className="message-label"><Check size={12} /> VERIFIED RESULT</div>
-            <p><strong>4개 주요 객체</strong>를 확인했습니다. 모든 결과에 handle, type, layer, bbox가 연결되어 있습니다.</p>
+            <p><strong>{inspectionRun.findings.length}개 주요 객체</strong>를 확인했습니다. 모든 결과에 handle, type, layer, bbox가 연결되어 있습니다.</p>
           </div>
         )}
+        {inspectionRun?.status === "rejected" && (
+          <div className="chat-error" role="alert">
+            증거가 불완전하여 검사 결과가 거부됐습니다.
+          </div>
+        )}
+        {inspectionError && <div className="chat-error" role="alert">{inspectionError}</div>}
 
         {chatResult && (
           <div
@@ -146,12 +163,12 @@ export function AgentWorkspace({
   );
 }
 
-function ToolStep({ label, tool, state }: { label: string; tool: string; state: "idle" | "running" | "done" }) {
+function ToolStep({ label, tool, state }: { label: string; tool: string; state: "idle" | "running" | "done" | "rejected" }) {
   return (
     <div className={`tool-step ${state}`}>
       {state === "running" ? <LoaderCircle className="spin" size={14} /> : state === "done" ? <Check size={14} /> : <ChevronRight size={14} />}
       <div><strong>{label}</strong><span><TerminalSquare size={11} /> {tool}</span></div>
-      <em>{state === "running" ? "RUNNING" : state === "done" ? "DONE" : "QUEUED"}</em>
+      <em>{state === "running" ? "RUNNING" : state === "done" ? "DONE" : state === "rejected" ? "REJECTED" : "QUEUED"}</em>
     </div>
   );
 }
