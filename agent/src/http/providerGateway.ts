@@ -1,5 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { isProviderChatPayload } from "@dwg/contracts";
+import {
+  isInspectionPayload,
+  isProviderChatPayload,
+  type CadEntityIndex,
+  type InspectionPayload,
+  type InspectionRun
+} from "@dwg/contracts";
 
 import type {
   GroundedChatRequest
@@ -12,6 +18,8 @@ import type {
 const maxBodyBytes = 64 * 1024;
 
 interface GatewayDependencies {
+  getDrawing(): Promise<CadEntityIndex>;
+  inspect(payload: InspectionPayload, signal?: AbortSignal): Promise<InspectionRun>;
   getStatuses(): Promise<ProviderStatus[]>;
   chat(request: GroundedChatRequest, signal?: AbortSignal): Promise<ProviderChatResult>;
 }
@@ -27,17 +35,27 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
       if (request.method === "GET" && url.pathname === "/api/providers") {
         return sendJson(response, 200, { providers: await dependencies.getStatuses() });
       }
+      if (request.method === "GET" && url.pathname === "/api/drawing") {
+        return sendJson(response, 200, await dependencies.getDrawing());
+      }
+      if (request.method === "POST" && url.pathname === "/api/inspections") {
+        const body = await readJsonBody(request);
+        if (!isInspectionPayload(body)) {
+          return sendJson(response, 400, { error: "Invalid inspection request" });
+        }
+        const controller = createRequestAbortController(request, response);
+        return sendJson(
+          response,
+          200,
+          await dependencies.inspect(body, controller.signal)
+        );
+      }
       if (request.method === "POST" && url.pathname === "/api/chat") {
         const body = await readJsonBody(request);
         if (!isProviderChatPayload(body)) {
           return sendJson(response, 400, { error: "Invalid chat request" });
         }
-        const controller = new AbortController();
-        const abort = () => controller.abort();
-        request.once("aborted", abort);
-        response.once("close", () => {
-          if (!response.writableEnded) abort();
-        });
+        const controller = createRequestAbortController(request, response);
         return sendJson(
           response,
           200,
@@ -51,6 +69,19 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
       return sendJson(response, status, { error: message });
     }
   });
+}
+
+function createRequestAbortController(
+  request: IncomingMessage,
+  response: ServerResponse
+) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  request.once("aborted", abort);
+  response.once("close", () => {
+    if (!response.writableEnded) abort();
+  });
+  return controller;
 }
 
 function readJsonBody(request: IncomingMessage): Promise<unknown> {

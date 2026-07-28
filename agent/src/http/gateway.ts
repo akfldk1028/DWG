@@ -1,23 +1,31 @@
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { buildCadIndexForPath } from "../application/cad-tools/runtime.js";
 import { createChatService } from "../application/chat/chatService.js";
 import { createProviderRegistry, getProviderStatuses } from "../providers/providerRegistry.js";
+import {
+  createDrawingWorkspace,
+  resolveWorkspaceDrawingPath
+} from "./drawingWorkspace.js";
 import { createProviderGateway } from "./providerGateway.js";
 
 const workspace = resolve(process.env.DWG_WORKSPACE ?? process.cwd());
+const drawingWorkspace = createDrawingWorkspace(
+  workspace,
+  process.env.DWG_DRAWING_PATH ?? "tests/fixtures/dwg/export_sample.dwg"
+);
 const providers = createProviderRegistry(workspace);
 const chatService = createChatService({
   providers,
   async loadIndex(path) {
-    const fullPath = resolve(workspace, path);
-    if (!existsSync(fullPath)) throw new Error(`Drawing not found: ${path}`);
+    const fullPath = resolveWorkspaceDrawingPath(workspace, path);
     return buildCadIndexForPath(fullPath);
   }
 });
 
 const server = createProviderGateway({
+  getDrawing: () => drawingWorkspace.getIndex(),
+  inspect: ({ checks }) => drawingWorkspace.inspect(checks),
   getStatuses: () => getProviderStatuses(providers),
   chat: (request, signal) => chatService.chat(request, signal)
 });

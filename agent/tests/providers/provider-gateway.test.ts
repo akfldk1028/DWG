@@ -4,7 +4,45 @@ import test from "node:test";
 import { createProviderGateway } from "../../src/http/providerGateway.js";
 
 test("loopback gateway exposes health, provider status, and grounded chat", async (context) => {
+  const drawing = {
+    schemaVersion: "cad-index/v0.1" as const,
+    drawingId: "dwg:test",
+    source: {
+      kind: "dwg" as const,
+      displayName: "fixture.dwg",
+      parser: "test"
+    },
+    summary: {
+      entityCount: 1,
+      layerCount: 1,
+      unsupportedCount: 0,
+      modelSpaceCount: 1,
+      paperSpaceCount: 0
+    },
+    layers: [
+      { name: "0", entityCount: 1, visible: true, frozen: false }
+    ],
+    entities: [],
+    unsupported: []
+  };
+  const inspection = {
+    status: "completed" as const,
+    drawingId: drawing.drawingId,
+    events: [
+      {
+        sequence: 1,
+        agentId: "orchestrator" as const,
+        action: "complete",
+        status: "completed" as const
+      }
+    ],
+    findings: [],
+    issues: [],
+    warnings: []
+  };
   const server = createProviderGateway({
+    getDrawing: async () => drawing,
+    inspect: async () => inspection,
     getStatuses: async () => [
       {
         id: "codex",
@@ -33,6 +71,20 @@ test("loopback gateway exposes health, provider status, and grounded chat", asyn
   const providers = await fetch(`${baseUrl}/api/providers`).then((response) => response.json());
   assert.equal(providers.providers[0].authMethod, "chatgpt");
 
+  const drawingResponse = await fetch(`${baseUrl}/api/drawing`);
+  assert.equal(drawingResponse.status, 200);
+  assert.deepEqual(await drawingResponse.json(), drawing);
+
+  const inspectionResponse = await fetch(`${baseUrl}/api/inspections`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      checks: [{ kind: "layer", value: "0" }]
+    })
+  });
+  assert.equal(inspectionResponse.status, 200);
+  assert.deepEqual(await inspectionResponse.json(), inspection);
+
   const chatResponse = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -49,6 +101,12 @@ test("loopback gateway exposes health, provider status, and grounded chat", asyn
 test("gateway rejects oversized or malformed requests without invoking chat", async (context) => {
   let calls = 0;
   const server = createProviderGateway({
+    getDrawing: async () => {
+      throw new Error("should not run");
+    },
+    inspect: async () => {
+      throw new Error("should not run");
+    },
     getStatuses: async () => [],
     chat: async () => {
       calls += 1;
@@ -78,6 +136,15 @@ test("gateway rejects oversized or malformed requests without invoking chat", as
     })
   });
   assert.equal(invalidSession.status, 400);
+  const pathInjection = await fetch(`${baseUrl}/api/inspections`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      path: "../../secret.dwg",
+      checks: [{ kind: "layer", value: "0" }]
+    })
+  });
+  assert.equal(pathInjection.status, 400);
   assert.equal(calls, 0);
 });
 
@@ -88,6 +155,12 @@ test("gateway aborts provider work when the browser cancels the request", async 
     chatStarted = resolve;
   });
   const server = createProviderGateway({
+    getDrawing: async () => {
+      throw new Error("should not run");
+    },
+    inspect: async () => {
+      throw new Error("should not run");
+    },
     getStatuses: async () => [],
     chat: async (_request, signal) => new Promise((resolve) => {
       chatStarted();
