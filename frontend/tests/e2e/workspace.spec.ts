@@ -148,7 +148,8 @@ test("real agent run exposes grounded findings, evidence, and warnings", async (
   });
 
   await page.getByRole("tab", { name: /Findings/ }).click();
-  await page.locator(".finding-row").first().click();
+  await page.getByRole("button", { name: /0 LWPOLYLINE/ }).click();
+  await page.locator(".finding-row").filter({ hasText: "handle 239" }).click();
   await expect(page.getByTestId("evidence-card")).toContainText("239");
   await capture(page, "finding-evidence-1440x900");
   await page.getByRole("tab", { name: /CAD Preview/ }).click();

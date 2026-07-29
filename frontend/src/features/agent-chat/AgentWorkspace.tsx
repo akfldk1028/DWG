@@ -104,7 +104,7 @@ export function AgentWorkspace({
               <code>{activeSession.providerSessionId}</code>}
           </div>
         ))}
-        {!activeSession && (
+        {!activeSession && !inspectionRun && !inspectionLoading && (
           <div className="conversation-empty">
             <Bot size={22} />
             <strong>도면에 대해 질문하세요</strong>
@@ -124,7 +124,15 @@ export function AgentWorkspace({
                 key={`${event.sequence}:${event.agentId}:${event.action}`}
                 label={event.agentId}
                 tool={event.action}
-                state={event.status === "completed" ? "done" : event.status === "rejected" ? "rejected" : "idle"}
+                state={
+                  event.status === "completed"
+                    ? "done"
+                    : event.status === "rejected"
+                      ? "rejected"
+                      : event.status === "planned"
+                        ? "planned"
+                        : "idle"
+                }
               />
             ))}
           </div>
@@ -155,7 +163,7 @@ export function AgentWorkspace({
 function ToolStep({ label, tool, state }: {
   label: string;
   tool: string;
-  state: "idle" | "running" | "done" | "rejected";
+  state: "idle" | "planned" | "running" | "done" | "rejected";
 }) {
   return (
     <div className={`tool-step ${state}`}>
@@ -165,7 +173,7 @@ function ToolStep({ label, tool, state }: {
           ? <Check size={14} />
           : <ChevronRight size={14} />}
       <div><strong>{label}</strong><span><TerminalSquare size={11} /> {tool}</span></div>
-      <em>{state === "running" ? "RUNNING" : state === "done" ? "DONE" : state === "rejected" ? "REJECTED" : "QUEUED"}</em>
+      <em>{state === "running" ? "RUNNING" : state === "done" ? "DONE" : state === "rejected" ? "REJECTED" : state === "planned" ? "PLANNED" : "QUEUED"}</em>
     </div>
   );
 }

@@ -74,12 +74,13 @@ test("runs the real inspection API and renders returned evidence", async ({ page
   await expect(page.getByText("5개 주요 객체")).toBeVisible();
   await expect(page.locator(".cad-entity.highlighted")).toHaveCount(5);
   await page.getByRole("tab", { name: /Findings/ }).click();
-  await expect(page.getByRole("button", { name: /0 레이어 검사 결과 5개/ }).first()).toBeVisible();
+  await expect(page.locator(".finding-group")).toHaveCount(2);
   expect(requests).toEqual([
     { checks: [{ kind: "layer", value: "0" }] }
   ]);
 
-  await page.getByRole("button", { name: /0 레이어 검사 결과 5개/ }).first().click();
+  await page.getByRole("button", { name: /0 LWPOLYLINE 1개/ }).click();
+  await page.locator(".finding-row").click();
   await expect(page.getByTestId("evidence-card")).toContainText("239");
   await page.getByRole("tab", { name: /CAD Preview/ }).click();
   await expect(page.locator('[data-handle="239"]')).toHaveClass(/highlighted/);

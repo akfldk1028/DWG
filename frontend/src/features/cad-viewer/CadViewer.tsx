@@ -38,6 +38,9 @@ export function CadViewer({
     () => calculateFitView(modelEntities),
     [modelEntities]
   );
+  const visibleModelEntityCount = modelEntities.filter(
+    (entity) => !hiddenLayers.has(entity.layer)
+  ).length;
   const activeView = viewMode === "fit" ? fitView : view;
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const highlightSet = new Set(highlightedHandles);
@@ -165,7 +168,7 @@ export function CadViewer({
 
       <div className="viewer-status">
         <span><i className="status-dot ready" /> Indexed</span>
-        <span>{index.summary.modelSpaceCount} entities</span>
+        <span>{visibleModelEntityCount} visible / {modelEntities.length} total</span>
         <span>Model space</span>
         <span className="coordinates">X 50.000&nbsp;&nbsp; Y 50.000&nbsp;&nbsp; Z 0.000</span>
       </div>

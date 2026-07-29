@@ -180,7 +180,8 @@ button { cursor: pointer; }
   font-weight: 800;
 }
 .sidebar-section { min-height: 0; border-bottom: 1px solid var(--border); }
-.sidebar-section:nth-of-type(3) { display: flex; flex: 1; flex-direction: column; }
+.sidebar-section-drawing { display: flex; flex: 1 1 auto; flex-direction: column; }
+.sidebar-section-sessions { display: flex; flex: 0 0 142px; flex-direction: column; }
 .sidebar-section-heading { height: 31px; display: flex; align-items: center; padding: 0 7px; }
 .sidebar-section-heading > button:first-child {
   min-width: 0;
@@ -201,7 +202,7 @@ button { cursor: pointer; }
 .project-card { display: flex; align-items: center; gap: 8px; padding: 7px 12px 11px; font-size: 11px; }
 .project-card div { min-width: 0; display: flex; flex-direction: column; }
 .project-card span { color: var(--muted); font-size: 9px; }
-.drawing-tree { max-height: 390px; overflow: auto; background: transparent !important; }
+.drawing-tree { min-height: 0; max-height: none; flex: 1; overflow: auto; background: transparent !important; }
 .drawing-tree .panel-heading { display: none; }
 .drawing-tree .explorer-summary { display: none; }
 .drawing-tree .tree-row { font-size: 10px; }
@@ -249,9 +250,12 @@ button { cursor: pointer; }
   color: var(--muted);
   text-align: center;
 }
-.conversation-empty strong { color: var(--ink); font-size: 13px; }
-.conversation-empty span { max-width: 270px; font-size: 10px; line-height: 1.5; }
+.conversation-empty strong { color: var(--ink); font-size: 15px; }
+.conversation-empty span { max-width: 300px; font-size: 12px; line-height: 1.55; }
 .conversation-panel .message { border-color: var(--border-soft); }
+.conversation-panel .message-label { font-size: 10px; }
+.conversation-panel .message p { font-size: 13px; line-height: 1.6; }
+.conversation-panel .composer > input { font-size: 13px; }
 .conversation-panel .message code { display: block; margin-top: 6px; overflow: hidden; color: var(--muted); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-panel .composer { background: var(--panel); border-color: var(--border); }
 
@@ -310,6 +314,26 @@ button { cursor: pointer; }
 .artifact-content .viewer-toolbar, .artifact-content .viewer-status { background: var(--panel); border-color: var(--border); }
 .artifact-content .viewer-maximized { position: static; z-index: auto; }
 .artifact-list { display: grid; gap: 8px; padding: 12px; }
+.finding-group { overflow: hidden; background: var(--panel-raised); border: 1px solid var(--border); border-radius: 9px; }
+.finding-group-heading {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+.finding-group-heading:hover { background: var(--subtle); }
+.finding-group-heading > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 2px; }
+.finding-group-heading strong { font-size: 11px; }
+.finding-group-heading small { color: var(--muted); font-size: 10px; }
+.finding-group-heading b { min-width: 25px; padding: 3px 6px; color: var(--accent); background: var(--accent-soft); border-radius: 10px; font-size: 9px; text-align: center; }
+.finding-group-entities { display: grid; gap: 6px; padding: 0 8px 8px 32px; border-top: 1px solid var(--border-soft); }
+.finding-group-entities .artifact-card { margin-top: 7px; }
 .artifact-card { width: 100%; display: flex; align-items: flex-start; gap: 9px; padding: 11px; color: var(--ink); background: var(--panel-raised); border: 1px solid var(--border); border-radius: 9px; text-align: left; }
 .artifact-card > span { display: flex; flex-direction: column; gap: 2px; font-size: 10px; }
 .artifact-card small { color: var(--muted); font-size: 9px; }

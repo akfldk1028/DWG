@@ -1,12 +1,14 @@
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
   FileCheck2,
   Maximize2,
   Minimize2,
   ScanSearch,
   View
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CadViewer } from "../features/cad-viewer/CadViewer";
 import type { CadEntity, CadIndex, InspectionRun } from "../shared/types";
@@ -43,6 +45,11 @@ export function CadArtifactPanel({
   onSelectFinding
 }: Props) {
   const [tab, setTab] = useState<ArtifactTab>("preview");
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const findingGroups = useMemo(
+    () => groupFindings(run?.findings ?? []),
+    [run?.findings]
+  );
 
   useEffect(() => {
     if (!maximized) return;
@@ -93,20 +100,38 @@ export function CadArtifactPanel({
         )}
         {tab === "findings" && (
           <div className="artifact-list">
-            {run?.findings.map((finding, indexValue) => (
-              <button
-                aria-label={`${finding.layer} 레이어 검사 결과 ${run.findings.length}개`}
-                className="artifact-card finding-card finding-row"
-                key={`${finding.handle}:${indexValue}`}
-                onClick={() => {
-                  if (!finding.handle) return;
-                  onSelectFinding(finding.handle);
-                  setTab("evidence");
-                }}
-              >
-                <ScanSearch size={15} />
-                <span><strong>{finding.layer} · {finding.type}</strong><small>handle {finding.handle ?? "none"}</small></span>
-              </button>
+            {findingGroups.map((group) => (
+              <section className="finding-group" key={group.id}>
+                <button
+                  aria-expanded={expandedGroup === group.id}
+                  aria-label={`${group.layer} ${group.type} ${group.findings.length}개`}
+                  className="finding-group-heading"
+                  onClick={() => setExpandedGroup((current) => current === group.id ? null : group.id)}
+                >
+                  {expandedGroup === group.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span><strong>{group.layer} · {group.type}</strong><small>{group.findings.length} entities</small></span>
+                  <b>{group.findings.length}</b>
+                </button>
+                {expandedGroup === group.id && (
+                  <div className="finding-group-entities">
+                    {group.findings.map((finding, indexValue) => (
+                      <button
+                        aria-label={`${finding.layer} 레이어 검사 결과 ${group.findings.length}개`}
+                        className="artifact-card finding-card finding-row"
+                        key={`${finding.handle}:${indexValue}`}
+                        onClick={() => {
+                          if (!finding.handle) return;
+                          onSelectFinding(finding.handle);
+                          setTab("evidence");
+                        }}
+                      >
+                        <ScanSearch size={15} />
+                        <span><strong>{finding.type}</strong><small>handle {finding.handle ?? "none"}</small></span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
             ))}
             {!run?.findings.length && <Empty>검사를 실행하면 근거가 표시됩니다.</Empty>}
           </div>
@@ -128,6 +153,35 @@ export function CadArtifactPanel({
         )}
       </div>
     </section>
+  );
+}
+
+function groupFindings(findings: InspectionRun["findings"]) {
+  const groups = new Map<string, {
+    id: string;
+    layer: string;
+    type: string;
+    findings: InspectionRun["findings"];
+  }>();
+  findings.forEach((finding) => {
+    const id = `${finding.layer}\u0000${finding.type}`;
+    const group = groups.get(id);
+    if (group) {
+      group.findings.push(finding);
+      return;
+    }
+    groups.set(id, {
+      id,
+      layer: finding.layer,
+      type: finding.type,
+      findings: [finding]
+    });
+  });
+  return [...groups.values()].sort(
+    (left, right) =>
+      right.findings.length - left.findings.length ||
+      left.layer.localeCompare(right.layer) ||
+      left.type.localeCompare(right.type)
   );
 }
 

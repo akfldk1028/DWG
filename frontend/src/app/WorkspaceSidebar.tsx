@@ -121,7 +121,7 @@ function SidebarSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="sidebar-section">
+    <section className={`sidebar-section sidebar-section-${label.toLowerCase()}`}>
       <div className="sidebar-section-heading">
         <button aria-expanded={open} onClick={onToggle}>
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
