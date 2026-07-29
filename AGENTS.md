@@ -15,12 +15,12 @@ These instructions apply to the entire repository.
 ## Non-negotiable architecture
 
 - `packages/contracts` is the only TypeScript package shared by browser and
-  agent runtimes. It must stay free of React, Node, HTTP, CLI, and parser code.
-- Agent code must not import frontend code. Frontend code must not import
-  agent code.
-- `frontend/src/shared` must not import features. Feature folders must not
-  import one another. Cross-feature wiring belongs in `frontend/src/app`.
-- `frontend/src/app/useWorkspaceControls.ts` owns global browser controls;
+  CAD runtime code. It must stay free of React, Node, HTTP, CLI, and parser code.
+- `modules/cad-runtime` must not import `apps/workspace`; `apps/workspace`
+  must not import `modules/cad-runtime`.
+- `apps/workspace/src/shared` must not import features. Feature folders must
+  not import one another. Cross-feature wiring belongs in `apps/workspace/src/app`.
+- `apps/workspace/src/app/useWorkspaceControls.ts` owns global browser controls;
   `useWorkspacePreferences.ts` owns persisted theme, panel width, and sidebar
   section preferences.
 - Parsers return versioned contract DTOs. Never leak ACadSharp, DXF parser, SVG,
@@ -32,13 +32,13 @@ These instructions apply to the entire repository.
 
 ## Supported integration surfaces
 
-- Type/data: `@dwg/contracts`
-- Process/API: loopback routes under `/api`
-- Agent tools: `npm run mcp` over stdio
-- Product UI: embed or merge `frontend` as a whole composition
+- `@dwg/contracts`
+- loopback `/api`
+- MCP stdio
+- whole apps/workspace composition
 
-Anything below `agent/src/**` or `frontend/src/features/**` is internal unless
-the integration contract explicitly says otherwise.
+`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, and parser
+internals are not deep-import APIs.
 
 ## Verification
 

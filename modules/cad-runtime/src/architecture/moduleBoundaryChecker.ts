@@ -10,10 +10,11 @@ export interface ModuleBoundaryViolation extends ModuleImport {
   importedModule: string;
   rule:
     | "contracts-are-runtime-independent"
-    | "agent-does-not-import-frontend"
-    | "frontend-does-not-import-agent"
-    | "frontend-shared-does-not-import-features"
-    | "frontend-features-do-not-cross-import";
+    | "workspace-does-not-import-runtime"
+    | "runtime-does-not-import-workspace"
+    | "workspace-shared-does-not-import-features"
+    | "workspace-features-do-not-cross-import"
+    | "cross-module-import-uses-public-entrypoint";
 }
 
 export function findModuleBoundaryViolations(
@@ -26,7 +27,11 @@ export function findModuleBoundaryViolations(
     );
     if (!importedModule) return [];
 
-    const rule = findViolatedRule(moduleImport.importer, importedModule);
+    const rule = findViolatedRule(
+      moduleImport.importer,
+      moduleImport.specifier,
+      importedModule
+    );
     return rule ? [{ ...moduleImport, importedModule, rule }] : [];
   });
 }
@@ -55,8 +60,19 @@ export async function scanWorkspaceModuleBoundaries(workspace: string) {
 
 function findViolatedRule(
   importer: string,
+  specifier: string,
   importedModule: string
 ): ModuleBoundaryViolation["rule"] | null {
+  if (specifier.startsWith("@dwg/contracts/")) {
+    return "cross-module-import-uses-public-entrypoint";
+  }
+  if (
+    !importer.startsWith("packages/contracts/") &&
+    importedModule.startsWith("packages/contracts/src/") &&
+    specifier !== "@dwg/contracts"
+  ) {
+    return "cross-module-import-uses-public-entrypoint";
+  }
   if (
     importer.startsWith("packages/contracts/") &&
     (importedModule.startsWith("modules/cad-runtime/") ||
@@ -68,19 +84,19 @@ function findViolatedRule(
     importer.startsWith("modules/cad-runtime/") &&
     importedModule.startsWith("apps/workspace/")
   ) {
-    return "agent-does-not-import-frontend";
+    return "runtime-does-not-import-workspace";
   }
   if (
     importer.startsWith("apps/workspace/") &&
     importedModule.startsWith("modules/cad-runtime/")
   ) {
-    return "frontend-does-not-import-agent";
+    return "workspace-does-not-import-runtime";
   }
   if (
     importer.startsWith("apps/workspace/src/shared/") &&
     importedModule.startsWith("apps/workspace/src/features/")
   ) {
-    return "frontend-shared-does-not-import-features";
+    return "workspace-shared-does-not-import-features";
   }
 
   const importerFeature = getFrontendFeature(importer);
@@ -90,12 +106,18 @@ function findViolatedRule(
     importedFeature &&
     importerFeature !== importedFeature
   ) {
-    return "frontend-features-do-not-cross-import";
+    return "workspace-features-do-not-cross-import";
   }
   return null;
 }
 
 function resolveModule(importer: string, specifier: string) {
+  if (specifier === "@dwg/contracts") {
+    return "packages/contracts/src/index.ts";
+  }
+  if (specifier.startsWith("@dwg/contracts/")) {
+    return `packages/contracts/src/${specifier.slice("@dwg/contracts/".length)}`;
+  }
   if (!specifier.startsWith(".")) return null;
   return posix.normalize(posix.join(posix.dirname(importer), specifier));
 }
@@ -105,14 +127,18 @@ function getFrontendFeature(path: string) {
   return match?.[1] ?? null;
 }
 
-function extractImportSpecifiers(source: string) {
+export function extractImportSpecifiers(source: string) {
   const specifiers: string[] = [];
   const importPattern =
     /\b(?:import|export)\s+(?:type\s+)?(?:[^"'`;]*?\s+from\s+)?["']([^"']+)["']/g;
+  const dynamicImportPattern = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
   for (const match of source.matchAll(importPattern)) {
     specifiers.push(match[1]);
   }
-  return specifiers;
+  for (const match of source.matchAll(dynamicImportPattern)) {
+    specifiers.push(match[1]);
+  }
+  return [...new Set(specifiers)];
 }
 
 async function listTypeScriptFiles(directory: string): Promise<string[]> {

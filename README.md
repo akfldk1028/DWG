@@ -24,7 +24,7 @@ npm run gateway
 ```
 
 ```powershell
-npm --prefix frontend run dev
+npm --workspace @click-around/workspace run dev
 ```
 
 Default URLs are `http://127.0.0.1:4317/api/health` and
@@ -36,18 +36,19 @@ Default URLs are `http://127.0.0.1:4317/api/health` and
 | Path | Owner | Cross-repository access |
 |---|---|---|
 | `packages/contracts` | Runtime-neutral DTOs and validators | Public: `@dwg/contracts` |
-| `backend` | ACadSharp DWG parsing and normalized geometry extraction | Internal parser implementation |
-| `agent/src/parsers` | DWG/DXF adapters | Internal; returns contract DTOs |
-| `agent/src/application` | Deterministic CAD tools and grounded chat use cases | Internal application boundary |
-| `agent/src/http` | Loopback gateway | Public process boundary: `/api/*` |
-| `agent/src/mcp` | Read-only CAD MCP tools | Public process boundary: `npm run mcp` |
-| `agent/src/providers` | Existing Codex/Claude OAuth CLI adapters | Internal `ChatProvider` implementations |
-| `frontend/src/app` | Three-panel composition and workspace controls | Public only as the whole SPA |
-| `frontend/src/features` | Drawing, viewer, chat, and inspection feature owners | Internal feature modules |
+| `modules/dwg-parser` | ACadSharp DWG parsing and normalized geometry extraction | Internal parser implementation |
+| `modules/cad-runtime/src/parsers` | DWG/DXF adapters | Internal; returns contract DTOs |
+| `modules/cad-runtime/src/application` | Deterministic CAD tools and grounded chat use cases | Internal application boundary |
+| `modules/cad-runtime/src/http` | Loopback gateway | Public process boundary: loopback `/api` |
+| `modules/cad-runtime/src/mcp` | Read-only CAD MCP tools | Public process boundary: MCP stdio |
+| `modules/cad-runtime/src/providers` | Existing Codex/Claude OAuth CLI adapters | Internal `ChatProvider` implementations |
+| `apps/workspace/src/app` | Three-panel composition and workspace controls | Public only as the whole apps/workspace composition |
+| `apps/workspace/src/features` | Drawing, viewer, chat, and inspection feature owners | Internal feature modules |
 
-Do not integrate another repository by importing parser, provider, React
-feature, or HTTP implementation files. Use the public contracts plus HTTP/MCP
-process boundaries, or embed the entire frontend composition.
+Supported reuse surfaces are `@dwg/contracts`, loopback `/api`, MCP stdio, and
+whole apps/workspace composition. Do not deep-import
+`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, or parser
+internals.
 
 ## Architecture and handoff
 
@@ -63,6 +64,6 @@ Source DWG/DXF files are read-only. Object-level claims must be grounded with
 stable handles, layers, types, and bounding boxes from the versioned CAD
 contract: DWG emits `cad-index/v0.2`; legacy DXF may emit `cad-index/v0.1`.
 
-When cloning this repository into another project, choose one supported
-boundary—contracts, loopback HTTP, MCP stdio, or the whole frontend. Do not
-deep-import internal parser/provider/feature folders or duplicate public DTOs.
+When cloning this repository into another project, choose exactly one supported
+reuse surface. Do not deep-import internal parser, runtime, or workspace
+feature folders, and do not duplicate public DTOs.

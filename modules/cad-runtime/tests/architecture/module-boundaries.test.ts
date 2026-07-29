@@ -3,6 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  extractImportSpecifiers,
   findModuleBoundaryViolations,
   scanWorkspaceModuleBoundaries
 } from "../../src/architecture/moduleBoundaryChecker.js";
@@ -27,7 +28,11 @@ test("rejects imports that bypass public and feature boundaries", () => {
     },
     {
       importer: "apps/workspace/src/features/cad-viewer/CadViewer.tsx",
-      specifier: "../agent-chat/useProviderChat"
+      specifier: "../drawing-explorer/useDrawingIndex"
+    },
+    {
+      importer: "apps/workspace/src/app/App.tsx",
+      specifier: "@dwg/contracts/src/cad"
     }
   ]);
 
@@ -35,11 +40,33 @@ test("rejects imports that bypass public and feature boundaries", () => {
     violations.map((violation) => violation.rule),
     [
       "contracts-are-runtime-independent",
-      "agent-does-not-import-frontend",
-      "frontend-does-not-import-agent",
-      "frontend-shared-does-not-import-features",
-      "frontend-features-do-not-cross-import"
+      "runtime-does-not-import-workspace",
+      "workspace-does-not-import-runtime",
+      "workspace-shared-does-not-import-features",
+      "workspace-features-do-not-cross-import",
+      "cross-module-import-uses-public-entrypoint"
     ]
+  );
+});
+
+test("extracts static dynamic imports", () => {
+  assert.deepEqual(
+    extractImportSpecifiers('const module = import("@dwg/contracts/src/cad")'),
+    ["@dwg/contracts/src/cad"]
+  );
+});
+
+test("allows contracts source files to be consumed only through their public entrypoint", () => {
+  const violations = findModuleBoundaryViolations([
+    {
+      importer: "apps/workspace/src/app/App.tsx",
+      specifier: "../../../../packages/contracts/src/cad"
+    }
+  ]);
+
+  assert.deepEqual(
+    violations.map((violation) => violation.rule),
+    ["cross-module-import-uses-public-entrypoint"]
   );
 });
 

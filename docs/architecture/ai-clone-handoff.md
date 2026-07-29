@@ -12,51 +12,52 @@ DWG/DXF file
   -> parser adapter
   -> versioned CadEntityIndex
   -> deterministic CAD tools and inspections
-  -> HTTP/MCP/provider boundary
-  -> three-panel React workspace
+  -> loopback /api, MCP stdio, or provider boundary
+  -> three-panel apps/workspace UI
 ```
 
 The parser and normalized index own drawing truth. An LLM may select, summarize,
 and explain indexed evidence, but it must not invent geometry. Object claims
-must retain `handle`, `layer`, `type`, and `bbox` when available.
+retain `handle`, `layer`, `type`, and `bbox` when available.
 
 ## Top-level ownership
 
 ```text
-packages/contracts/  PUBLIC runtime-neutral DTOs, validators, limits
-backend/             PRIVATE .NET/ACadSharp DWG extraction
-agent/
-  src/parsers/       PRIVATE DWG/DXF adapters
-  src/application/   PRIVATE deterministic CAD and chat use cases
-  src/orchestration/ PRIVATE specialist registry and evidence policy
-  src/providers/     PRIVATE Codex/Claude OAuth CLI adapters
-  src/http/          PUBLIC process boundary at loopback /api
-  src/mcp/           PUBLIC read-only MCP stdio boundary
-frontend/
-  src/app/           whole-product composition and cross-feature wiring
-  src/features/      PRIVATE independently owned UI features
-  src/shared/        typed browser API clients and contract re-exports
-tests/fixtures/      retained DWG fixtures and provenance
-tests/visual/        retained visual baselines; test-results are local only
-docs/ui-captures/    reproducible product-state PNG documentation
+packages/contracts/              PUBLIC runtime-neutral DTOs, validators, limits
+modules/dwg-parser/              PRIVATE .NET/ACadSharp DWG extraction
+modules/cad-runtime/src/
+  parsers/                       PRIVATE DWG/DXF adapters
+  application/                   PRIVATE deterministic CAD and chat use cases
+  orchestration/                 PRIVATE specialist registry and evidence policy
+  providers/                     PRIVATE Codex/Claude OAuth CLI adapters
+  http/                          loopback /api process boundary
+  mcp/                           read-only MCP stdio process boundary
+apps/workspace/src/
+  app/                           whole-product composition and cross-feature wiring
+  features/                      PRIVATE independently owned UI features
+  shared/                        typed browser API clients and contract re-exports
+tests/fixtures/                  retained DWG fixtures and provenance
+tests/visual/                    retained visual baselines; test-results are local only
+docs/ui-captures/                reproducible product-state PNG documentation
 ```
 
-`@dwg/contracts` is the only TypeScript package shared by the browser and agent
-runtimes. Agent code never imports frontend code. Frontend features never import
-other features; `frontend/src/app` performs cross-feature composition.
+`@dwg/contracts` is the only TypeScript package shared by workspace and CAD
+runtime code. Runtime code never imports workspace code. Workspace features do
+not import other workspace features; `apps/workspace/src/app` performs
+cross-feature composition.
 
 ## Choose exactly one integration mode
 
 | Need in the host repository | Supported boundary |
 |---|---|
 | Shared CAD/provider types | `@dwg/contracts` |
-| Local service calls | loopback `/api/*` |
-| Agent-accessible CAD queries | `npm run mcp` over stdio |
-| Complete product UI | merge/embed the entire `frontend` composition |
+| Local service calls | loopback `/api` |
+| Agent-accessible CAD queries | MCP stdio via `npm run mcp` |
+| Complete product UI | whole apps/workspace composition |
 
-Do not combine a process boundary with deep imports from `agent/src/**` or
-`frontend/src/features/**`. Do not copy DTOs into the host repository. Resolve
-conflicts at the owner folder listed above.
+`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, and parser
+internals are not deep-import APIs. Do not copy DTOs into the host repository.
+Resolve conflicts at the owner folder listed above.
 
 ## Clone boot sequence
 
@@ -72,7 +73,7 @@ For local runtime:
 
 ```powershell
 npm run gateway
-npm --prefix frontend run dev
+npm --workspace @click-around/workspace run dev
 ```
 
 For an agent host:
@@ -85,22 +86,21 @@ npm run mcp
 Every drawing path sent to HTTP or MCP is relative to `DWG_WORKSPACE`.
 Absolute paths, traversal, and canonical junction escapes are rejected.
 
-## Stable entrypoints
+## Owner entrypoints
 
-| Concern | Start here |
+| Concern | Owner location |
 |---|---|
-| Public exports | `packages/contracts/src/index.ts` |
-| DWG index construction | `agent/src/parsers/dwg/acadSharpIndexer.ts` |
-| CAD tool execution | `agent/src/application/cad-tools/runtime.ts` |
-| Grounded AI context | `agent/src/application/chat/cadContextBuilder.ts` |
-| HTTP process | `agent/src/http/gateway.ts` |
-| MCP process | `agent/src/mcp/stdio.ts` |
-| OAuth provider registration | `agent/src/providers/providerRegistry.ts` |
-| UI composition root | `frontend/src/app/App.tsx` |
-| Drawing and layer tree | `frontend/src/features/drawing-explorer` |
-| SVG CAD rendering | `frontend/src/features/cad-viewer` |
-| Chat and session state | `frontend/src/features/agent-chat` |
-| Inspection results | `frontend/src/features/inspection-results` |
+| Public exports | `packages/contracts/src/index.ts` via `@dwg/contracts` |
+| DWG index construction | `modules/cad-runtime/src/parsers/dwg/acadSharpIndexer.ts` |
+| CAD tool execution | `modules/cad-runtime/src/application/cad-tools/runtime.ts` |
+| Grounded AI context | `modules/cad-runtime/src/application/chat/cadContextBuilder.ts` |
+| HTTP process | `modules/cad-runtime/src/http/gateway.ts` |
+| MCP process | `modules/cad-runtime/src/mcp/stdio.ts` |
+| OAuth provider registration | `modules/cad-runtime/src/providers/providerRegistry.ts` |
+| UI composition root | `apps/workspace/src/app/App.tsx` |
+| Workspace features | `apps/workspace/src/features` |
+
+These locations are ownership navigation, not cross-repository import APIs.
 
 ## Current explicit limits
 
