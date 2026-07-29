@@ -6,7 +6,7 @@ import { createCadToolRuntime } from "../src/application/cad-tools/runtime.js";
 import { buildIndexFromDxfText } from "../src/parsers/dxf/dxfIndexer.js";
 
 test("builds a cad-index/v0.1 entity index from a DXF fixture", async () => {
-  const dxfText = await readFile("agent/fixtures/minimal-architectural.dxf", "utf8");
+  const dxfText = await readFile("modules/cad-runtime/fixtures/minimal-architectural.dxf", "utf8");
 
   const index = buildIndexFromDxfText(dxfText, {
     displayName: "minimal-architectural.dxf"
@@ -22,7 +22,7 @@ test("builds a cad-index/v0.1 entity index from a DXF fixture", async () => {
 test("finds layer matches with stable IDs, handles, layer, type, and bbox", async () => {
   const runtime = createCadToolRuntime();
   const opened = await runtime.call("cad.open_drawing", {
-    path: "agent/fixtures/minimal-architectural.dxf"
+    path: "modules/cad-runtime/fixtures/minimal-architectural.dxf"
   });
   await runtime.call("cad.build_index", { drawingId: opened.drawingId });
 
@@ -44,7 +44,7 @@ test("finds layer matches with stable IDs, handles, layer, type, and bbox", asyn
 test("keeps drawingId available after building an index for harness chaining", async () => {
   const runtime = createCadToolRuntime();
   const opened = await runtime.call("cad.open_drawing", {
-    path: "agent/fixtures/minimal-architectural.dxf"
+    path: "modules/cad-runtime/fixtures/minimal-architectural.dxf"
   });
 
   const built = await runtime.call("cad.build_index", { drawingId: opened.drawingId });
@@ -56,7 +56,7 @@ test("keeps drawingId available after building an index for harness chaining", a
 test("finds text matches without asking the model to inspect geometry", async () => {
   const runtime = createCadToolRuntime();
   const opened = await runtime.call("cad.open_drawing", {
-    path: "agent/fixtures/minimal-architectural.dxf"
+    path: "modules/cad-runtime/fixtures/minimal-architectural.dxf"
   });
   await runtime.call("cad.build_index", { drawingId: opened.drawingId });
 

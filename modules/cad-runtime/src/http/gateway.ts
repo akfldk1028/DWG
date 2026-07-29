@@ -8,11 +8,16 @@ import {
   resolveWorkspaceDrawingPath
 } from "./drawingWorkspace.js";
 import { createProviderGateway } from "./providerGateway.js";
+import {
+  createRepositoryPaths,
+  findRepositoryRoot
+} from "../platform/repositoryPaths.js";
 
-const workspace = resolve(process.env.DWG_WORKSPACE ?? process.cwd());
+const paths = createRepositoryPaths(findRepositoryRoot(import.meta.url));
+const workspace = resolve(process.env.DWG_WORKSPACE ?? paths.repositoryRoot);
 const drawingWorkspace = createDrawingWorkspace(
   workspace,
-  process.env.DWG_DRAWING_PATH ?? "tests/fixtures/dwg/export_sample.dwg"
+  process.env.DWG_DRAWING_PATH ?? paths.defaultDrawing
 );
 const providers = createProviderRegistry(workspace);
 const chatService = createChatService({

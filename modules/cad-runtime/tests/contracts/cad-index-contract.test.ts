@@ -123,7 +123,7 @@ test("rejects malformed v0.2 geometry", () => {
 
 test("JSON Schema and shared validator agree", () => {
   const schema = JSON.parse(
-    readFileSync("agent/contracts/cad-index.schema.json", "utf8")
+    readFileSync("modules/cad-runtime/contracts/cad-index.schema.json", "utf8")
   );
   const validate = new Ajv2020({ strict: true }).compile(schema);
 

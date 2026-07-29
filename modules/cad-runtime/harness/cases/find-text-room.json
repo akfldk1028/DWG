@@ -1,6 +1,6 @@
 {
   "name": "find-text-room",
-  "fixture": "agent/fixtures/minimal-architectural.dxf",
+  "fixture": "modules/cad-runtime/fixtures/minimal-architectural.dxf",
   "steps": [
     { "tool": "cad.open_drawing", "args": { "path": "$fixture" } },
     { "tool": "cad.build_index", "args": { "drawingId": "$last.drawingId" } },

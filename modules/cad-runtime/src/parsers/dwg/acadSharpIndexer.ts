@@ -6,21 +6,33 @@ import {
   isCadEntityIndexV02,
   type CadEntityIndexV02
 } from "@dwg/contracts";
+import {
+  createRepositoryPaths,
+  findRepositoryRoot
+} from "../../platform/repositoryPaths.js";
 
 const execFileAsync = promisify(execFile);
-const parserProject = resolve(
-  "backend/src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj"
-);
+const defaultParserProject = createRepositoryPaths(
+  findRepositoryRoot(import.meta.url)
+).parserProject;
 const indexByPath = new Map<string, Promise<CadEntityIndexV02>>();
 
+export interface DwgIndexerOptions {
+  parserProject?: string;
+}
+
 export async function buildIndexFromDwgFile(
-  path: string
+  path: string,
+  options: DwgIndexerOptions = {}
 ): Promise<CadEntityIndexV02> {
   const fullPath = resolve(path);
   const existing = indexByPath.get(fullPath);
   if (existing) return existing;
 
-  const pending = runDwgParser(fullPath).catch((error) => {
+  const pending = runDwgParser(
+    fullPath,
+    options.parserProject ?? defaultParserProject
+  ).catch((error) => {
     indexByPath.delete(fullPath);
     throw error;
   });
@@ -28,7 +40,10 @@ export async function buildIndexFromDwgFile(
   return pending;
 }
 
-async function runDwgParser(fullPath: string): Promise<CadEntityIndexV02> {
+async function runDwgParser(
+  fullPath: string,
+  parserProject: string
+): Promise<CadEntityIndexV02> {
   let stdout: string;
   try {
     const result = await execFileAsync(

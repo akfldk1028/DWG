@@ -5,12 +5,17 @@ import { buildCadIndexForPath } from "../src/application/cad-tools/runtime.js";
 import { createChatService } from "../src/application/chat/chatService.js";
 import { createProviderRegistry } from "../src/providers/providerRegistry.js";
 import type { ProviderId } from "../src/providers/contracts.js";
+import {
+  createRepositoryPaths,
+  findRepositoryRoot
+} from "../src/platform/repositoryPaths.js";
 
-const workspace = resolve(process.cwd());
+const paths = createRepositoryPaths(findRepositoryRoot(import.meta.url));
+const workspace = resolve(process.env.DWG_WORKSPACE ?? paths.repositoryRoot);
 const requested = process.argv[2] ?? "all";
 const providerIds: ProviderId[] =
   requested === "all" ? ["codex", "claude"] : [requested as ProviderId];
-const drawingPath = "tests/fixtures/dwg/export_sample.dwg";
+const drawingPath = process.env.DWG_DRAWING_PATH ?? paths.defaultDrawing;
 const providers = createProviderRegistry(workspace);
 const service = createChatService({
   providers,

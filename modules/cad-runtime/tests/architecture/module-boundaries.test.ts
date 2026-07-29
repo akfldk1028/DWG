@@ -11,22 +11,22 @@ test("rejects imports that bypass public and feature boundaries", () => {
   const violations = findModuleBoundaryViolations([
     {
       importer: "packages/contracts/src/cad.ts",
-      specifier: "../../../frontend/src/shared/types"
+      specifier: "../../../apps/workspace/src/shared/types"
     },
     {
-      importer: "agent/src/application/chat/chatService.ts",
-      specifier: "../../../../frontend/src/shared/types"
+      importer: "modules/cad-runtime/src/application/chat/chatService.ts",
+      specifier: "../../../../../apps/workspace/src/shared/types"
     },
     {
-      importer: "frontend/src/shared/api/providerGatewayClient.ts",
-      specifier: "../../../../agent/src/providers/contracts"
+      importer: "apps/workspace/src/shared/api/providerGatewayClient.ts",
+      specifier: "../../../../../modules/cad-runtime/src/providers/contracts"
     },
     {
-      importer: "frontend/src/shared/types.ts",
+      importer: "apps/workspace/src/shared/types.ts",
       specifier: "../features/agent-chat/useProviderChat"
     },
     {
-      importer: "frontend/src/features/cad-viewer/CadViewer.tsx",
+      importer: "apps/workspace/src/features/cad-viewer/CadViewer.tsx",
       specifier: "../agent-chat/useProviderChat"
     }
   ]);

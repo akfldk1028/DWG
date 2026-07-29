@@ -18,7 +18,7 @@ interface HarnessCase {
   };
 }
 
-const casePath = process.argv[2] ?? "agent/harness/cases/find-layer-a-wall.json";
+const casePath = process.argv[2] ?? "modules/cad-runtime/harness/cases/find-layer-a-wall.json";
 const harnessCase = JSON.parse(await readFile(resolve(casePath), "utf8")) as HarnessCase;
 const runtime = createCadToolRuntime();
 let last: any = {};

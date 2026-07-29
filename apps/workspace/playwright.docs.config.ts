@@ -1,11 +1,15 @@
 import { defineConfig } from "@playwright/test";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
+const workspaceRoot = dirname(fileURLToPath(import.meta.url));
+const repositoryRoot = resolve(workspaceRoot, "../..");
 const frontendPort = Number(process.env.DWG_DOCS_FRONTEND_PORT ?? 4184);
 const gatewayPort = Number(process.env.DWG_DOCS_GATEWAY_PORT ?? 4328);
 
 export default defineConfig({
   testDir: "./tests/docs",
-  outputDir: "../tests/visual/test-results/docs-captures",
+  outputDir: resolve(repositoryRoot, "tests/visual/test-results/docs-captures"),
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
@@ -19,7 +23,7 @@ export default defineConfig({
   webServer: [
     {
       command: "npm run gateway",
-      cwd: "..",
+      cwd: repositoryRoot,
       env: {
         ...process.env,
         DWG_GATEWAY_PORT: String(gatewayPort)
@@ -30,6 +34,7 @@ export default defineConfig({
     },
     {
       command: "npm run dev",
+      cwd: workspaceRoot,
       env: {
         ...process.env,
         DWG_FRONTEND_PORT: String(frontendPort),

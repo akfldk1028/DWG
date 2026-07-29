@@ -34,8 +34,8 @@ export function findModuleBoundaryViolations(
 export async function scanWorkspaceModuleBoundaries(workspace: string) {
   const sourceRoots = [
     "packages/contracts/src",
-    "agent/src",
-    "frontend/src"
+    "modules/cad-runtime/src",
+    "apps/workspace/src"
   ];
   const imports: ModuleImport[] = [];
 
@@ -59,26 +59,26 @@ function findViolatedRule(
 ): ModuleBoundaryViolation["rule"] | null {
   if (
     importer.startsWith("packages/contracts/") &&
-    (importedModule.startsWith("agent/") ||
-      importedModule.startsWith("frontend/"))
+    (importedModule.startsWith("modules/cad-runtime/") ||
+      importedModule.startsWith("apps/workspace/"))
   ) {
     return "contracts-are-runtime-independent";
   }
   if (
-    importer.startsWith("agent/") &&
-    importedModule.startsWith("frontend/")
+    importer.startsWith("modules/cad-runtime/") &&
+    importedModule.startsWith("apps/workspace/")
   ) {
     return "agent-does-not-import-frontend";
   }
   if (
-    importer.startsWith("frontend/") &&
-    importedModule.startsWith("agent/")
+    importer.startsWith("apps/workspace/") &&
+    importedModule.startsWith("modules/cad-runtime/")
   ) {
     return "frontend-does-not-import-agent";
   }
   if (
-    importer.startsWith("frontend/src/shared/") &&
-    importedModule.startsWith("frontend/src/features/")
+    importer.startsWith("apps/workspace/src/shared/") &&
+    importedModule.startsWith("apps/workspace/src/features/")
   ) {
     return "frontend-shared-does-not-import-features";
   }
@@ -101,7 +101,7 @@ function resolveModule(importer: string, specifier: string) {
 }
 
 function getFrontendFeature(path: string) {
-  const match = /^frontend\/src\/features\/([^/]+)\//.exec(path);
+  const match = /^apps\/workspace\/src\/features\/([^/]+)\//.exec(path);
   return match?.[1] ?? null;
 }
 

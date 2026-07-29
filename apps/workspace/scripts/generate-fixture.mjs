@@ -3,15 +3,21 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = resolve(frontendRoot, "..");
-const project = resolve(repoRoot, "backend/src/DwgIntelligence.DwgParser");
-const source = resolve(repoRoot, "tests/fixtures/dwg/export_sample.dwg");
-const destination = resolve(frontendRoot, "public/data/export_sample.index.json");
+const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repositoryRoot = resolve(workspaceRoot, "../..");
+const parserProject = resolve(
+  repositoryRoot,
+  "modules/dwg-parser/src/DwgIntelligence.DwgParser"
+);
+const source = resolve(
+  repositoryRoot,
+  "tests/fixtures/dwg/export_sample.dwg"
+);
+const destination = resolve(workspaceRoot, "public/data/export_sample.index.json");
 
 const output = execFileSync(
   "dotnet",
-  ["run", "--project", project, "--no-launch-profile", "--", "index", source],
+  ["run", "--project", parserProject, "--no-launch-profile", "--", "index", source],
   { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 }
 );
 const index = JSON.parse(output);
