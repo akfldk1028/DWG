@@ -7,6 +7,7 @@ import type {
 } from "../contracts.js";
 
 const defaultTimeoutMs = 120_000;
+const maxProcessOutputChars = 1_048_576;
 
 export const defaultProcessRunner: ProcessRunner = {
   run(spec) {
@@ -44,14 +45,37 @@ export function runProcess(spec: ProcessRunSpec): Promise<ProcessResult> {
       child.kill();
       finish(cancelledResult(stdout));
     };
+    const exceedOutputLimit = () => {
+      child.kill();
+      finish({
+        exitCode: null,
+        stdout,
+        stderr: `${stderr}${stderr ? "\n" : ""}Provider process output limit exceeded`,
+        errorCode: "EOUTPUTLIMIT"
+      });
+    };
+    const appendOutput = (stream: "stdout" | "stderr", chunk: string) => {
+      if (settled) return;
+      const remaining = maxProcessOutputChars - stdout.length - stderr.length;
+      if (remaining > 0) {
+        if (stream === "stdout") {
+          stdout += chunk.slice(0, remaining);
+        } else {
+          stderr += chunk.slice(0, remaining);
+        }
+      }
+      if (chunk.length > remaining) {
+        exceedOutputLimit();
+      }
+    };
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
+      appendOutput("stdout", chunk);
     });
     child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
+      appendOutput("stderr", chunk);
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
       finish({

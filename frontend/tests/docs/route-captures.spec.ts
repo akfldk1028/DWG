@@ -29,6 +29,7 @@ test("captures the single workspace route in its key states", async ({ page }) =
   await capture(page, "03-layer-hidden.png");
 
   await page.reload();
+  await stabilize(page);
   const claudeButton = page.getByRole("button", { name: "Claude", exact: true });
   await expect(claudeButton).toBeEnabled();
   await claudeButton.click();
@@ -56,7 +57,8 @@ test("renders a single overview contact sheet", async ({ page }) => {
   await expect(page.locator("img").last()).toBeVisible();
   await page.screenshot({
     path: resolve(captureDirectory, "00-overview.png"),
-    fullPage: true
+    fullPage: true,
+    animations: "disabled"
   });
 });
 
@@ -109,6 +111,7 @@ async function stabilize(page: Page) {
 async function capture(page: Page, fileName: string) {
   await page.screenshot({
     path: resolve(captureDirectory, fileName),
-    fullPage: true
+    fullPage: true,
+    animations: "disabled"
   });
 }

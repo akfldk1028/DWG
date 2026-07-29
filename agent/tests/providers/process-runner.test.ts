@@ -22,3 +22,18 @@ test("aborting a provider request terminates the child process", async () => {
   assert.match(result.stderr, /cancel/i);
   assert.ok(Date.now() - startedAt < 1_000);
 });
+
+test("terminates a provider process whose output exceeds one MiB", async () => {
+  const result = await runProcess({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('x'.repeat(1_100_000))"],
+    cwd: process.cwd(),
+    env: process.env,
+    timeoutMs: 2_000
+  });
+
+  assert.equal(result.exitCode, null);
+  assert.equal(result.errorCode, "EOUTPUTLIMIT");
+  assert.ok(result.stdout.length <= 1_048_576);
+  assert.match(result.stderr, /output limit/i);
+});
