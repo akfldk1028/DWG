@@ -17,9 +17,12 @@ Use this skill when a user asks questions about DWG/DXF drawing search, checking
 cad.open_drawing
 cad.build_index
 cad.get_layers or cad.find_entities_by_layer/type/text
-cad.select_entities or cad.zoom_to_entities when a viewer session exists
-cad.save_sidecar for audit records
+cad.get_entity for exact handle evidence when needed
+cad.list_unsupported before reporting completeness
 ```
+
+Viewer select/zoom actions and sidecar writes are not currently exposed by the
+MCP server. Do not claim that they ran.
 
 ## Answer Format
 

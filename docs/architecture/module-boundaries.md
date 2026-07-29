@@ -40,7 +40,8 @@ agent/src/
 
 frontend/src/
   app/             Layout composition, global scenario state, cross-feature CSS
-    useWorkspaceControls.ts  Browser keyboard, popover, grid, and panel state
+    useWorkspaceControls.ts  Browser keyboard, popover, grid, sidebar, and artifact state
+    useWorkspacePreferences.ts Persisted theme, artifact width, and sidebar sections
   features/
     drawing-explorer/  Index loading, drawing tree, layer visibility, local CSS
     cad-viewer/        Typed SVG geometry, fallback rendering, local CSS
@@ -50,6 +51,14 @@ frontend/src/
     api/           Typed HTTP clients
     types.ts       Public contract re-exports plus UI-only scenario types
 ```
+
+## Stable integration surfaces
+
+Only `@dwg/contracts`, the loopback `/api` routes, MCP stdio, and the complete
+frontend composition are stable cross-repository boundaries. Files under
+`agent/src/**` and `frontend/src/features/**` are internal ownership units, not
+deep-import APIs. See `integration-contract.md` before merging this repository
+into another codebase.
 
 ## Extension rules
 

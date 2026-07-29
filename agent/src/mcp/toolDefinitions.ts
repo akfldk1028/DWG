@@ -24,9 +24,9 @@ const drawingId = z.string().min(1).describe("Drawing session ID returned by cad
 export const CAD_TOOL_DEFINITIONS: readonly CadToolDefinition[] = [
   {
     name: "cad.open_drawing",
-    description: "Open a local DXF drawing in read-only mode and return its drawing session ID.",
+    description: "Open a local DWG or DXF drawing in read-only mode and return its drawing session ID.",
     inputSchema: {
-      path: z.string().min(1).describe("Local path to a DXF drawing")
+      path: z.string().min(1).describe("Local path to a DWG or DXF drawing")
     }
   },
   {

@@ -15,7 +15,7 @@ import {
   View,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { CadViewer } from "../features/cad-viewer/CadViewer";
 import type { CadEntity, CadIndex, InspectionRun } from "../shared/types";
@@ -69,15 +69,6 @@ export function CadArtifactPanel({
     () => groupFindings(run?.findings ?? []),
     [run?.findings]
   );
-
-  useEffect(() => {
-    if (!maximized) return;
-    const exit = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onMaximizedChange(false);
-    };
-    window.addEventListener("keydown", exit);
-    return () => window.removeEventListener("keydown", exit);
-  }, [maximized, onMaximizedChange]);
 
   async function copyArtifact() {
     await navigator.clipboard.writeText(JSON.stringify(index, null, 2));

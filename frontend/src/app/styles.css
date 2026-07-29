@@ -119,6 +119,7 @@ button { cursor: pointer; }
   font-weight: 700;
 }
 .run-agents:disabled { opacity: .6; }
+.topbar-actions { display: flex; align-items: center; gap: 9px; }
 .settings-anchor { position: relative; }
 .settings-popover, .notification-popover {
   position: absolute;
