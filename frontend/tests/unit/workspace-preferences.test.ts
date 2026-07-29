@@ -16,9 +16,9 @@ test("resolves explicit and system theme preferences", () => {
 });
 
 test("clamps the CAD artifact width while preserving the conversation", () => {
-  assert.equal(clampArtifactWidth(1440, 900, true), 835);
+  assert.equal(clampArtifactWidth(1440, 900, true), 695);
   assert.equal(clampArtifactWidth(1440, 300, true), 520);
-  assert.equal(clampArtifactWidth(1200, 1000, false), 833);
+  assert.equal(clampArtifactWidth(1200, 1000, false), 693);
 });
 
 test("workspace preferences persist and reject malformed storage", () => {

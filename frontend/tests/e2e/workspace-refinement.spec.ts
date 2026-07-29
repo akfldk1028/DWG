@@ -48,14 +48,85 @@ test("layer visibility reports visible and total model entities", async ({ page 
   await expect(page.locator(".viewer-status")).toContainText("0 visible / 22 total");
 });
 
-test("drawing tree scroll area does not disappear behind Sessions", async ({ page }) => {
+test("drawing tree scroll area does not disappear behind Recents", async ({ page }) => {
   await page.goto("/");
 
   const layer = await page.locator(".layer-row").first().boundingBox();
-  const sessions = await page.getByRole("button", { name: "Sessions", exact: true }).boundingBox();
+  const sessions = await page.getByRole("button", { name: "Recents", exact: true }).boundingBox();
   expect(layer).not.toBeNull();
   expect(sessions).not.toBeNull();
   expect(layer!.y + layer!.height).toBeLessThanOrEqual(sessions!.y);
+});
+
+test("keeps CAD controls inside the artifact instead of the global header", async ({ page }) => {
+  await page.goto("/");
+
+  const topbar = page.locator(".topbar");
+  const artifact = page.getByRole("region", { name: "CAD 아티팩트" });
+  await expect(topbar.getByText("Indexed", { exact: true })).toHaveCount(0);
+  await expect(topbar.getByRole("button", { name: "Run agents" })).toHaveCount(0);
+  await expect(topbar.getByLabel("전체 도면 검색")).toHaveCount(0);
+  await expect(artifact.locator(".artifact-header").getByText("Indexed", { exact: true })).toBeVisible();
+  await expect(artifact.getByRole("button", { name: "Run agents" })).toBeVisible();
+  await expect(artifact.getByLabel("전체 도면 검색")).toBeVisible();
+});
+
+test("closes and restores the desktop artifact while expanding chat", async ({ page }) => {
+  await page.goto("/");
+  const conversation = page.getByRole("main", { name: "대화" });
+  const before = await conversation.boundingBox();
+
+  await page.getByRole("button", { name: "CAD 아티팩트 닫기" }).click();
+  await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toHaveCount(0);
+  const expanded = await conversation.boundingBox();
+  expect(expanded!.width).toBeGreaterThan(before!.width);
+
+  await page.getByRole("button", { name: "CAD 아티팩트 열기" }).click();
+  await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeVisible();
+});
+
+test("offers Claude-like artifact version, copy, and download controls", async ({ page }) => {
+  await page.goto("/");
+  const artifact = page.getByRole("region", { name: "CAD 아티팩트" });
+
+  await expect(artifact.getByLabel("아티팩트 버전")).toHaveValue("cad-index/v0.2");
+  await expect(artifact.getByRole("button", { name: "아티팩트 복사" })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await artifact.getByRole("button", { name: "아티팩트 다운로드" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("export_sample.index.json");
+});
+
+test("uses Claude-style sidebar hierarchy and wider default chat", async ({ page }) => {
+  await page.goto("/");
+
+  const sidebar = page.getByLabel("워크스페이스 탐색");
+  await expect(sidebar.getByRole("button", { name: "새 대화" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "검색" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Project", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Recents", exact: true })).toBeVisible();
+
+  const conversation = await page.getByRole("main", { name: "대화" }).boundingBox();
+  expect(conversation!.width).toBeGreaterThanOrEqual(500);
+  await expect(page.getByText("export_sample.dwg", { exact: true })).toHaveCount(2);
+});
+
+test("preserves a 500px conversation when restoring an older wide artifact", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("dwg.workspace-preferences.v1", JSON.stringify({
+      theme: "system",
+      artifactWidth: 760,
+      sidebarSections: {
+        project: true,
+        drawing: true,
+        sessions: true
+      }
+    }));
+  });
+  await page.goto("/");
+
+  const conversation = await page.getByRole("main", { name: "대화" }).boundingBox();
+  expect(conversation!.width).toBeGreaterThanOrEqual(500);
 });
 
 async function mockInspection(page: Page) {

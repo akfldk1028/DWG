@@ -65,7 +65,9 @@ test("continues the selected OAuth provider session after reload", async ({ page
     sessionId
   });
 
-  await page.getByRole("button", { name: "새 대화" }).click();
+  await page.getByRole("main", { name: "대화" })
+    .getByRole("button", { name: "새 대화" })
+    .click();
   await page.locator(".composer input:not([type=file])").fill("fresh thread");
   await page.locator(".composer .send-button").click();
   await expect.poll(() => chatRequests.length).toBe(3);

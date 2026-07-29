@@ -85,7 +85,7 @@ test("layer visibility and handle highlighting apply to typed geometry", async (
   await expect(page.locator(".cad-entity")).toHaveCount(visibleAfterHide);
 
   await toggle.click();
-  await page.locator(".global-search input").fill("23E");
+  await page.getByLabel("전체 도면 검색").fill("23E");
   await expect(page.locator('[data-handle="23E"]'))
     .toHaveClass(/highlighted/);
 });

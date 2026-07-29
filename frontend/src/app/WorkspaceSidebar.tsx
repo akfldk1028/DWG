@@ -3,9 +3,11 @@ import {
   ChevronRight,
   FolderOpen,
   MessageSquare,
+  MessageSquarePlus,
   PanelLeftClose,
-  Plus
+  Search
 } from "lucide-react";
+import { useState } from "react";
 
 import { DrawingExplorer } from "../features/drawing-explorer/DrawingExplorer";
 import type { WorkspaceSession } from "../features/agent-chat/workspaceSessionStore";
@@ -39,6 +41,12 @@ export function WorkspaceSidebar({
   onToggleLayer,
   onToggleSection
 }: Props) {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [sessionQuery, setSessionQuery] = useState("");
+  const visibleSessions = sessions.filter((session) =>
+    session.title.toLocaleLowerCase().includes(sessionQuery.trim().toLocaleLowerCase())
+  );
+
   return (
     <aside className={`workspace-sidebar ${overlay ? "overlay" : ""}`} aria-label="워크스페이스 탐색">
       <div className="sidebar-heading">
@@ -51,6 +59,27 @@ export function WorkspaceSidebar({
         )}
       </div>
 
+      <div className="sidebar-primary-actions">
+        <button aria-label="새 대화" onClick={onNewSession}>
+          <MessageSquarePlus size={15} /> 새 대화
+        </button>
+        <button aria-label="검색" onClick={() => setSearchOpen((open) => !open)}>
+          <Search size={15} /> 검색
+        </button>
+        {searchOpen && (
+          <label className="sidebar-search">
+            <Search size={13} />
+            <input
+              aria-label="워크스페이스 검색"
+              autoFocus
+              onChange={(event) => setSessionQuery(event.target.value)}
+              placeholder="대화 검색"
+              value={sessionQuery}
+            />
+          </label>
+        )}
+      </div>
+
       <SidebarSection
         label="Project"
         open={sections.project}
@@ -60,32 +89,32 @@ export function WorkspaceSidebar({
           <FolderOpen size={15} />
           <div><strong>Sample review</strong><span>1 drawing · local</span></div>
         </div>
-      </SidebarSection>
-
-      <SidebarSection
-        label="Drawing"
-        open={sections.drawing}
-        onToggle={() => onToggleSection("drawing")}
-      >
-        <DrawingExplorer
-          hiddenLayers={hiddenLayers}
-          index={index}
-          onToggleLayer={onToggleLayer}
-        />
-      </SidebarSection>
-
-      <SidebarSection
-        action={
-          <button className="icon-button" aria-label="새 세션" onClick={onNewSession}>
-            <Plus size={14} />
+        <div className="project-drawing">
+          <button
+            aria-expanded={sections.drawing}
+            className="nested-drawing-heading"
+            onClick={() => onToggleSection("drawing")}
+          >
+            {sections.drawing ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            Drawing
           </button>
-        }
-        label="Sessions"
+          {sections.drawing && (
+            <DrawingExplorer
+              hiddenLayers={hiddenLayers}
+              index={index}
+              onToggleLayer={onToggleLayer}
+            />
+          )}
+        </div>
+      </SidebarSection>
+
+      <SidebarSection
+        label="Recents"
         open={sections.sessions}
         onToggle={() => onToggleSection("sessions")}
       >
         <div className="session-list">
-          {sessions.map((session) => (
+          {visibleSessions.map((session) => (
             <button
               className={`session-row ${session.id === activeSessionId ? "active" : ""}`}
               key={session.id}
@@ -95,7 +124,7 @@ export function WorkspaceSidebar({
               <span><strong>{session.title}</strong><small>{session.provider} · local session</small></span>
             </button>
           ))}
-          {sessions.length === 0 && <div className="session-empty">저장된 세션이 없습니다.</div>}
+          {visibleSessions.length === 0 && <div className="session-empty">저장된 대화가 없습니다.</div>}
         </div>
       </SidebarSection>
 

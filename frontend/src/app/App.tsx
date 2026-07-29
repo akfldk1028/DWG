@@ -1,11 +1,7 @@
 import {
   Bell,
-  CheckCircle2,
   Menu,
   PanelRight,
-  Play,
-  RotateCcw,
-  Search,
   Settings2
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -36,7 +32,7 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const [artifactMaximized, setArtifactMaximized] = useState(false);
-  const [narrowArtifactOpen, setNarrowArtifactOpen] = useState(false);
+  const [artifactOpen, setArtifactOpen] = useState(() => window.innerWidth > 886);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -133,42 +129,18 @@ export function App() {
           <Menu size={17} />
         </button>
         <div className="file-context">
-          <strong>{index.source.displayName}</strong>
-          <span>Sample review / Model</span>
+          <strong>Drawing review</strong>
+          <span>Local CAD workspace</span>
         </div>
-        <div className="index-health"><CheckCircle2 size={13} /> Indexed <b>{index.summary.entityCount}</b></div>
-        <label className="global-search">
-          <Search size={14} />
-          <input
-            aria-label="전체 도면 검색"
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="handle, layer, type 검색"
-            ref={searchRef}
-            value={searchQuery}
-          />
-        </label>
-        <button className="run-agents" disabled={inspection.loading} onClick={() => void runAgents()}>
-          <Play size={13} /> {inspection.loading ? "Running" : "Run agents"}
-        </button>
-        {inspection.run && (
+        {!artifactOpen && (
           <button
-            aria-label="검사 초기화"
-            className="icon-button"
-            onClick={() => {
-              inspection.reset();
-              setSelectedHandle(null);
-            }}
+            aria-label="CAD 아티팩트 열기"
+            className="icon-button artifact-toggle"
+            onClick={() => setArtifactOpen(true)}
           >
-            <RotateCcw size={14} />
+            <PanelRight size={15} />
           </button>
         )}
-        <button
-          aria-label={narrowArtifactOpen ? "CAD 아티팩트 닫기" : "CAD 아티팩트 열기"}
-          className="icon-button artifact-toggle"
-          onClick={() => setNarrowArtifactOpen((open) => !open)}
-        >
-          <PanelRight size={15} />
-        </button>
         <div className="settings-anchor">
           <button className="icon-button" aria-label="알림" onClick={() => setNotificationsOpen((open) => !open)}><Bell size={15} /></button>
           {notificationsOpen && <div className="notification-popover" role="status">새 알림이 없습니다.</div>}
@@ -203,7 +175,7 @@ export function App() {
       </header>
 
       <div
-        className={`workspace-grid ${artifactMaximized ? "artifact-maximized" : ""} ${narrowArtifactOpen ? "artifact-narrow-open" : ""}`}
+        className={`workspace-grid ${artifactMaximized ? "artifact-maximized" : ""} ${artifactOpen ? "" : "artifact-closed"}`}
         style={{ "--artifact-width": `${artifactWidth}px` } as React.CSSProperties}
       >
         {sidebarOpen && (
@@ -241,45 +213,61 @@ export function App() {
           selectedProvider={chat.selectedProvider}
         />
 
-        <div
-          aria-label="CAD 아티팩트 너비 조절"
-          aria-orientation="vertical"
-          aria-valuemax={1200}
-          aria-valuemin={520}
-          aria-valuenow={Math.round(artifactWidth)}
-          className="artifact-resizer"
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-            event.preventDefault();
-            workspace.setArtifactWidth(clampArtifactWidth(
-              viewportWidth,
-              artifactWidth + (event.key === "ArrowLeft" ? 32 : -32),
-              desktop
-            ));
-          }}
-          onPointerDown={(event) => {
-            dragStart.current = { x: event.clientX, width: artifactWidth };
-            document.body.classList.add("resizing-artifact");
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-          role="separator"
-          tabIndex={0}
-        />
+        {artifactOpen && (
+          <>
+            <div
+              aria-label="CAD 아티팩트 너비 조절"
+              aria-orientation="vertical"
+              aria-valuemax={1200}
+              aria-valuemin={520}
+              aria-valuenow={Math.round(artifactWidth)}
+              className="artifact-resizer"
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                workspace.setArtifactWidth(clampArtifactWidth(
+                  viewportWidth,
+                  artifactWidth + (event.key === "ArrowLeft" ? 32 : -32),
+                  desktop
+                ));
+              }}
+              onPointerDown={(event) => {
+                dragStart.current = { x: event.clientX, width: artifactWidth };
+                document.body.classList.add("resizing-artifact");
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              role="separator"
+              tabIndex={0}
+            />
 
-        <CadArtifactPanel
-          gridVisible={gridVisible}
-          hiddenLayers={layerVisibility.hiddenLayers}
-          highlightedHandles={highlightedHandles}
-          index={index}
-          maximized={artifactMaximized}
-          onGridVisibleChange={setGridVisible}
-          onMaximizedChange={setArtifactMaximized}
-          onSelectFinding={setSelectedHandle}
-          run={inspection.run}
-          searchQuery={searchQuery}
-          selected={selected}
-          selectedHandle={selectedHandle}
-        />
+            <CadArtifactPanel
+              gridVisible={gridVisible}
+              hiddenLayers={layerVisibility.hiddenLayers}
+              highlightedHandles={highlightedHandles}
+              index={index}
+              inspectionLoading={inspection.loading}
+              maximized={artifactMaximized}
+              onClose={() => {
+                setArtifactMaximized(false);
+                setArtifactOpen(false);
+              }}
+              onGridVisibleChange={setGridVisible}
+              onMaximizedChange={setArtifactMaximized}
+              onResetInspection={() => {
+                inspection.reset();
+                setSelectedHandle(null);
+              }}
+              onRunAgents={() => void runAgents()}
+              onSearchQueryChange={setSearchQuery}
+              onSelectFinding={setSelectedHandle}
+              run={inspection.run}
+              searchInputRef={searchRef}
+              searchQuery={searchQuery}
+              selected={selected}
+              selectedHandle={selectedHandle}
+            />
+          </>
+        )}
       </div>
     </div>
   );

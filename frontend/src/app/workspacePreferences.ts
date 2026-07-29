@@ -18,13 +18,13 @@ interface StorageLike {
 
 const storageKey = "dwg.workspace-preferences.v1";
 const sidebarWidth = 238;
-const conversationMinimumWidth = 360;
+const conversationMinimumWidth = 500;
 const separatorWidth = 7;
 const artifactMinimumWidth = 520;
 
 export const defaultWorkspacePreferences: WorkspacePreferences = {
   theme: "system",
-  artifactWidth: 760,
+  artifactWidth: 680,
   sidebarSections: {
     project: true,
     drawing: true,

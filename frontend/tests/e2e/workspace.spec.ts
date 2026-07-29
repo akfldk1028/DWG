@@ -270,7 +270,9 @@ test("workspace controls change visible state instead of remaining inert", async
   await expect(page.getByText("경고가 없습니다.")).toBeVisible();
 
   await page.getByLabel("AI 질문").fill("기존 질문");
-  await page.getByRole("button", { name: "새 대화" }).click();
+  await page.getByRole("main", { name: "대화" })
+    .getByRole("button", { name: "새 대화" })
+    .click();
   await expect(page.getByLabel("AI 질문")).toHaveValue("");
   await page.getByRole("button", { name: "에이전트 멘션" }).click();
   await expect(page.getByLabel("AI 질문")).toHaveValue("@drawing-index-agent ");
