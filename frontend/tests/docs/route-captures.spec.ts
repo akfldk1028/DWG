@@ -18,9 +18,11 @@ test("captures the single workspace route in its key states", async ({ page }) =
 
   await page.getByRole("button", { name: "Run agents" }).click();
   await expect(page.getByText("VERIFIED RESULT")).toBeVisible();
+  await page.getByRole("tab", { name: /Findings/ }).click();
   await capture(page, "02-inspection-complete.png");
 
-  await page.getByRole("button", { name: "Loaded" }).click();
+  await page.getByRole("button", { name: "검사 초기화" }).click();
+  await page.getByRole("tab", { name: /CAD Preview/ }).click();
   const layerToggle = page.locator(".layer-visibility-button").first();
   await layerToggle.click();
   await expect(layerToggle).toHaveAccessibleName("0 레이어 표시");
@@ -31,7 +33,18 @@ test("captures the single workspace route in its key states", async ({ page }) =
   await expect(claudeButton).toBeEnabled();
   await claudeButton.click();
   await expect(claudeButton).toHaveClass(/active/);
+  await page.getByLabel("AI 질문").fill("도면의 TEXT 객체를 근거와 함께 알려줘");
+  await page.getByRole("button", { name: "전송" }).click();
+  await expect(page.getByTestId("live-response")).toContainText("[handle:591]");
   await capture(page, "04-claude-selected.png");
+
+  await page.getByRole("button", { name: "설정" }).click();
+  await page.getByLabel("테마").selectOption("dark");
+  await expect(page.getByTestId("cad-canvas")).toHaveCSS("background-color", "rgb(23, 26, 28)");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "뷰어 설정" })).toBeHidden();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await capture(page, "05-dark-theme.png");
 });
 
 test("renders a single overview contact sheet", async ({ page }) => {
@@ -39,7 +52,7 @@ test("renders a single overview contact sheet", async ({ page }) => {
   await page.goto(
     pathToFileURL(resolve(captureDirectory, "index.html")).toString()
   );
-  await expect(page.locator("img")).toHaveCount(4);
+  await expect(page.locator("img")).toHaveCount(5);
   await expect(page.locator("img").last()).toBeVisible();
   await page.screenshot({
     path: resolve(captureDirectory, "00-overview.png"),
@@ -71,6 +84,16 @@ async function mockProviderStatus(page: Page) {
             detail: "기존 Claude 로그인 세션 · max"
           }
         ]
+      })
+    })
+  );
+  await page.route("**/api/chat", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: "claude",
+        text: "TEXT Hello를 확인했습니다. [handle:591]",
+        sessionId: "98d84d53-7861-4c73-a789-d6c8f5490966"
       })
     })
   );

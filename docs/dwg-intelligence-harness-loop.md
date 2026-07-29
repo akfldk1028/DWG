@@ -126,18 +126,17 @@ MCP 공식 구조상 Tools는 모델이 호출하는 액션이고, Resources는 
 | Tool | 입력 | 출력 | MVP |
 | --- | --- | --- | --- |
 | `cad.open_drawing` | `{ path }` | `{ drawingId, source, warnings }` | 예 |
-| `cad.build_index` | `{ drawingId }` | `{ indexUri, summary }` | 예 |
+| `cad.build_index` | `{ drawingId }` | `{ drawingId, indexUri, summary }` | 예 |
 | `cad.get_layers` | `{ drawingId }` | `{ layers[] }` | 예 |
-| `cad.find_entities_by_layer` | `{ drawingId, layer, visibleOnly? }` | `{ matches[] }` | 예 |
+| `cad.find_entities_by_layer` | `{ drawingId, layer }` | `{ matches[] }` | 예 |
 | `cad.find_entities_by_type` | `{ drawingId, type }` | `{ matches[] }` | 예 |
 | `cad.find_text` | `{ drawingId, query, regex? }` | `{ matches[] }` | 예 |
 | `cad.get_entity` | `{ drawingId, entityIdOrHandle }` | `{ entity }` | 예 |
-| `cad.select_entities` | `{ drawingId, ids[] }` | `{ selectedIds[] }` | viewer 연결 후 |
-| `cad.zoom_to_entities` | `{ drawingId, ids[] }` | `{ bbox, applied }` | viewer 연결 후 |
 | `cad.list_unsupported` | `{ drawingId }` | `{ unsupported[] }` | 예 |
-| `cad.save_sidecar` | `{ drawingId, records[] }` | `{ sidecarPath }` | 예 |
-| `cad.check_unclosed_polylines` | `{ drawingId, layerPattern? }` | `{ issues[] }` | 2차 |
-| `cad.compare_indexes` | `{ beforeDrawingId, afterDrawingId }` | `{ added[], removed[], moved[], changed[] }` | 3차 |
+
+위 8개가 현재 등록된 read-only MCP tool 전체다. viewer select/zoom,
+sidecar write, unclosed-polyline 검사, index 비교는 계획 항목이며 현재 tool
+surface로 호출하거나 실행됐다고 보고하면 안 된다.
 
 Tool 결과의 `matches[]`/`issues[]`는 항상 아래 최소 필드를 포함한다.
 

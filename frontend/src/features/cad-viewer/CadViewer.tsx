@@ -13,9 +13,11 @@ interface Props {
   gridVisible: boolean;
   hiddenLayers: ReadonlySet<string>;
   onGridVisibleChange(visible: boolean): void;
+  showMaximize?: boolean;
 }
 
 const view = { minX: -24, minY: -12, width: 148, height: 126 };
+const maximumSvgEntities = 2000;
 
 export function CadViewer({
   index,
@@ -24,9 +26,10 @@ export function CadViewer({
   searchQuery,
   gridVisible,
   hiddenLayers,
-  onGridVisibleChange
+  onGridVisibleChange,
+  showMaximize = true
 }: Props) {
-  const [viewMode, setViewMode] = useState<"default" | "fit">("default");
+  const [viewMode, setViewMode] = useState<"default" | "fit">("fit");
   const [maximized, setMaximized] = useState(false);
   const modelEntities = useMemo(
     () => index.entities.filter((entity) => entity.layout === "Model"),
@@ -36,6 +39,9 @@ export function CadViewer({
     () => calculateFitView(modelEntities),
     [modelEntities]
   );
+  const visibleModelEntityCount = modelEntities.filter(
+    (entity) => !hiddenLayers.has(entity.layer)
+  ).length;
   const activeView = viewMode === "fit" ? fitView : view;
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const highlightSet = new Set(highlightedHandles);
@@ -52,6 +58,11 @@ export function CadViewer({
       }
     });
   }
+  const renderedEntityCount = Math.min(
+    visibleModelEntityCount,
+    maximumSvgEntities
+  );
+  const yMirror = activeView.minY * 2 + activeView.height;
 
   useEffect(() => {
     if (!maximized) return;
@@ -63,10 +74,12 @@ export function CadViewer({
   }, [maximized]);
 
   const renderedEntities = index.schemaVersion === "cad-index/v0.2"
-    ? index.entities
-        .filter((entity) =>
+    ? selectRenderableEntities(
+        index.entities.filter((entity) =>
           entity.layout === "Model" && !hiddenLayers.has(entity.layer)
-        )
+        ),
+        highlightSet
+      )
         .map((entity) => (
           <EntityGeometry
             entity={entity}
@@ -77,10 +90,12 @@ export function CadViewer({
             schemaVersion="cad-index/v0.2"
           />
         ))
-    : index.entities
-        .filter((entity) =>
+    : selectRenderableEntities(
+        index.entities.filter((entity) =>
           entity.layout === "Model" && !hiddenLayers.has(entity.layer)
-        )
+        ),
+        highlightSet
+      )
         .map((entity) => (
           <EntityGeometry
             entity={entity}
@@ -114,13 +129,13 @@ export function CadViewer({
           </button>
         </div>
         <div className="viewer-crumb">Model <span>/</span> World UCS</div>
-        <button
+        {showMaximize && <button
           className={`tool-button ${maximized ? "active" : ""}`}
           aria-label={maximized ? "최대화 종료" : "최대화"}
           onClick={() => setMaximized((value) => !value)}
         >
           {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-        </button>
+        </button>}
       </div>
 
       <div className="canvas-wrap" data-testid="cad-canvas" data-view={viewMode}>
@@ -149,7 +164,7 @@ export function CadViewer({
               fill="url(#major-grid)"
             />
           )}
-          <g transform="translate(0 102) scale(1 -1)">
+          <g transform={`translate(0 ${yMirror}) scale(1 -1)`}>
             {renderedEntities}
           </g>
         </svg>
@@ -163,12 +178,34 @@ export function CadViewer({
 
       <div className="viewer-status">
         <span><i className="status-dot ready" /> Indexed</span>
-        <span>{index.summary.modelSpaceCount} entities</span>
+        <span>
+          {renderedEntityCount < visibleModelEntityCount
+            ? `${renderedEntityCount} rendered / ${visibleModelEntityCount} visible`
+            : `${visibleModelEntityCount} visible / ${modelEntities.length} total`}
+        </span>
         <span>Model space</span>
         <span className="coordinates">X 50.000&nbsp;&nbsp; Y 50.000&nbsp;&nbsp; Z 0.000</span>
       </div>
     </main>
   );
+}
+
+function selectRenderableEntities<T extends CadEntity>(
+  entities: T[],
+  highlightedHandles: ReadonlySet<string>
+): T[] {
+  if (entities.length <= maximumSvgEntities) return entities;
+  const highlighted = entities.filter(
+    (entity) => entity.handle && highlightedHandles.has(entity.handle)
+  );
+  const ordinary = entities.filter(
+    (entity) => !entity.handle || !highlightedHandles.has(entity.handle)
+  );
+  const highlightedWithinBudget = highlighted.slice(0, maximumSvgEntities);
+  return [
+    ...ordinary.slice(0, maximumSvgEntities - highlightedWithinBudget.length),
+    ...highlightedWithinBudget
+  ];
 }
 
 function calculateFitView(entities: CadEntity[]) {

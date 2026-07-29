@@ -40,7 +40,8 @@ agent/src/
 
 frontend/src/
   app/             Layout composition, global scenario state, cross-feature CSS
-    useWorkspaceControls.ts  Browser keyboard, popover, grid, and panel state
+    useWorkspaceControls.ts  Browser keyboard, popover, grid, sidebar, and artifact state
+    useWorkspacePreferences.ts Persisted theme, artifact width, and sidebar sections
   features/
     drawing-explorer/  Index loading, drawing tree, layer visibility, local CSS
     cad-viewer/        Typed SVG geometry, fallback rendering, local CSS
@@ -50,6 +51,14 @@ frontend/src/
     api/           Typed HTTP clients
     types.ts       Public contract re-exports plus UI-only scenario types
 ```
+
+## Stable integration surfaces
+
+Only `@dwg/contracts`, the loopback `/api` routes, MCP stdio, and the complete
+frontend composition are stable cross-repository boundaries. Files under
+`agent/src/**` and `frontend/src/features/**` are internal ownership units, not
+deep-import APIs. See `integration-contract.md` before merging this repository
+into another codebase.
 
 ## Extension rules
 
@@ -70,11 +79,14 @@ frontend/src/
   owns tokens, resets, top-level layout, placement, and responsive grid rules.
 - OAuth provider status is cached briefly by `CachedChatProvider`; the actual
   chat call remains uncached and provider-specific.
-- Session IDs belong to the frontend chat feature and cross the provider
-  contract as validated UUID strings. The browser stores one ID per provider in
-  tab-scoped `sessionStorage`; application and HTTP layers only forward them.
+- Session IDs belong to each persisted workspace conversation and cross the
+  provider contract as validated UUID strings. `WorkspaceSession` is the single
+  browser source of truth; application and HTTP layers only forward its ID.
 - Layer visibility is view state in `useLayerVisibility`; it filters viewer
   rendering without mutating the normalized index or its summary counts.
+- The viewer fits normalized model-space bounds on first load. Large SVG scenes
+  render a bounded subset while selected and searched handles take priority;
+  the normalized index remains complete.
 - ACadSharp layout traversal, geometry extraction, and INSERT attribute
   extraction stay in the .NET backend. Contracts contain serializable evidence
   only; SVG arc/bulge conversion stays in `frontend/features/cad-viewer`.

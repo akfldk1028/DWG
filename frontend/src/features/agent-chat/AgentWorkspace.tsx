@@ -2,14 +2,12 @@ import {
   Bot,
   Check,
   ChevronRight,
-  CircleDot,
   LoaderCircle,
   MessageSquarePlus,
   TerminalSquare
 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import { agents } from "../../shared/agents";
 import type {
   InspectionRun,
   ProviderChatResult,
@@ -18,6 +16,7 @@ import type {
 } from "../../shared/types";
 import { ChatComposer } from "./ChatComposer";
 import { ProviderSwitch } from "./ProviderSwitch";
+import type { WorkspaceSession } from "./workspaceSessionStore";
 import "./styles.css";
 
 interface Props {
@@ -35,6 +34,7 @@ interface Props {
   chatLoading: boolean;
   chatResult: ProviderChatResult | null;
   chatError: string | null;
+  activeSession?: WorkspaceSession | null;
 }
 
 export function AgentWorkspace({
@@ -51,26 +51,29 @@ export function AgentWorkspace({
   onNewChat,
   chatLoading,
   chatResult,
-  chatError
+  chatError,
+  activeSession
 }: Props) {
-  const liveResponseRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    liveResponseRef.current?.scrollIntoView({ block: "nearest" });
-  }, [chatResult]);
+    endRef.current?.scrollIntoView({ block: "nearest" });
+  }, [activeSession?.messages.length, chatResult]);
 
   return (
-    <aside className="panel agent-workspace" aria-label="에이전트 워크스페이스">
+    <main className="panel agent-workspace conversation-panel" aria-label="대화">
       <div className="agent-tabs">
-        <button className="agent-tab active"><Bot size={14} /> 검사 #1</button>
-        <button className="agent-tab icon-tab" aria-label="새 대화" onClick={onNewChat}><MessageSquarePlus size={14} /></button>
+        <div className="conversation-title"><Bot size={14} /> Drawing inspection</div>
+        <button className="agent-tab icon-tab" aria-label="새 대화" onClick={onNewChat}>
+          <MessageSquarePlus size={15} />
+        </button>
       </div>
 
       <div className="agent-context">
         <span className="agent-avatar">DI</span>
         <div>
-          <strong>Drawing inspection</strong>
-          <span>@export_sample.dwg · OAuth CLI · 7 agents</span>
+          <strong>{activeSession?.title ?? "새 검사 대화"}</strong>
+          <span>export_sample.dwg · OAuth CLI</span>
         </div>
         <ProviderSwitch
           providers={providers}
@@ -80,75 +83,69 @@ export function AgentWorkspace({
       </div>
 
       <div className="conversation">
-        <div className="message user-message">
-          <div className="message-label">YOU</div>
-          <p>도면 인덱스를 확인하고 0 레이어의 객체를 근거와 함께 검사해줘.</p>
-        </div>
+        {activeSession?.messages.map((entry, entryIndex) => (
+          <div
+            className={`message ${entry.role === "user" ? "user-message" : "agent-message"}`}
+            data-testid={
+              entry.role === "assistant" &&
+              entryIndex === activeSession.messages.length - 1
+                ? "live-response"
+                : undefined
+            }
+            key={entry.id}
+          >
+            <div className="message-label">
+              {entry.role === "user" ? "YOU" : <><Bot size={12} /> ASSISTANT</>}
+            </div>
+            <p>{entry.text}</p>
+            {entry.role === "assistant" &&
+              entryIndex === activeSession.messages.length - 1 &&
+              activeSession.providerSessionId &&
+              <code>{activeSession.providerSessionId}</code>}
+          </div>
+        ))}
+        {!activeSession && !inspectionRun && !inspectionLoading && (
+          <div className="conversation-empty">
+            <Bot size={22} />
+            <strong>도면에 대해 질문하세요</strong>
+            <span>레이어, 객체, handle과 검사 근거를 함께 확인합니다.</span>
+          </div>
+        )}
 
-        <div className="message agent-message">
-          <div className="message-label"><Bot size={12} /> ORCHESTRATOR</div>
-          <p>로컬 DWG 인덱스를 기준으로 객체 검색과 증거 검증을 순서대로 실행합니다.</p>
-        </div>
-
-        <div className="tool-stack" aria-label="에이전트 실행 상태">
-          {inspectionLoading && (
+        {inspectionLoading && (
+          <div className="tool-stack" aria-label="에이전트 실행 상태">
             <ToolStep label="orchestrator" tool="POST /api/inspections" state="running" />
-          )}
-          {!inspectionLoading && !inspectionRun && (
-            <ToolStep label="orchestrator" tool="검사 실행 대기" state="idle" />
-          )}
-          {inspectionRun?.events.map((event) => (
-            <ToolStep
-              key={`${event.sequence}:${event.agentId}:${event.action}`}
-              label={event.agentId}
-              tool={event.action}
-              state={
-                event.status === "completed"
-                  ? "done"
-                  : event.status === "rejected"
-                    ? "rejected"
-                    : "idle"
-              }
-            />
-          ))}
-        </div>
-
+          </div>
+        )}
+        {inspectionRun?.events.length ? (
+          <div className="tool-stack" aria-label="에이전트 실행 상태">
+            {inspectionRun.events.map((event) => (
+              <ToolStep
+                key={`${event.sequence}:${event.agentId}:${event.action}`}
+                label={event.agentId}
+                tool={event.action}
+                state={
+                  event.status === "completed"
+                    ? "done"
+                    : event.status === "rejected"
+                      ? "rejected"
+                      : event.status === "planned"
+                        ? "planned"
+                        : "idle"
+                }
+              />
+            ))}
+          </div>
+        ) : null}
         {inspectionRun?.status === "completed" && (
           <div className="message agent-message response-message">
             <div className="message-label"><Check size={12} /> VERIFIED RESULT</div>
-            <p><strong>{inspectionRun.findings.length}개 주요 객체</strong>를 확인했습니다. 모든 결과에 handle, type, layer, bbox가 연결되어 있습니다.</p>
-          </div>
-        )}
-        {inspectionRun?.status === "rejected" && (
-          <div className="chat-error" role="alert">
-            증거가 불완전하여 검사 결과가 거부됐습니다.
+            <p><strong>{inspectionRun.findings.length}개 주요 객체</strong>를 handle, type, layer, bbox 근거로 확인했습니다.</p>
           </div>
         )}
         {inspectionError && <div className="chat-error" role="alert">{inspectionError}</div>}
-
-        {chatResult && (
-          <div
-            className="message agent-message live-response"
-            data-testid="live-response"
-            ref={liveResponseRef}
-          >
-            <div className="message-label"><Check size={12} /> {chatResult.provider === "codex" ? "GPT · CODEX" : "CLAUDE"} · OAUTH SESSION</div>
-            <p>{chatResult.text}</p>
-            {chatResult.sessionId && <code>{chatResult.sessionId}</code>}
-          </div>
-        )}
         {chatError && <div className="chat-error" role="alert">{chatError}</div>}
-
-        <div className="specialist-list">
-          <div className="subheading">SPECIALISTS</div>
-          {agents.map((agent) => (
-            <div className="specialist-row" key={agent.id} title={agent.id}>
-              <CircleDot size={11} className={agent.state} />
-              <div><strong>{agent.label}</strong><span>{agent.role}</span></div>
-              <span className={`agent-state ${agent.state}`}>{agent.state}</span>
-            </div>
-          ))}
-        </div>
+        <div ref={endRef} />
       </div>
 
       <ChatComposer
@@ -159,16 +156,24 @@ export function AgentWorkspace({
         onSubmit={onSubmit}
         onCancel={onCancel}
       />
-    </aside>
+    </main>
   );
 }
 
-function ToolStep({ label, tool, state }: { label: string; tool: string; state: "idle" | "running" | "done" | "rejected" }) {
+function ToolStep({ label, tool, state }: {
+  label: string;
+  tool: string;
+  state: "idle" | "planned" | "running" | "done" | "rejected";
+}) {
   return (
     <div className={`tool-step ${state}`}>
-      {state === "running" ? <LoaderCircle className="spin" size={14} /> : state === "done" ? <Check size={14} /> : <ChevronRight size={14} />}
+      {state === "running"
+        ? <LoaderCircle className="spin" size={14} />
+        : state === "done"
+          ? <Check size={14} />
+          : <ChevronRight size={14} />}
       <div><strong>{label}</strong><span><TerminalSquare size={11} /> {tool}</span></div>
-      <em>{state === "running" ? "RUNNING" : state === "done" ? "DONE" : state === "rejected" ? "REJECTED" : "QUEUED"}</em>
+      <em>{state === "running" ? "RUNNING" : state === "done" ? "DONE" : state === "rejected" ? "REJECTED" : state === "planned" ? "PLANNED" : "QUEUED"}</em>
     </div>
   );
 }

@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { extname } from "node:path";
+
+import { MAX_CAD_SEARCH_QUERY_CHARS } from "@dwg/contracts";
 
 import { buildIndexFromDxfFileName } from "../../parsers/dxf/dxfIndexer.js";
 import { buildIndexFromDwgFile } from "../../parsers/dwg/acadSharpIndexer.js";
+import { resolveWorkspaceCadPath } from "../drawing-access/workspacePath.js";
 import type {
   CadEntityIndex,
   CadEntityIndexItem,
@@ -16,14 +19,19 @@ interface OpenedDrawing {
   index?: CadEntityIndex;
 }
 
-export function createCadToolRuntime() {
+interface CadToolRuntimeOptions {
+  workspaceRoot?: string;
+}
+
+export function createCadToolRuntime(options: CadToolRuntimeOptions = {}) {
   const drawings = new Map<string, OpenedDrawing>();
+  const workspaceRoot = options.workspaceRoot ?? process.cwd();
 
   return {
     async call(name: string, args: ToolArguments): Promise<any> {
       switch (name) {
         case "cad.open_drawing":
-          return openDrawing(args, drawings);
+          return openDrawing(args, drawings, workspaceRoot);
         case "cad.build_index":
           return buildIndex(args, drawings);
         case "cad.get_layers":
@@ -45,9 +53,13 @@ export function createCadToolRuntime() {
   };
 }
 
-async function openDrawing(args: ToolArguments, drawings: Map<string, OpenedDrawing>) {
+async function openDrawing(
+  args: ToolArguments,
+  drawings: Map<string, OpenedDrawing>,
+  workspaceRoot: string
+) {
   const path = asString(args.path, "path");
-  const fullPath = resolve(path);
+  const fullPath = resolveWorkspaceCadPath(workspaceRoot, path);
   const index = await buildCadIndexForPath(fullPath);
   drawings.set(index.drawingId, { path: fullPath, index });
 
@@ -105,6 +117,12 @@ function findEntitiesByType(args: ToolArguments, drawings: Map<string, OpenedDra
 function findText(args: ToolArguments, drawings: Map<string, OpenedDrawing>) {
   const index = requireIndex(args, drawings);
   const query = asString(args.query, "query");
+  if (query.length > MAX_CAD_SEARCH_QUERY_CHARS) {
+    throw new Error(`query exceeds ${MAX_CAD_SEARCH_QUERY_CHARS} characters`);
+  }
+  if (args.regex === true && /[()]/.test(query)) {
+    throw new Error("Regex grouping is not supported");
+  }
   const regex = args.regex === true ? new RegExp(query, "i") : null;
 
   return {

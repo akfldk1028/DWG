@@ -109,6 +109,34 @@ test("CAD context preserves schedule text, shapes, and stable evidence", () => {
   assert.match(context, /bbox=\[0,0,0\]→\[100,100,0\]/);
 });
 
+test("CAD context retrieves a matching entity from beyond the display budget", () => {
+  const filler = Array.from({ length: 201 }, (_, offset) => ({
+    ...index.entities[0],
+    id: `h:${1000 + offset}`,
+    handle: String(1000 + offset),
+    text: `일반 주석 ${offset}`
+  }));
+  const target = {
+    ...index.entities[1],
+    id: "h:TARGET",
+    handle: "TARGET",
+    text: "대지면적 500㎡"
+  };
+  const largeIndex: CadEntityIndex = {
+    ...index,
+    summary: {
+      ...index.summary,
+      entityCount: filler.length + 1
+    },
+    entities: [...filler, target]
+  };
+
+  const context = buildCadContext(largeIndex, "개요표의 대지면적을 알려줘");
+
+  assert.match(context, /handle=TARGET/);
+  assert.match(context, /text="대지면적 500㎡"/);
+});
+
 test("chat service sends a bounded real-index context to the selected provider", async () => {
   const provider = new CapturingProvider();
   const service = createChatService({

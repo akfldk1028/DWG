@@ -49,3 +49,45 @@ test("rejects unsupported drawing formats before reading them", async () => {
     /Unsupported drawing format: \.pdf/
   );
 });
+
+test("rejects CAD files outside the configured workspace", async () => {
+  const runtime = createCadToolRuntime({
+    workspaceRoot: resolve("agent/fixtures")
+  });
+
+  await assert.rejects(
+    runtime.call("cad.open_drawing", { path: fixture }),
+    /Drawing path is outside workspace/
+  );
+});
+
+test("rejects regular expressions with executable grouping", async () => {
+  const runtime = createCadToolRuntime();
+  const opened = await runtime.call("cad.open_drawing", {
+    path: resolve("agent/fixtures/minimal-architectural.dxf")
+  });
+
+  await assert.rejects(
+    runtime.call("cad.find_text", {
+      drawingId: opened.drawingId,
+      query: "(a+)+$",
+      regex: true
+    }),
+    /Regex grouping is not supported/
+  );
+});
+
+test("rejects text queries above the public search limit", async () => {
+  const runtime = createCadToolRuntime();
+  const opened = await runtime.call("cad.open_drawing", {
+    path: resolve("agent/fixtures/minimal-architectural.dxf")
+  });
+
+  await assert.rejects(
+    runtime.call("cad.find_text", {
+      drawingId: opened.drawingId,
+      query: "x".repeat(129)
+    }),
+    /query exceeds 128 characters/
+  );
+});

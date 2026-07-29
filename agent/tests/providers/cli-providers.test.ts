@@ -127,6 +127,26 @@ test("provider adapters surface sanitized CLI failures", async () => {
   assert.doesNotMatch(status.detail, /abc123/);
 });
 
+test("Codex adapter falls back to PATH when the APPDATA npm install is absent", async () => {
+  const runner = new FakeRunner([ok("Logged in using ChatGPT\n")]);
+  const originalAppData = process.env.APPDATA;
+  process.env.APPDATA = "C:\\missing-codex-install";
+  try {
+    const provider = new CodexCliProvider(runner, "C:\\DK\\DWG");
+
+    await provider.getStatus();
+
+    assert.equal(runner.calls[0]?.command, "codex");
+    assert.deepEqual(runner.calls[0]?.args, ["login", "status"]);
+  } finally {
+    if (originalAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalAppData;
+    }
+  }
+});
+
 test("Codex adapter resumes the requested persisted session", async () => {
   const runner = new FakeRunner([
     ok([

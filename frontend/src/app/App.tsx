@@ -1,188 +1,219 @@
 import {
   Bell,
-  Box,
-  CheckCircle2,
-  ChevronDown,
-  Command,
-  FolderOpen,
+  Menu,
   PanelRight,
-  Play,
-  RotateCcw,
-  Search,
   Settings2
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AgentWorkspace } from "../features/agent-chat/AgentWorkspace";
 import { useProviderChat } from "../features/agent-chat/useProviderChat";
-import { CadViewer } from "../features/cad-viewer/CadViewer";
-import { DrawingExplorer } from "../features/drawing-explorer/DrawingExplorer";
 import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
 import { useLayerVisibility } from "../features/drawing-explorer/useLayerVisibility";
-import { InspectionDock } from "../features/inspection-results/InspectionDock";
 import { useInspectionRun } from "../features/inspection-results/useInspectionRun";
-import type { Scenario } from "../shared/types";
+import { CadArtifactPanel } from "./CadArtifactPanel";
 import { useWorkspaceControls } from "./useWorkspaceControls";
+import { WorkspaceSidebar } from "./WorkspaceSidebar";
+import type { ThemePreference } from "./workspacePreferences";
+import { useWorkspacePreferences } from "./useWorkspacePreferences";
+import "./styles.css";
 
 export function App() {
   const { index, error } = useDrawingIndex();
   const chat = useProviderChat();
   const inspection = useInspectionRun();
+  const workspace = useWorkspacePreferences();
   const {
-    agentPanelOpen,
-    activePopover,
+    artifactMaximized,
+    artifactOpen,
+    artifactWidth,
+    desktop,
     gridVisible,
+    notificationsOpen,
     searchQuery,
     searchRef,
+    settingsOpen,
+    sidebarOpen,
     topActionsRef,
-    setActivePopover,
-    setAgentPanelOpen,
+    resizeArtifactBy,
+    setArtifactMaximized,
+    setArtifactOpen,
     setGridVisible,
-    setSearchQuery
-  } = useWorkspaceControls();
+    setNotificationsOpen,
+    setSearchQuery,
+    setSettingsOpen,
+    setSidebarOpen,
+    startArtifactResize
+  } = useWorkspaceControls({
+    preferredArtifactWidth: workspace.preferences.artifactWidth,
+    setPreferredArtifactWidth: workspace.setArtifactWidth
+  });
+  const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
+
   const layerVisibility = useLayerVisibility(
     index?.layers.map((layer) => layer.name) ?? []
   );
-  const [scenario, setScenario] = useState<Scenario>("loaded");
-  const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const selected = index?.entities.find((entity) => entity.handle === selectedHandle) ?? null;
-  const highlightedHandles = new Set(
+  const highlightedHandles = useMemo(() => new Set(
     inspection.run?.findings.flatMap((finding) => finding.handle ? [finding.handle] : []) ?? []
-  );
-
-  function resetInspection() {
-    inspection.reset();
-    setSelectedHandle(null);
-    setScenario("loaded");
-  }
+  ), [inspection.run]);
 
   async function runAgents() {
-    setScenario("running");
     setSelectedHandle(null);
-    const result = await inspection.start([{ kind: "layer", value: "0" }]);
-    if (result) {
-      setScenario(result.warnings.length > 0 ? "warning" : "highlighted");
-    }
+    await inspection.start([{ kind: "layer", value: "0" }]);
   }
 
   if (error) {
-    return <div className="load-state error-state">DWG 인덱스를 불러오지 못했습니다: {error}</div>;
+    return <div className="load-state error-state">DWG 인덱스를 불러오지 못했습니다. {error}</div>;
   }
   if (!index) {
-    return <div className="load-state"><span className="loading-mark" /> 로컬 DWG 인덱스를 불러오는 중…</div>;
+    return <div className="load-state"><span className="loading-mark" /> 로컬 DWG 인덱스를 불러오는 중</div>;
   }
 
   return (
-    <div className="app-shell" data-scenario={scenario}>
+    <div className="app-shell" data-theme={workspace.resolvedTheme}>
       <header className="topbar">
-        <div className="brand"><span className="brand-mark"><Box size={16} /></span><strong>DWG Intelligence</strong></div>
-        <div className="project-switcher"><FolderOpen size={14} /><span>Sample review</span><ChevronDown size={12} /></div>
-        <div className="file-pill"><span className="file-icon">DWG</span><strong>{index.source.displayName}</strong><span>·</span><span>Model</span></div>
-        <div className="index-health"><CheckCircle2 size={13} /><span>Indexed</span><b>{index.summary.entityCount}</b></div>
-        <label className="global-search">
-          <Search size={14} />
-          <input
-            aria-label="전체 도면 검색"
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="객체, handle, layer 검색"
-            ref={searchRef}
-            value={searchQuery}
-          />
-          <kbd>⌘ K</kbd>
-        </label>
-        <div className="top-actions" ref={topActionsRef}>
+        <button
+          aria-label="탐색 열기"
+          className="icon-button menu-button"
+          onClick={() => setSidebarOpen((open) => !open)}
+        >
+          <Menu size={17} />
+        </button>
+        <div className="file-context">
+          <strong>Drawing review</strong>
+          <span>Local CAD workspace</span>
+        </div>
+        {!artifactOpen && (
           <button
-            aria-expanded={activePopover === "notifications"}
-            aria-label="알림"
-            className={activePopover === "notifications" ? "active" : ""}
-            onClick={() => setActivePopover((current) => current === "notifications" ? null : "notifications")}
-          >
-            <Bell size={15} />
-          </button>
-          <button
-            aria-label={agentPanelOpen ? "패널 닫기" : "패널 열기"}
-            aria-pressed={agentPanelOpen}
-            onClick={() => setAgentPanelOpen((open) => !open)}
+            aria-label="CAD 아티팩트 열기"
+            className="icon-button artifact-toggle"
+            onClick={() => setArtifactOpen(true)}
           >
             <PanelRight size={15} />
           </button>
-          <button
-            aria-expanded={activePopover === "settings"}
-            aria-label="설정"
-            className={activePopover === "settings" ? "active" : ""}
-            onClick={() => setActivePopover((current) => current === "settings" ? null : "settings")}
-          >
-            <Settings2 size={15} />
-          </button>
-          {activePopover === "notifications" && (
-            <div className="action-popover notification-popover" role="status">
-              <strong>알림</strong>
-              <span>새 알림이 없습니다.</span>
-            </div>
-          )}
-          {activePopover === "settings" && (
-            <div aria-label="뷰어 설정" className="action-popover settings-popover" role="dialog">
-              <strong>뷰어 설정</strong>
-              <label>
-                <input
-                  checked={gridVisible}
-                  onChange={(event) => setGridVisible(event.target.checked)}
-                  type="checkbox"
-                />
-                그리드 표시
-              </label>
-            </div>
-          )}
+        )}
+        <div className="topbar-actions" ref={topActionsRef}>
+          <div className="settings-anchor">
+            <button className="icon-button" aria-label="알림" onClick={() => setNotificationsOpen((open) => !open)}><Bell size={15} /></button>
+            {notificationsOpen && <div className="notification-popover" role="status">새 알림이 없습니다.</div>}
+          </div>
+          <div className="settings-anchor">
+            <button
+              aria-expanded={settingsOpen}
+              aria-label="설정"
+              className="icon-button"
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              <Settings2 size={15} />
+            </button>
+            {settingsOpen && (
+              <div className="settings-popover" role="dialog" aria-label="뷰어 설정">
+                <label>
+                  <span>테마</span>
+                  <select
+                    aria-label="테마"
+                    onChange={(event) => workspace.setTheme(event.target.value as ThemePreference)}
+                    value={workspace.preferences.theme}
+                  >
+                    <option value="system">System</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                  </select>
+                </label>
+                <label><input checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} type="checkbox" /> CAD grid</label>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      <nav className="scenario-bar" aria-label="검증 시나리오">
-        <span><Command size={13} /> REAL INSPECTION</span>
-        <button className={scenario === "loaded" ? "active" : ""} onClick={resetInspection}><RotateCcw size={12} /> Loaded</button>
-        <button className={scenario === "running" ? "active" : ""} onClick={() => void runAgents()}><Play size={12} /> Run agents</button>
-      </nav>
-
-      <div className={`workspace-grid ${agentPanelOpen ? "" : "agent-panel-hidden"}`}>
-        <DrawingExplorer
-          hiddenLayers={layerVisibility.hiddenLayers}
-          index={index}
-          onToggleLayer={layerVisibility.toggleLayer}
-        />
-        <CadViewer
-          gridVisible={gridVisible}
-          highlightedHandles={highlightedHandles}
-          hiddenLayers={layerVisibility.hiddenLayers}
-          index={index}
-          onGridVisibleChange={setGridVisible}
-          searchQuery={searchQuery}
-          selectedHandle={selectedHandle}
-        />
-        {agentPanelOpen && (
-          <AgentWorkspace
-            inspectionRun={inspection.run}
-            inspectionLoading={inspection.loading}
-            inspectionError={inspection.error}
-            providers={chat.providers}
-            selectedProvider={chat.selectedProvider}
-            onProviderChange={chat.setSelectedProvider}
-            message={chat.message}
-            onMessageChange={chat.setMessage}
-            onSubmit={chat.submit}
-            onCancel={chat.cancel}
-            onNewChat={chat.reset}
-            chatLoading={chat.loading}
-            chatResult={chat.result}
-            chatError={chat.error}
+      <div
+        className={`workspace-grid ${artifactMaximized ? "artifact-maximized" : ""} ${artifactOpen ? "" : "artifact-closed"}`}
+        style={{ "--artifact-width": `${artifactWidth}px` } as React.CSSProperties}
+      >
+        {sidebarOpen && (
+          <WorkspaceSidebar
+            activeSessionId={chat.activeSessionId}
+            hiddenLayers={layerVisibility.hiddenLayers}
+            index={index}
+            onClose={() => setSidebarOpen(false)}
+            onNewSession={chat.reset}
+            onSelectSession={chat.selectSession}
+            onToggleLayer={layerVisibility.toggleLayer}
+            onToggleSection={workspace.toggleSection}
+            overlay={!desktop}
+            sections={workspace.preferences.sidebarSections}
+            sessions={chat.sessions}
           />
         )}
-        <InspectionDock
-          run={inspection.run}
-          selected={selected}
-          onSelectFinding={(handle) => {
-            setSelectedHandle(handle);
-            setScenario("finding");
-          }}
+        {!desktop && sidebarOpen && <button aria-label="탐색 닫기" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
+
+        <AgentWorkspace
+          activeSession={chat.activeSession}
+          chatError={chat.error}
+          chatLoading={chat.loading}
+          chatResult={chat.result}
+          inspectionError={inspection.error}
+          inspectionLoading={inspection.loading}
+          inspectionRun={inspection.run}
+          message={chat.message}
+          onCancel={chat.cancel}
+          onMessageChange={chat.setMessage}
+          onNewChat={chat.reset}
+          onProviderChange={chat.setSelectedProvider}
+          onSubmit={chat.submit}
+          providers={chat.providers}
+          selectedProvider={chat.selectedProvider}
         />
+
+        {artifactOpen && (
+          <>
+            <div
+              aria-label="CAD 아티팩트 너비 조절"
+              aria-orientation="vertical"
+              aria-valuemax={1200}
+              aria-valuemin={520}
+              aria-valuenow={Math.round(artifactWidth)}
+              className="artifact-resizer"
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                resizeArtifactBy(event.key === "ArrowLeft" ? 32 : -32);
+              }}
+              onPointerDown={startArtifactResize}
+              role="separator"
+              tabIndex={0}
+            />
+
+            <CadArtifactPanel
+              gridVisible={gridVisible}
+              hiddenLayers={layerVisibility.hiddenLayers}
+              highlightedHandles={highlightedHandles}
+              index={index}
+              inspectionLoading={inspection.loading}
+              maximized={artifactMaximized}
+              onClose={() => {
+                setArtifactMaximized(false);
+                setArtifactOpen(false);
+              }}
+              onGridVisibleChange={setGridVisible}
+              onMaximizedChange={setArtifactMaximized}
+              onResetInspection={() => {
+                inspection.reset();
+                setSelectedHandle(null);
+              }}
+              onRunAgents={() => void runAgents()}
+              onSearchQueryChange={setSearchQuery}
+              onSelectFinding={setSelectedHandle}
+              run={inspection.run}
+              searchInputRef={searchRef}
+              searchQuery={searchQuery}
+              selected={selected}
+              selectedHandle={selectedHandle}
+            />
+          </>
+        )}
       </div>
     </div>
   );

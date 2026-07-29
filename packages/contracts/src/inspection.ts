@@ -1,5 +1,7 @@
 import type { CadPointBox } from "./cad.js";
 
+export const MAX_CAD_SEARCH_QUERY_CHARS = 128;
+
 export type InspectionCheck =
   | { kind: "layer"; value: string }
   | { kind: "type"; value: string }
@@ -58,12 +60,115 @@ export function isInspectionPayload(value: unknown): value is InspectionPayload 
   return value.checks.every(isInspectionCheck);
 }
 
+export function isInspectionRun(value: unknown): value is InspectionRun {
+  if (!isRecord(value)) return false;
+  return (
+    (value.status === "completed" || value.status === "rejected") &&
+    typeof value.drawingId === "string" &&
+    value.drawingId.length > 0 &&
+    Array.isArray(value.events) &&
+    value.events.every(isInspectionEvent) &&
+    Array.isArray(value.findings) &&
+    value.findings.every(isInspectionFinding) &&
+    Array.isArray(value.issues) &&
+    value.issues.every(isInspectionIssue) &&
+    Array.isArray(value.warnings) &&
+    value.warnings.every((warning) => typeof warning === "string")
+  );
+}
+
+function isInspectionEvent(value: unknown): value is InspectionEvent {
+  if (!isRecord(value)) return false;
+  return (
+    Number.isInteger(value.sequence) &&
+    (value.sequence as number) >= 0 &&
+    typeof value.agentId === "string" &&
+    inspectionAgentIds.has(value.agentId) &&
+    typeof value.action === "string" &&
+    (
+      value.status === "planned" ||
+      value.status === "completed" ||
+      value.status === "rejected"
+    )
+  );
+}
+
+function isInspectionFinding(value: unknown): value is InspectionFinding {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    (typeof value.handle === "string" || value.handle === null) &&
+    typeof value.type === "string" &&
+    typeof value.layer === "string" &&
+    (value.bbox === null || isPointBox(value.bbox)) &&
+    (
+      value.text === undefined ||
+      typeof value.text === "string" ||
+      value.text === null
+    ) &&
+    typeof value.reason === "string" &&
+    typeof value.confidence === "number" &&
+    Number.isFinite(value.confidence) &&
+    value.confidence >= 0 &&
+    value.confidence <= 1
+  );
+}
+
+function isInspectionIssue(value: unknown): value is InspectionIssue {
+  return (
+    isRecord(value) &&
+    typeof value.entityId === "string" &&
+    Array.isArray(value.missing) &&
+    value.missing.every(
+      (field) => typeof field === "string" && evidenceFields.has(field)
+    )
+  );
+}
+
+function isPointBox(value: unknown): value is CadPointBox {
+  return (
+    isRecord(value) &&
+    isPoint3(value.min) &&
+    isPoint3(value.max)
+  );
+}
+
+function isPoint3(value: unknown): value is [number, number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    value.every((coordinate) =>
+      typeof coordinate === "number" && Number.isFinite(coordinate)
+    )
+  );
+}
+
+const inspectionAgentIds = new Set<string>([
+  "orchestrator",
+  "drawing-index-agent",
+  "search-agent",
+  "rule-check-agent",
+  "evidence-agent",
+  "viewer-agent",
+  "report-agent"
+]);
+
+const evidenceFields = new Set<string>([
+  "id",
+  "handle",
+  "type",
+  "layer",
+  "bbox"
+]);
+
 function isInspectionCheck(value: unknown): value is InspectionCheck {
   if (!isRecord(value) || typeof value.kind !== "string") return false;
   if (
     typeof value.value !== "string" ||
     value.value.trim().length < 1 ||
-    value.value.length > 200
+    value.value.length > (
+      value.kind === "text" ? MAX_CAD_SEARCH_QUERY_CHARS : 200
+    )
   ) {
     return false;
   }
