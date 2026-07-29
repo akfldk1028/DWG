@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export interface RepositoryPaths {
@@ -7,6 +7,11 @@ export interface RepositoryPaths {
   parserProject: string;
   fixturesRoot: string;
   defaultDrawing: string;
+}
+
+export interface RuntimePaths {
+  workspace: string;
+  drawingPath: string;
 }
 
 export function findRepositoryRoot(fromUrl = import.meta.url): string {
@@ -35,5 +40,16 @@ export function createRepositoryPaths(repositoryRoot: string): RepositoryPaths {
     ),
     fixturesRoot: resolve(root, "tests/fixtures"),
     defaultDrawing: resolve(root, "tests/fixtures/dwg/export_sample.dwg")
+  };
+}
+
+export function createRuntimePaths(
+  paths: RepositoryPaths,
+  workspaceRoot?: string,
+  drawingPath?: string
+): RuntimePaths {
+  return {
+    workspace: resolve(workspaceRoot ?? paths.repositoryRoot),
+    drawingPath: drawingPath ?? relative(paths.repositoryRoot, paths.defaultDrawing)
   };
 }

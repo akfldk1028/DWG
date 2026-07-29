@@ -7,15 +7,21 @@ import { createProviderRegistry } from "../src/providers/providerRegistry.js";
 import type { ProviderId } from "../src/providers/contracts.js";
 import {
   createRepositoryPaths,
+  createRuntimePaths,
   findRepositoryRoot
 } from "../src/platform/repositoryPaths.js";
 
 const paths = createRepositoryPaths(findRepositoryRoot(import.meta.url));
-const workspace = resolve(process.env.DWG_WORKSPACE ?? paths.repositoryRoot);
+const runtimePaths = createRuntimePaths(
+  paths,
+  process.env.DWG_WORKSPACE,
+  process.env.DWG_DRAWING_PATH
+);
+const workspace = runtimePaths.workspace;
 const requested = process.argv[2] ?? "all";
 const providerIds: ProviderId[] =
   requested === "all" ? ["codex", "claude"] : [requested as ProviderId];
-const drawingPath = process.env.DWG_DRAWING_PATH ?? paths.defaultDrawing;
+const drawingPath = runtimePaths.drawingPath;
 const providers = createProviderRegistry(workspace);
 const service = createChatService({
   providers,

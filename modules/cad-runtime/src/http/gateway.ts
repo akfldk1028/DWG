@@ -10,14 +10,20 @@ import {
 import { createProviderGateway } from "./providerGateway.js";
 import {
   createRepositoryPaths,
+  createRuntimePaths,
   findRepositoryRoot
 } from "../platform/repositoryPaths.js";
 
 const paths = createRepositoryPaths(findRepositoryRoot(import.meta.url));
-const workspace = resolve(process.env.DWG_WORKSPACE ?? paths.repositoryRoot);
+const runtimePaths = createRuntimePaths(
+  paths,
+  process.env.DWG_WORKSPACE,
+  process.env.DWG_DRAWING_PATH
+);
+const workspace = runtimePaths.workspace;
 const drawingWorkspace = createDrawingWorkspace(
   workspace,
-  process.env.DWG_DRAWING_PATH ?? paths.defaultDrawing
+  runtimePaths.drawingPath
 );
 const providers = createProviderRegistry(workspace);
 const chatService = createChatService({
