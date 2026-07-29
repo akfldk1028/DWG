@@ -51,7 +51,14 @@ test("current workspace respects enforced module boundaries", async () => {
 
 test("repository exposes explicit application and module roots", async () => {
   const root = JSON.parse(await readFile("package.json", "utf8"));
+  const lock = JSON.parse(await readFile("package-lock.json", "utf8"));
   assert.deepEqual(root.workspaces, ["apps/*", "packages/*"]);
+  assert.equal(
+    Object.keys(lock.packages).some(
+      (packagePath) => packagePath === "frontend" || packagePath.startsWith("frontend/")
+    ),
+    false
+  );
   await access("apps/workspace/package.json");
   await access("modules/cad-runtime/src");
   await access("modules/dwg-parser/src");
