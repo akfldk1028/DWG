@@ -1,7 +1,11 @@
 {
-  "name": "dwg-intelligence",
+  "name": "click-around",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "packages/*"
+  ],
   "type": "module",
   "scripts": {
     "build:parser": "dotnet build backend/src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj --nologo",

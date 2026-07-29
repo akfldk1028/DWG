@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -46,4 +47,10 @@ test("current workspace respects enforced module boundaries", async () => {
   const violations = await scanWorkspaceModuleBoundaries(process.cwd());
 
   assert.deepEqual(violations, []);
+});
+
+test("repository uses one root npm lockfile", async () => {
+  const root = JSON.parse(await readFile("package.json", "utf8"));
+  assert.deepEqual(root.workspaces, ["frontend", "packages/*"]);
+  await assert.rejects(() => access("frontend/package-lock.json"));
 });

@@ -1,5 +1,5 @@
 {
-  "name": "dwg-intelligence-frontend",
+  "name": "@click-around/workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "test:live-oauth-browser": "playwright test --config playwright.live.config.ts"
   },
   "dependencies": {
-    "@dwg/contracts": "file:../packages/contracts",
+    "@dwg/contracts": "0.1.0",
     "lucide-react": "1.27.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
