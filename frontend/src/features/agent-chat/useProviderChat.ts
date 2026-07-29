@@ -10,10 +10,6 @@ import type {
   ProviderStatus
 } from "../../shared/types";
 import {
-  browserProviderSessionStore,
-  type ProviderSessionStore
-} from "./providerSessionStore";
-import {
   appendWorkspaceMessage,
   browserWorkspaceSessionStore,
   createWorkspaceSession,
@@ -22,10 +18,7 @@ import {
 
 const drawingPath = "tests/fixtures/dwg/export_sample.dwg";
 
-export function useProviderChat(
-  sessionStore: ProviderSessionStore = browserProviderSessionStore,
-  workspaceStore = browserWorkspaceSessionStore
-) {
+export function useProviderChat(workspaceStore = browserWorkspaceSessionStore) {
   const initialSessions = useRef(workspaceStore.list()).current;
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>(
@@ -115,9 +108,6 @@ export function useProviderChat(
         controller.signal.aborted ||
         requestGeneration.current !== generation
       ) return;
-      if (response.sessionId) {
-        sessionStore.set(selectedProvider, response.sessionId);
-      }
       const latestSession = workspaceStore.get(currentSession.id) ?? currentSession;
       workspaceStore.upsert(appendWorkspaceMessage({
         ...latestSession,
@@ -159,7 +149,6 @@ export function useProviderChat(
     setResult(null);
     setError(null);
     setActiveSessionId(null);
-    sessionStore.clear();
   }
 
   function selectSession(id: string) {

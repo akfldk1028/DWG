@@ -1,7 +1,9 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { createOAuthOnlyEnvironment } from "../cli/oauthEnvironment.js";
 import { defaultProcessRunner } from "../cli/processRunner.js";
 import { buildProviderPrompt, describeCliFailure } from "../cli/providerPrompt.js";
-import { join } from "node:path";
 import type {
   ChatProvider,
   ProcessRunner,
@@ -119,11 +121,21 @@ export class CodexCliProvider implements ChatProvider {
 function resolveCodexLaunch(command?: string) {
   if (command) return { command, prefixArgs: [] as string[] };
   if (process.platform === "win32" && process.env.APPDATA) {
+    const npmEntry = join(
+      process.env.APPDATA,
+      "npm",
+      "node_modules",
+      "@openai",
+      "codex",
+      "bin",
+      "codex.js"
+    );
+    if (!existsSync(npmEntry)) {
+      return { command: "codex", prefixArgs: [] as string[] };
+    }
     return {
       command: process.execPath,
-      prefixArgs: [
-        join(process.env.APPDATA, "npm", "node_modules", "@openai", "codex", "bin", "codex.js")
-      ]
+      prefixArgs: [npmEntry]
     };
   }
   return { command: "codex", prefixArgs: [] as string[] };

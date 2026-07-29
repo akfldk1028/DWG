@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_CAD_SEARCH_QUERY_CHARS } from "@dwg/contracts";
+
 export const CAD_TOOL_NAMES = [
   "cad.open_drawing",
   "cad.build_index",
@@ -60,7 +62,8 @@ export const CAD_TOOL_DEFINITIONS: readonly CadToolDefinition[] = [
     description: "Find indexed TEXT or MTEXT content using substring or regular-expression matching.",
     inputSchema: {
       drawingId,
-      query: z.string().min(1).describe("Text or regular expression to search for"),
+      query: z.string().min(1).max(MAX_CAD_SEARCH_QUERY_CHARS)
+        .describe("Text or a grouping-free regular expression to search for"),
       regex: z.boolean().optional().default(false)
     }
   },

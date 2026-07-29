@@ -76,6 +76,10 @@ Use `npm run mcp` for agent hosts. The supported read-only tool surface is:
 `$last.drawingId`. Viewer-only actions such as select/zoom and write actions
 such as save-sidecar are not currently MCP tools.
 
+MCP drawing paths use the same canonical `DWG_WORKSPACE` boundary as the HTTP
+gateway. Absolute paths, `..` traversal, and Windows junctions cannot escape
+that root.
+
 ### 4. Whole frontend
 
 Use the whole `frontend` application when merging the Claude-style workspace.

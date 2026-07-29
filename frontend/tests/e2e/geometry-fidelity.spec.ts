@@ -3,20 +3,15 @@ import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
+import type { CadIndex } from "@dwg/contracts";
+
 const artifacts = resolve("../tests/visual/artifacts");
 const fixturePath = fileURLToPath(
   new URL("../../public/data/export_sample.index.json", import.meta.url)
 );
 
 async function fixture() {
-  return JSON.parse(await readFile(fixturePath, "utf8")) as {
-    schemaVersion: string;
-    entities: Array<{
-      handle: string | null;
-      layer: string;
-      layout: string;
-    }>;
-  };
+  return JSON.parse(await readFile(fixturePath, "utf8")) as CadIndex;
 }
 
 async function prepare(page: import("@playwright/test").Page) {
@@ -65,6 +60,62 @@ test("renders real v0.2 geometry and explicit fallbacks", async ({ page }) => {
     path: resolve(artifacts, "geometry-loaded-1440x900.png"),
     fullPage: true
   });
+});
+
+test("fits the drawing bounds on initial load", async ({ page }) => {
+  await prepare(page);
+
+  await expect(page.getByTestId("cad-canvas")).toHaveAttribute(
+    "data-view",
+    "fit"
+  );
+  await expect(page.locator("svg.cad-canvas")).not.toHaveAttribute(
+    "viewBox",
+    "-24 -12 148 126"
+  );
+});
+
+test("bounds large SVG rendering while retaining a searched entity", async ({
+  page
+}) => {
+  const index = await fixture();
+  if (index.schemaVersion !== "cad-index/v0.2") {
+    throw new Error("Expected a v0.2 fixture");
+  }
+  const template = index.entities.find(
+    (entity) => entity.layout === "Model"
+  );
+  if (!template) throw new Error("Expected a model-space entity");
+  const entities = Array.from({ length: 2002 }, (_, position) => ({
+    ...template,
+    id: `lod:${position}`,
+    handle: `LOD-${position}`
+  }));
+  const largeIndex: CadIndex = {
+    ...index,
+    entities,
+    summary: {
+      ...index.summary,
+      entityCount: entities.length,
+      modelSpaceCount: entities.length,
+      paperSpaceCount: 0
+    }
+  };
+  await page.route("**/api/drawing", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(largeIndex)
+    })
+  );
+
+  await prepare(page);
+
+  await expect(page.locator(".cad-entity")).toHaveCount(2000);
+  await page.getByLabel("전체 도면 검색").fill("LOD-2001");
+  await expect(page.locator('[data-handle="LOD-2001"]')).toBeVisible();
+  await expect(page.locator(".viewer-status")).toContainText(
+    "2000 rendered / 2002 visible"
+  );
 });
 
 test("layer visibility and handle highlighting apply to typed geometry", async ({

@@ -48,10 +48,10 @@ snapshot used to compare provider/runtime boundaries.
 - First Claude turns are persisted and follow-up turns use
   `claude --resume <session-id>`; print mode stays in plan permission mode
   with tools disabled.
-- The frontend keeps one validated UUID session ID per provider in browser
-  `sessionStorage`. Reloads in the same tab resume the conversation, reset
-  clears both IDs, and switching providers never mixes Codex and Claude
-  sessions.
+- The frontend keeps one validated UUID session ID per persisted workspace
+  conversation in `localStorage`. Reloads resume that conversation, New Chat
+  starts without an OAuth session ID, and switching providers never reuses a
+  different provider's ID.
 - Browser cancellation propagates through the loopback HTTP request and
   `AbortSignal` to the subprocess runner. Cancelled or late responses are not
   rendered.
@@ -59,6 +59,10 @@ snapshot used to compare provider/runtime boundaries.
   instructions contained inside a drawing.
 - Drawing claims must cite stable CAD handles. Unsupported table or semantic
   structure must be stated as a limitation rather than guessed.
+- Chat context selection scans the whole normalized index and ranks entities
+  against the current question before applying the provider context budget.
+  An entity is no longer excluded only because it appears after the first 200
+  index entries.
 - The HTTP gateway binds only to `127.0.0.1`.
 
 ## Commands
