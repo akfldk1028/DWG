@@ -16,7 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj" />
-    <None Include="../../../tests/fixtures/dwg/export_sample.dwg">
+    <None Include="../../../../tests/fixtures/dwg/export_sample.dwg">
       <Link>Fixtures/export_sample.dwg</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

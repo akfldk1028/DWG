@@ -55,7 +55,7 @@ test("repository exposes explicit application and module roots", async () => {
   assert.deepEqual(root.workspaces, ["apps/*", "packages/*"]);
   assert.equal(
     Object.keys(lock.packages).some(
-      (packagePath) => packagePath === "frontend" || packagePath.startsWith("frontend/")
+      (packagePath) => /^frontend(?:\/|$)/.test(packagePath)
     ),
     false
   );

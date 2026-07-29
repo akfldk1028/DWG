@@ -52,7 +52,7 @@ test("rejects unsupported drawing formats before reading them", async () => {
 
 test("rejects CAD files outside the configured workspace", async () => {
   const runtime = createCadToolRuntime({
-    workspaceRoot: resolve("modules/cad-runtime/fixtures")
+    workspaceRoot: resolve("tests/fixtures/dxf")
   });
 
   await assert.rejects(
@@ -64,7 +64,7 @@ test("rejects CAD files outside the configured workspace", async () => {
 test("rejects regular expressions with executable grouping", async () => {
   const runtime = createCadToolRuntime();
   const opened = await runtime.call("cad.open_drawing", {
-    path: resolve("modules/cad-runtime/fixtures/minimal-architectural.dxf")
+    path: resolve("tests/fixtures/dxf/minimal-architectural.dxf")
   });
 
   await assert.rejects(
@@ -80,7 +80,7 @@ test("rejects regular expressions with executable grouping", async () => {
 test("rejects text queries above the public search limit", async () => {
   const runtime = createCadToolRuntime();
   const opened = await runtime.call("cad.open_drawing", {
-    path: resolve("modules/cad-runtime/fixtures/minimal-architectural.dxf")
+    path: resolve("tests/fixtures/dxf/minimal-architectural.dxf")
   });
 
   await assert.rejects(

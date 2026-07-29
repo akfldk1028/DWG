@@ -47,7 +47,7 @@ test("runs the complete indexed DXF query loop through MCP", async (t) => {
 
   const opened = await client.callTool({
     name: "cad.open_drawing",
-    arguments: { path: "modules/cad-runtime/fixtures/minimal-architectural.dxf" }
+    arguments: { path: "tests/fixtures/dxf/minimal-architectural.dxf" }
   });
   const drawingId = (
     opened.structuredContent as { drawingId: string }

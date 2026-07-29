@@ -2,6 +2,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { createCadToolRuntime } from "../src/application/cad-tools/runtime.js";
+import {
+  createRepositoryPaths,
+  findRepositoryRoot
+} from "../src/platform/repositoryPaths.js";
 
 interface HarnessStep {
   tool: string;
@@ -18,9 +22,14 @@ interface HarnessCase {
   };
 }
 
-const casePath = process.argv[2] ?? "modules/cad-runtime/harness/cases/find-layer-a-wall.json";
-const harnessCase = JSON.parse(await readFile(resolve(casePath), "utf8")) as HarnessCase;
-const runtime = createCadToolRuntime();
+const repositoryPaths = createRepositoryPaths(findRepositoryRoot());
+const casePath = process.argv[2] ?? "tests/harness/scenarios/find-layer-a-wall.json";
+const harnessCase = JSON.parse(
+  await readFile(resolve(repositoryPaths.repositoryRoot, casePath), "utf8")
+) as HarnessCase;
+const runtime = createCadToolRuntime({
+  workspaceRoot: repositoryPaths.repositoryRoot
+});
 let last: any = {};
 
 for (const step of harnessCase.steps) {

@@ -11,7 +11,7 @@ test("runs a real layer inspection through named specialist agents", async () =>
   const orchestrator = createInspectionOrchestrator(createCadToolRuntime());
 
   const run = await orchestrator.run({
-    path: "modules/cad-runtime/fixtures/minimal-architectural.dxf",
+    path: "tests/fixtures/dxf/minimal-architectural.dxf",
     checks: [{ kind: "layer", value: "A-WALL" }]
   });
 
