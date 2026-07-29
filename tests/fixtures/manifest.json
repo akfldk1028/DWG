@@ -9,7 +9,7 @@
     },
     {
       "id": "dxf.minimal-architectural",
-      "path": "agent/fixtures/minimal-architectural.dxf",
+      "path": "modules/cad-runtime/fixtures/minimal-architectural.dxf",
       "bytes": 512,
       "sha256": "86be7bbdf2ca52e4343f0914e2986229229a2db90db9350453f7fc21c17b97b6"
     }

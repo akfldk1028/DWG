@@ -44,9 +44,9 @@ tests/visual/test-results/
 clone/
 logs/
 
-backend/bin/
-backend/obj/
-backend/**/bin/
-backend/**/obj/
+modules/dwg-parser/bin/
+modules/dwg-parser/obj/
+modules/dwg-parser/**/bin/
+modules/dwg-parser/**/obj/
 frontend/node_modules/
 agent/.cache/

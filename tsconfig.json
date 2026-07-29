@@ -10,5 +10,8 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["agent/**/*.ts"]
+  "include": [
+    "modules/cad-runtime/**/*.ts",
+    "scripts/**/*.mjs"
+  ]
 }

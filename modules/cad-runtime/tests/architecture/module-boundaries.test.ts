@@ -49,10 +49,15 @@ test("current workspace respects enforced module boundaries", async () => {
   assert.deepEqual(violations, []);
 });
 
-test("repository uses one root npm lockfile", async () => {
+test("repository exposes explicit application and module roots", async () => {
   const root = JSON.parse(await readFile("package.json", "utf8"));
-  assert.deepEqual(root.workspaces, ["frontend", "packages/*"]);
-  await assert.rejects(() => access("frontend/package-lock.json"));
+  assert.deepEqual(root.workspaces, ["apps/*", "packages/*"]);
+  await access("apps/workspace/package.json");
+  await access("modules/cad-runtime/src");
+  await access("modules/dwg-parser/src");
+  await assert.rejects(() => access("frontend"));
+  await assert.rejects(() => access("agent"));
+  await assert.rejects(() => access("backend"));
 });
 
 test("active setup documentation installs workspaces from the root", async () => {
