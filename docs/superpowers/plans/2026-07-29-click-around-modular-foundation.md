@@ -90,6 +90,7 @@ Ownership after this plan:
 - Create: `scripts/verify-fixture-hashes.test.mjs`
 - Modify: `package.json`
 - Modify: `.gitignore`
+- Modify: `.gitattributes`
 
 **Interfaces:**
 - Consumes: the existing DWG and DXF fixture files.
@@ -120,7 +121,18 @@ node --test scripts/verify-fixture-hashes.test.mjs
 
 Expected: FAIL because `scripts/verify-fixture-hashes.mjs` does not exist.
 
-- [ ] **Step 3: Add the immutable fixture manifest**
+- [ ] **Step 3: Pin CAD fixture checkout bytes and add the immutable manifest**
+
+Add:
+
+```gitattributes
+*.dwg binary
+*.dxf binary
+```
+
+If an existing Windows checkout was converted to CRLF, restore only the
+tracked DXF worktree file from `HEAD` after this attribute is present. Do not
+rewrite or regenerate CAD contents.
 
 ```json
 {
