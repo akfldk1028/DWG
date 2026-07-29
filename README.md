@@ -17,6 +17,9 @@ npm run verify
 npm run test:e2e
 ```
 
+The default `npm test` suite includes fixture hash integrity checks.
+`npm run test:fixtures` remains available for a targeted fixture-only run.
+
 Run the local application in two terminals:
 
 ```powershell

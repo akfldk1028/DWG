@@ -15,10 +15,16 @@ const execFileAsync = promisify(execFile);
 const defaultParserProject = createRepositoryPaths(
   findRepositoryRoot(import.meta.url)
 ).parserProject;
-const indexByPath = new Map<string, Promise<CadEntityIndexV02>>();
+const indexByCacheKey = new Map<string, Promise<CadEntityIndexV02>>();
+
+export type DwgParserRunner = (
+  fullPath: string,
+  parserProject: string
+) => Promise<CadEntityIndexV02>;
 
 export interface DwgIndexerOptions {
   parserProject?: string;
+  runParser?: DwgParserRunner;
 }
 
 export async function buildIndexFromDwgFile(
@@ -26,17 +32,19 @@ export async function buildIndexFromDwgFile(
   options: DwgIndexerOptions = {}
 ): Promise<CadEntityIndexV02> {
   const fullPath = resolve(path);
-  const existing = indexByPath.get(fullPath);
+  const parserProject = resolve(options.parserProject ?? defaultParserProject);
+  const cacheKey = JSON.stringify([fullPath, parserProject]);
+  const existing = indexByCacheKey.get(cacheKey);
   if (existing) return existing;
 
-  const pending = runDwgParser(
+  const pending = (options.runParser ?? runDwgParser)(
     fullPath,
-    options.parserProject ?? defaultParserProject
+    parserProject
   ).catch((error) => {
-    indexByPath.delete(fullPath);
+    indexByCacheKey.delete(cacheKey);
     throw error;
   });
-  indexByPath.set(fullPath, pending);
+  indexByCacheKey.set(cacheKey, pending);
   return pending;
 }
 

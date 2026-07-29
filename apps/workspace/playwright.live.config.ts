@@ -18,8 +18,8 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${frontendPort}`,
     colorScheme: "light",
-    screenshot: "only-on-failure",
-    trace: "retain-on-failure"
+    screenshot: "off",
+    trace: "off"
   },
   webServer: [
     {

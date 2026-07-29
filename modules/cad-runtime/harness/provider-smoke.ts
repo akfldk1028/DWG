@@ -10,6 +10,7 @@ import {
   createRuntimePaths,
   findRepositoryRoot
 } from "../src/platform/repositoryPaths.js";
+import { createProviderSmokeSummary } from "./provider-smoke-summary.js";
 
 const paths = createRepositoryPaths(findRepositoryRoot(import.meta.url));
 const runtimePaths = createRuntimePaths(
@@ -55,12 +56,10 @@ for (const provider of providerIds) {
     /\[handle:[0-9A-F]+\]/i,
     `${provider} resumed response has no CAD handle evidence`
   );
-  console.log(JSON.stringify({
+  console.log(JSON.stringify(createProviderSmokeSummary({
     provider,
     authMethod: status.authMethod,
     subscription: status.subscription,
-    sessionId: result.sessionId,
-    response: result.text,
-    resumedResponse: resumed.text
-  }, null, 2));
+    resumed: true
+  }), null, 2));
 }

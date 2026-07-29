@@ -1,4 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  createSafeLiveOAuthSummary,
+  renderSafeLiveOAuthEvidence
+} from "../support/liveOAuthEvidence.ts";
 import { oauthArtifactPath } from "../support/repositoryOutputPaths.ts";
 
 const providerCases = [
@@ -44,22 +48,36 @@ for (const provider of selectedProviders) {
     await expect(providerButton).toBeEnabled({ timeout: 30_000 });
     await providerButton.click();
 
-    const firstSessionId = await submitAndReadSession(
-      page,
-      "List one TEXT or MTEXT object from the indexed drawing and cite its [handle:...]."
-    );
+    const firstPrompt =
+      "List one TEXT or MTEXT object from the indexed drawing and cite its [handle:...].";
+    const first = await submitAndReadSession(page, firstPrompt);
 
     await page.reload();
     await expect(providerButton).toBeEnabled({ timeout: 30_000 });
     await providerButton.click();
 
-    const resumedSessionId = await submitAndReadSession(
-      page,
-      "Continue the same session and repeat the first cited CAD handle."
-    );
+    const resumedPrompt =
+      "Continue the same session and repeat the first cited CAD handle.";
+    const resumed = await submitAndReadSession(page, resumedPrompt);
 
-    expect(resumedSessionId).toBe(firstSessionId);
+    expect(resumed.sessionId).toBe(first.sessionId);
     expect(consoleErrors).toEqual([]);
+
+    const safeSummary = createSafeLiveOAuthSummary({
+      provider: provider.id,
+      authenticated: true,
+      firstSessionId: first.sessionId,
+      resumedSessionId: resumed.sessionId,
+      prompt: `${firstPrompt}\n${resumedPrompt}`,
+      response: `${first.response}\n${resumed.response}`
+    });
+    await page.setContent(renderSafeLiveOAuthEvidence(safeSummary));
+    await expect(page.getByTestId("safe-live-oauth-evidence")).toContainText(
+      "Session resume"
+    );
+    await expect(page.getByTestId("safe-live-oauth-evidence")).toContainText(
+      "Verified"
+    );
 
     await page.screenshot({
       path: oauthArtifactPath(provider.id),
@@ -81,5 +99,8 @@ async function submitAndReadSession(page: Page, message: string) {
   expect(sessionId).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   );
-  return sessionId;
+  return {
+    sessionId: sessionId!,
+    response: (await response.textContent()) ?? ""
+  };
 }

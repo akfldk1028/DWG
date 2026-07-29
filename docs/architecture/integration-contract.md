@@ -52,7 +52,7 @@ without adding authentication and a separate threat-model review.
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `DWG_WORKSPACE` | Canonical root allowed for drawing access | Current working directory |
+| `DWG_WORKSPACE` | Canonical root allowed for drawing access | Repository root |
 | `DWG_DRAWING_PATH` | Drawing path relative to the workspace | Test DWG fixture |
 | `DWG_GATEWAY_PORT` | Loopback gateway port | `4317` |
 | `DWG_FRONTEND_PORT` | Workspace Vite port | `4173` |
@@ -118,7 +118,8 @@ location without copying feature hooks or creating duplicate DTOs.
 4. Decide whether the host uses loopback `/api`, MCP stdio, or whole
    apps/workspace composition; do not mix deep imports with a process boundary.
 5. Configure a canonical `DWG_WORKSPACE` and keep source drawings read-only.
-6. Verify `npm run verify`.
+6. Verify `npm run verify`; its default Node suite includes fixture hash
+   integrity checks.
 7. Run browser tests on isolated ports when apps/workspace is included.
 8. Inspect `docs/ui-captures/00-overview.png` after layout changes.
 9. Verify live OAuth separately; default automated tests use deterministic
