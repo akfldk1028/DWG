@@ -129,6 +129,43 @@ test("preserves a 500px conversation when restoring an older wide artifact", asy
   expect(conversation!.width).toBeGreaterThanOrEqual(500);
 });
 
+test("loads with in-memory defaults when browser storage access is blocked", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("blocked", "SecurityError");
+      }
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("main", { name: "대화" })).toBeVisible();
+  await expect(page.getByText("export_sample.dwg", { exact: true }).first()).toBeVisible();
+});
+
+test("contains clipboard permission failures without an unhandled rejection", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        async writeText() {
+          throw new DOMException("denied", "NotAllowedError");
+        }
+      }
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "아티팩트 복사" }).click();
+  await page.waitForTimeout(50);
+
+  expect(pageErrors).toEqual([]);
+});
+
 async function mockInspection(page: Page) {
   await page.route("**/api/inspections", (route) =>
     route.fulfill({

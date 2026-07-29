@@ -71,7 +71,11 @@ export function CadArtifactPanel({
   );
 
   async function copyArtifact() {
-    await navigator.clipboard.writeText(JSON.stringify(index, null, 2));
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(index, null, 2));
+    } catch {
+      // Clipboard access can be denied by browser or host policy.
+    }
   }
 
   function downloadArtifact() {

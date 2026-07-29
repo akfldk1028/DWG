@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { createOAuthOnlyEnvironment } from "../cli/oauthEnvironment.js";
+import { asJsonRecord, parseJsonRecord } from "../cli/jsonRecord.js";
 import { defaultProcessRunner } from "../cli/processRunner.js";
 import { buildProviderPrompt, describeCliFailure } from "../cli/providerPrompt.js";
 import type {
@@ -96,21 +97,18 @@ export class CodexCliProvider implements ChatProvider {
     let text = "";
     let sessionId: string | null = null;
     for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
-      let event: any;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        continue;
-      }
+      const event = parseJsonRecord(line);
+      if (!event) continue;
       if (event.type === "thread.started" && typeof event.thread_id === "string") {
         sessionId = event.thread_id;
       }
+      const item = asJsonRecord(event.item);
       if (
         event.type === "item.completed" &&
-        event.item?.type === "agent_message" &&
-        typeof event.item.text === "string"
+        item?.type === "agent_message" &&
+        typeof item.text === "string"
       ) {
-        text += event.item.text;
+        text += item.text;
       }
     }
     if (!text.trim()) throw new Error("Codex provider returned no assistant text");

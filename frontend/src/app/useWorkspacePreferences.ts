@@ -8,11 +8,8 @@ import {
   type WorkspacePreferences
 } from "./workspacePreferences";
 
-const browserStore = typeof window === "undefined"
-  ? null
-  : createWorkspacePreferencesStore(window.localStorage);
-
 export function useWorkspacePreferences() {
+  const [browserStore] = useState(createBrowserStore);
   const [preferences, setPreferences] = useState<WorkspacePreferences>(
     () => browserStore?.load() ?? defaultWorkspacePreferences
   );
@@ -52,4 +49,14 @@ export function useWorkspacePreferences() {
       });
     }
   }), [preferences, systemDark]);
+}
+
+function createBrowserStore() {
+  try {
+    return typeof window === "undefined"
+      ? null
+      : createWorkspacePreferencesStore(window.localStorage);
+  } catch {
+    return null;
+  }
 }

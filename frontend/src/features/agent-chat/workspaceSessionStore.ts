@@ -124,13 +124,22 @@ export function createWorkspaceSessionStore(storage: StorageLike) {
 }
 
 export const browserWorkspaceSessionStore = createWorkspaceSessionStore(
-  typeof window === "undefined"
-    ? {
-        getItem: () => null,
-        setItem: () => undefined
-      }
-    : window.localStorage
+  getBrowserStorage()
 );
+
+function getBrowserStorage(): StorageLike {
+  try {
+    if (typeof window !== "undefined") {
+      return window.localStorage;
+    }
+  } catch {
+    // Fall through to the in-memory session store.
+  }
+  return {
+    getItem: () => null,
+    setItem: () => undefined
+  };
+}
 
 function validateStoredSessions(value: unknown): WorkspaceSession[] {
   if (!value || typeof value !== "object") return [];

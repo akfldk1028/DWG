@@ -1,4 +1,5 @@
 import { createOAuthOnlyEnvironment } from "../cli/oauthEnvironment.js";
+import { parseJsonRecord } from "../cli/jsonRecord.js";
 import { defaultProcessRunner } from "../cli/processRunner.js";
 import { buildProviderPrompt, describeCliFailure } from "../cli/providerPrompt.js";
 import type {
@@ -31,16 +32,15 @@ export class ClaudeCliProvider implements ChatProvider {
     } catch {
       result = { exitCode: null, stdout: "", stderr: "", errorCode: "ENOENT" };
     }
-    let status: any = null;
-    try {
-      status = JSON.parse(result.stdout);
-    } catch {
-      status = null;
-    }
+    const status = parseJsonRecord(result.stdout);
     const authenticated =
       result.exitCode === 0 &&
       status?.loggedIn === true &&
       status?.authMethod === "claude.ai";
+    const subscription =
+      typeof status?.subscriptionType === "string"
+        ? status.subscriptionType
+        : undefined;
 
     return {
       id: this.id,
@@ -48,12 +48,9 @@ export class ClaudeCliProvider implements ChatProvider {
       installed: result.errorCode !== "ENOENT",
       authenticated,
       authMethod: authenticated ? "claude.ai" : "unknown",
-      subscription:
-        authenticated && typeof status.subscriptionType === "string"
-          ? status.subscriptionType
-          : undefined,
+      subscription: authenticated ? subscription : undefined,
       detail: authenticated
-        ? `기존 Claude 로그인 세션${status.subscriptionType ? ` · ${status.subscriptionType}` : ""}`
+        ? `기존 Claude 로그인 세션${subscription ? ` · ${subscription}` : ""}`
         : "Claude login unavailable; run claude auth login"
     };
   }
@@ -84,10 +81,8 @@ export class ClaudeCliProvider implements ChatProvider {
       throw new Error(`Claude provider failed: ${describeCliFailure(result.errorCode)}`);
     }
 
-    let output: any;
-    try {
-      output = JSON.parse(result.stdout);
-    } catch {
+    const output = parseJsonRecord(result.stdout);
+    if (!output) {
       throw new Error("Claude provider returned invalid JSON");
     }
     if (output.subtype !== "success" || typeof output.result !== "string") {
