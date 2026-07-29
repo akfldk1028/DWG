@@ -53,6 +53,7 @@ process boundaries, or embed the entire frontend composition.
 ## Architecture and handoff
 
 - [Repository instructions for AI agents](AGENTS.md)
+- [AI clone and cross-repository handoff](docs/architecture/ai-clone-handoff.md)
 - [Module ownership and import rules](docs/architecture/module-boundaries.md)
 - [Cross-repository integration contract](docs/architecture/integration-contract.md)
 - [OAuth CLI provider boundary](docs/architecture/oauth-cli-providers.md)
@@ -62,3 +63,7 @@ process boundaries, or embed the entire frontend composition.
 Source DWG/DXF files are read-only. Object-level claims must be grounded with
 stable handles, layers, types, and bounding boxes from the versioned CAD
 contract: DWG emits `cad-index/v0.2`; legacy DXF may emit `cad-index/v0.1`.
+
+When cloning this repository into another project, choose one supported
+boundary—contracts, loopback HTTP, MCP stdio, or the whole frontend. Do not
+deep-import internal parser/provider/feature folders or duplicate public DTOs.

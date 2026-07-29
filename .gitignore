@@ -4,8 +4,42 @@ build/
 coverage/
 .cache/
 *.tsbuildinfo
+*.log
+
+# Local IDE and operating-system state
+.idea/
+.vscode/
+.vs/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local agent, session, and browser state
+.claude/
+.codex/
+.remember/
+.playwright-mcp/
+.superpowers/
+.worktrees/
+
+# Local test reports (retained documentation captures stay tracked)
+test-results/
+playwright-report/
+blob-report/
+tests/visual/test-results/
+
+# Secrets and machine-local configuration
 .env
 .env.*
+!.env.example
+!.env.*.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
 
 clone/
 logs/
@@ -15,9 +49,4 @@ backend/obj/
 backend/**/bin/
 backend/**/obj/
 frontend/node_modules/
-tests/visual/test-results/
 agent/.cache/
-
-.worktrees/
-.superpowers/
-.playwright-mcp/
