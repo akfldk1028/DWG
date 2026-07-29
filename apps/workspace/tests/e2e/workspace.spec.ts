@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { e2eArtifactDirectory } from "../support/repositoryOutputPaths.ts";
 
-const artifacts = resolve("../tests/visual/artifacts");
+const artifacts = e2eArtifactDirectory;
 const indexFixture = JSON.parse(readFileSync(
   fileURLToPath(
     new URL("../../public/data/export_sample.index.json", import.meta.url)

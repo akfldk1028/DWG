@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { resolve } from "node:path";
+import { oauthArtifactPath } from "../support/repositoryOutputPaths.ts";
 
 const providerCases = [
   { id: "codex", buttonName: "GPT" },
@@ -62,9 +62,7 @@ for (const provider of selectedProviders) {
     expect(consoleErrors).toEqual([]);
 
     await page.screenshot({
-      path: resolve(
-        `../tests/visual/artifacts/oauth-${provider.id}-persistent-browser-e2e.png`
-      ),
+      path: oauthArtifactPath(provider.id),
       fullPage: true
     });
   });

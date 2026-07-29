@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { documentationCaptureDirectory } from "../support/repositoryOutputPaths.ts";
 
-const captureDirectory = resolve("../docs/ui-captures");
+const captureDirectory = documentationCaptureDirectory;
 
 test.describe.configure({ mode: "serial" });
 

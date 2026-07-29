@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 import type { CadIndex } from "@dwg/contracts";
+import { e2eArtifactDirectory } from "../support/repositoryOutputPaths.ts";
 
-const artifacts = resolve("../tests/visual/artifacts");
+const artifacts = e2eArtifactDirectory;
 const fixturePath = fileURLToPath(
   new URL("../../public/data/export_sample.index.json", import.meta.url)
 );

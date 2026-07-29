@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { e2eArtifactDirectory } from "../support/repositoryOutputPaths.ts";
 
-const artifacts = resolve("../tests/visual/artifacts");
+const artifacts = e2eArtifactDirectory;
 
 test("layer eye button hides and restores its CAD entities", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

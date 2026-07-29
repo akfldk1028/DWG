@@ -18,6 +18,7 @@
     "capture:docs": "npm --workspace @click-around/workspace run capture:docs --",
     "verify": "npm test && npm run test:dotnet && npm run build:frontend",
     "verify:all": "npm run verify && npm run test:e2e",
+    "verify:foundation": "npm run test:fixtures && npm test && npm run test:dotnet && npm run build:frontend && npm run test:e2e",
     "harness": "tsx modules/cad-runtime/harness/run-case.ts",
     "premcp": "npm run build:parser",
     "mcp": "tsx modules/cad-runtime/src/mcp/stdio.ts",
