@@ -504,6 +504,15 @@ git commit -m "refactor: establish app and engine modules"
 - Modify: `modules/cad-runtime/src/http/gateway.ts`
 - Modify: `modules/cad-runtime/src/mcp/stdio.ts`
 - Modify: `modules/cad-runtime/harness/provider-smoke.ts`
+- Modify: `modules/cad-runtime/src/architecture/moduleBoundaryChecker.ts`
+- Modify: `modules/cad-runtime/tests/architecture/module-boundaries.test.ts`
+- Modify: `modules/cad-runtime/tests/contracts/cad-index-contract.test.ts`
+- Modify: `modules/cad-runtime/harness/harness.test.ts`
+- Modify: `modules/cad-runtime/harness/run-case.ts`
+- Modify: `modules/cad-runtime/harness/cases/*.json`
+- Modify: `modules/cad-runtime/tests/integration/dwg-runtime.test.ts`
+- Modify: `modules/cad-runtime/tests/integration/mcp-server.test.ts`
+- Modify: `modules/cad-runtime/tests/orchestration/orchestrator.test.ts`
 - Modify: `apps/workspace/scripts/generate-fixture.mjs`
 - Modify: `apps/workspace/playwright.config.ts`
 - Modify: `apps/workspace/playwright.docs.config.ts`
@@ -678,6 +687,21 @@ const source = resolve(
 Keep the destination inside `apps/workspace/public/data`.
 
 - [ ] **Step 8: Run from repository and unrelated working directories**
+
+Before running the complete Node gate, mechanically replace stale coarse-move
+paths so current files are readable:
+
+```text
+agent/contracts/ -> modules/cad-runtime/contracts/
+agent/fixtures/ -> modules/cad-runtime/fixtures/
+agent/harness/cases/ -> modules/cad-runtime/harness/cases/
+agent/src -> modules/cad-runtime/src
+frontend/src -> apps/workspace/src
+```
+
+This step only restores the existing boundary rules and fixture behavior at
+their moved locations. Task 5 performs the final fixture/scenario move and
+Task 6 adds package-alias and dynamic-import boundary rules.
 
 Run:
 
