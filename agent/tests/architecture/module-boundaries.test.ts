@@ -54,3 +54,15 @@ test("repository uses one root npm lockfile", async () => {
   assert.deepEqual(root.workspaces, ["frontend", "packages/*"]);
   await assert.rejects(() => access("frontend/package-lock.json"));
 });
+
+test("active setup documentation installs workspaces from the root", async () => {
+  const setupDocs = await Promise.all([
+    readFile("README.md", "utf8"),
+    readFile("docs/architecture/ai-clone-handoff.md", "utf8")
+  ]);
+
+  for (const setupDoc of setupDocs) {
+    assert.match(setupDoc, /npm install/);
+    assert.doesNotMatch(setupDoc, /npm --prefix frontend install/);
+  }
+});

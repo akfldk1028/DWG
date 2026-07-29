@@ -64,7 +64,6 @@ From the repository root:
 
 ```powershell
 npm install
-npm --prefix frontend install
 npm run verify
 npm run test:e2e
 ```
