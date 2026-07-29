@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { documentationCaptureDirectory } from "../support/repositoryOutputPaths.ts";
+import {
+  documentationCaptureDirectory,
+  documentationCapturePath
+} from "../support/repositoryOutputPaths.ts";
 
 const captureDirectory = documentationCaptureDirectory;
 
@@ -52,12 +54,12 @@ test("captures the single workspace route in its key states", async ({ page }) =
 test("renders a single overview contact sheet", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto(
-    pathToFileURL(resolve(captureDirectory, "index.html")).toString()
+    pathToFileURL(documentationCapturePath("index.html")).toString()
   );
   await expect(page.locator("img")).toHaveCount(5);
   await expect(page.locator("img").last()).toBeVisible();
   await page.screenshot({
-    path: resolve(captureDirectory, "00-overview.png"),
+    path: documentationCapturePath("00-overview.png"),
     fullPage: true,
     animations: "disabled"
   });
@@ -111,7 +113,7 @@ async function stabilize(page: Page) {
 
 async function capture(page: Page, fileName: string) {
   await page.screenshot({
-    path: resolve(captureDirectory, fileName),
+    path: documentationCapturePath(fileName),
     fullPage: true,
     animations: "disabled"
   });

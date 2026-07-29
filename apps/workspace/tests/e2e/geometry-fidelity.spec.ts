@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
 
 import type { CadIndex } from "@dwg/contracts";
-import { e2eArtifactDirectory } from "../support/repositoryOutputPaths.ts";
+import {
+  e2eArtifactDirectory,
+  e2eArtifactPath
+} from "../support/repositoryOutputPaths.ts";
 
 const artifacts = e2eArtifactDirectory;
 const fixturePath = fileURLToPath(
@@ -58,7 +60,7 @@ test("renders real v0.2 geometry and explicit fallbacks", async ({ page }) => {
 
   await mkdir(artifacts, { recursive: true });
   await page.screenshot({
-    path: resolve(artifacts, "geometry-loaded-1440x900.png"),
+    path: e2eArtifactPath("geometry-loaded-1440x900.png"),
     fullPage: true
   });
 });

@@ -2,8 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
-import { e2eArtifactDirectory } from "../support/repositoryOutputPaths.ts";
+import {
+  e2eArtifactDirectory,
+  e2eArtifactPath
+} from "../support/repositoryOutputPaths.ts";
 
 const artifacts = e2eArtifactDirectory;
 const indexFixture = JSON.parse(readFileSync(
@@ -64,7 +66,7 @@ async function stabilize(page: Page) {
 async function capture(page: Page, name: string) {
   await stabilize(page);
   await mkdir(artifacts, { recursive: true });
-  await page.screenshot({ path: resolve(artifacts, `${name}.png`), fullPage: true });
+  await page.screenshot({ path: e2eArtifactPath(`${name}.png`), fullPage: true });
   await expect(page).toHaveScreenshot(`${name}.png`, {
     animations: "disabled",
     caret: "hide",
@@ -144,7 +146,7 @@ test("real agent run exposes grounded findings, evidence, and warnings", async (
     .toHaveCount(visibleDefaultLayerCount);
   await capture(page, "real-inspection-1440x900");
   await page.screenshot({
-    path: resolve(artifacts, "geometry-inspection-1440x900.png"),
+    path: e2eArtifactPath("geometry-inspection-1440x900.png"),
     fullPage: true
   });
 

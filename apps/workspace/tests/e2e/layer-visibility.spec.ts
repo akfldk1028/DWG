@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
-import { e2eArtifactDirectory } from "../support/repositoryOutputPaths.ts";
+import {
+  e2eArtifactDirectory,
+  e2eArtifactPath
+} from "../support/repositoryOutputPaths.ts";
 
 const artifacts = e2eArtifactDirectory;
 
@@ -24,7 +26,7 @@ test("layer eye button hides and restores its CAD entities", async ({ page }) =>
   await expect(layerToggle).toHaveAccessibleName("0 레이어 표시");
   await mkdir(artifacts, { recursive: true });
   await page.screenshot({
-    path: resolve(artifacts, "layer-hidden-1440x900.png"),
+    path: e2eArtifactPath("layer-hidden-1440x900.png"),
     fullPage: true
   });
 
@@ -32,7 +34,7 @@ test("layer eye button hides and restores its CAD entities", async ({ page }) =>
   await expect(page.locator(".cad-entity")).toHaveCount(22);
   await expect(layerToggle).toHaveAccessibleName("0 레이어 숨기기");
   await page.screenshot({
-    path: resolve(artifacts, "layer-restored-1440x900.png"),
+    path: e2eArtifactPath("layer-restored-1440x900.png"),
     fullPage: true
   });
 });
