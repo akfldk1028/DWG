@@ -204,7 +204,7 @@ npm run test:e2e
 git diff --check
 ```
 
-Expected: fixture verifier PASS; Node 71/71; .NET 9/9; frontend build PASS;
+Expected: fixture verifier PASS; Node 72/72; .NET 9/9; frontend build PASS;
 Playwright 33/33; no whitespace errors. If totals have legitimately increased
 on the current branch, record the higher totals in the commit message body and
 do not lower coverage to match these numbers.
