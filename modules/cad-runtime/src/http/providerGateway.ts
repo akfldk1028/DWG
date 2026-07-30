@@ -25,6 +25,12 @@ interface GatewayDependencies {
   getStatuses(): Promise<ProviderStatus[]>;
   chat(request: GroundedChatRequest, signal?: AbortSignal): Promise<ProviderChatResult>;
   edit?(name: Extract<CadCapabilityName, `edit.${string}`>, input: unknown, signal?: AbortSignal): Promise<unknown>;
+  additionalRoute?(
+    request: IncomingMessage,
+    response: ServerResponse,
+    pathname: string,
+    signal: AbortSignal
+  ): Promise<boolean>;
 }
 
 export function createProviderGateway(dependencies: GatewayDependencies) {
@@ -32,12 +38,18 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
     setSecurityHeaders(response);
     try {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      const controller = createRequestAbortController(request, response);
       if (dependencies.edit) {
-        const controller = createRequestAbortController(request, response);
         if (await handleEditGatewayRequest(request, response, url.pathname, {
           execute: dependencies.edit
         }, controller.signal)) return;
       }
+      if (dependencies.additionalRoute && await dependencies.additionalRoute(
+        request,
+        response,
+        url.pathname,
+        controller.signal
+      )) return;
       if (request.method === "GET" && url.pathname === "/api/health") {
         return sendJson(response, 200, { ok: true, service: "dwg-provider-gateway" });
       }
@@ -52,7 +64,6 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
         if (!isInspectionPayload(body)) {
           return sendJson(response, 400, { error: "Invalid inspection request" });
         }
-        const controller = createRequestAbortController(request, response);
         return sendJson(
           response,
           200,
@@ -64,7 +75,6 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
         if (!isProviderChatPayload(body)) {
           return sendJson(response, 400, { error: "Invalid chat request" });
         }
-        const controller = createRequestAbortController(request, response);
         return sendJson(
           response,
           200,
