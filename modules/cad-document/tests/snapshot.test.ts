@@ -91,8 +91,11 @@ test("normalizes omitted v0.2 layer evidence to null without changing explicit f
 });
 
 test("propagates supplied v0.2 drawing metadata to snapshot fields", () => {
-  const index = structuredClone(legacyIndex()) as CadEntityIndex;
+  const index = structuredClone<CadEntityIndex>(legacyIndex());
   index.schemaVersion = "cad-index/v0.2";
+  if (index.schemaVersion !== "cad-index/v0.2") {
+    assert.fail("Expected the metadata fixture to be cad-index/v0.2.");
+  }
   index.drawing = {
     fileVersion: "AC1032",
     units: "Millimeters"
