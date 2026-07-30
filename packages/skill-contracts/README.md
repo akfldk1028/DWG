@@ -4,7 +4,8 @@ Owns strict validation for versioned CAD skill manifests. Its only public
 entrypoint is `@dwg/skill-contracts`; import serialized permissions from
 `@dwg/contracts` through that entrypoint when needed.
 
-This package depends only on `@dwg/contracts`. Browser code must not import it.
+Its runtime dependencies are `@dwg/contracts` and Zod. `@dwg/contracts` is its
+only internal `@dwg/*` dependency. Browser code must not import this package.
 
 From the repository root, run:
 

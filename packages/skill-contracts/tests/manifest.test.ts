@@ -46,9 +46,37 @@ test("rejects non-semver manifest versions", () => {
   assertManifestRejected({ version: "v1.2" });
 });
 
+test("accepts valid semver prerelease and build identifiers", () => {
+  const manifest = parseCadSkillManifest({
+    ...validManifest,
+    version: "1.0.0-rc.1+build.5"
+  });
+
+  assert.equal(manifest.version, "1.0.0-rc.1+build.5");
+});
+
+test("rejects numeric semver prerelease identifiers with leading zeroes", () => {
+  assertManifestRejected({ version: "1.0.0-01" });
+  assertManifestRejected({ version: "1.0.0-alpha.01" });
+});
+
 test("rejects malformed failure and limitation codes", () => {
   assertManifestRejected({ failureCodes: ["drawing-not-found"] });
   assertManifestRejected({ limitationCodes: ["no visual inference"] });
+});
+
+test("requires nonempty unique failure codes", () => {
+  assertManifestRejected({ failureCodes: [] });
+  assertManifestRejected({
+    failureCodes: ["DRAWING_NOT_FOUND", "DRAWING_NOT_FOUND"]
+  });
+});
+
+test("requires nonempty unique limitation codes", () => {
+  assertManifestRejected({ limitationCodes: [] });
+  assertManifestRejected({
+    limitationCodes: ["NO_VISUAL_INFERENCE", "NO_VISUAL_INFERENCE"]
+  });
 });
 
 test("rejects unknown manifest properties", () => {
