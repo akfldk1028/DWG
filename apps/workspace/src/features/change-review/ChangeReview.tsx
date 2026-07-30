@@ -1,8 +1,9 @@
 import { AlertTriangle, CheckCircle2, History, RotateCcw, RotateCw, XCircle } from "lucide-react";
 
-import type { CadChange, CadEntityChangeState, CadLayerChangeState } from "@dwg/contracts";
+import type { CadChange, CadEntityChangeState, CadEntityIndexItem, CadLayerChangeState } from "@dwg/contracts";
 
-import type { ChangeReviewPhase } from "./useChangeReview";
+import { ChangeProposalComposer } from "./ChangeProposalComposer";
+import type { ChangeReviewPhase, ChangeReviewRetry } from "./useChangeReview";
 import "./styles.css";
 
 interface Props {
@@ -11,9 +12,14 @@ interface Props {
   revision: number | null;
   error: string | null;
   proposalError: string | null;
+  documentId: string;
+  expectedRevision: number;
+  selectedEntity: CadEntityIndexItem | null;
+  retryAction: ChangeReviewRetry;
   busy: boolean;
   onApprove(): void;
   onReject(): void;
+  onRetry(): void;
   onRePreview(): void;
   onUndo(): void;
   onRedo(): void;
@@ -25,9 +31,14 @@ export function ChangeReview({
   revision,
   error,
   proposalError,
+  documentId,
+  expectedRevision,
+  selectedEntity,
+  retryAction,
   busy,
   onApprove,
   onReject,
+  onRetry,
   onRePreview,
   onUndo,
   onRedo
@@ -36,10 +47,15 @@ export function ChangeReview({
   const canApprove = phase === "ready";
   const canUndo = phase === "applied" || phase === "redone";
   const canRedo = phase === "undone";
-  const canRePreview = phase === "rejected" || phase === "stale" || phase === "error";
+  const canRePreview = phase === "rejected" || phase === "stale";
 
   return (
     <section aria-label="Change review" className="change-review" role="region">
+      <ChangeProposalComposer
+        documentId={documentId}
+        expectedRevision={expectedRevision}
+        selectedEntity={selectedEntity}
+      />
       <header className="change-review-header">
         <div>
           <strong>Change review</strong>
@@ -49,6 +65,9 @@ export function ChangeReview({
       </header>
       {(proposalError || error) && <div className="change-review-error" role="alert">{proposalError ?? error}</div>}
       {!preview && <div className="change-review-empty">No proposed changes to review.</div>}
+      {!preview && retryAction === "preview" && (
+        <button className="change-review-retry" disabled={busy} onClick={onRetry}>Retry preview</button>
+      )}
       {preview && (
         <>
           <div className="change-review-summary">
@@ -66,6 +85,9 @@ export function ChangeReview({
             <button disabled={busy || !canApprove} onClick={onApprove}>Approve changes</button>
             <button disabled={busy || !canApprove} onClick={onReject}>Reject changes</button>
             <button disabled={busy || !canRePreview} onClick={onRePreview}>Re-preview changes</button>
+            {phase === "error" && retryAction && retryAction !== "preview" && (
+              <button disabled={busy} onClick={onRetry}>Retry {retryAction}</button>
+            )}
             <button disabled={busy || !canUndo} onClick={onUndo}><RotateCcw size={13} />Undo changes</button>
             <button disabled={busy || !canRedo} onClick={onRedo}><RotateCw size={13} />Redo changes</button>
           </div>
@@ -122,7 +144,7 @@ function Evidence({ title, state, layer }: { title: string; state: CadEntityChan
   }
   const value = state as CadEntityChangeState;
   return <section className="change-evidence"><h4>{title}</h4><dl>
-    <div><dt>HANDLE</dt><dd>{value.handle ?? "none"}</dd></div>
+    <div><dt>HANDLE</dt><dd>{value.handle === null ? "none" : bounded(value.handle)}</dd></div>
     <div><dt>TYPE</dt><dd>{bounded(value.type)}</dd></div>
     <div><dt>LAYER</dt><dd>{bounded(value.layer)}</dd></div>
     <div><dt>BBOX</dt><dd>{formatBox(value.bbox)}</dd></div>

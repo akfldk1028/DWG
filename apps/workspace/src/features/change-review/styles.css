@@ -29,4 +29,15 @@
 .change-review-actions button { min-height: 29px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; color: var(--ink); background: var(--panel-raised); border: 1px solid var(--border); border-radius: 7px; font-size: 10px; font-weight: 700; }
 .change-review-actions button:first-child { color: white; background: var(--accent); border-color: var(--accent); }
 .change-review-actions button:disabled { cursor: not-allowed; opacity: .48; }
+.change-review-retry { justify-self: start; min-height: 29px; padding: 0 9px; color: var(--ink); background: var(--panel-raised); border: 1px solid var(--border); border-radius: 7px; font-size: 10px; font-weight: 700; }
+.change-proposal-composer { display: grid; gap: 8px; padding: 9px; background: var(--subtle); border: 1px solid var(--border-soft); border-radius: 8px; }
+.change-proposal-composer header { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.change-proposal-composer header strong { font-size: 10px; }
+.change-proposal-composer header span { max-width: 60%; overflow: hidden; color: var(--muted); font: 9px Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.change-proposal-fields { display: grid; grid-template-columns: repeat(3, minmax(54px, 1fr)) auto; gap: 6px; }
+.change-proposal-fields label { display: grid; gap: 3px; color: var(--muted); font-size: 8px; font-weight: 800; }
+.change-proposal-fields input { width: 100%; min-width: 0; height: 28px; padding: 0 6px; color: var(--ink); background: var(--panel-raised); border: 1px solid var(--border); border-radius: 6px; font: 10px Consolas, monospace; }
+.change-proposal-fields button { align-self: end; height: 28px; padding: 0 9px; color: white; background: var(--accent); border: 0; border-radius: 6px; font-size: 9px; font-weight: 700; }
+.change-proposal-fields button:disabled { cursor: not-allowed; opacity: .48; }
+.change-proposal-error { color: #9d3a31; font-size: 9px; }
 @media (max-width: 470px) { .change-card-states { grid-template-columns: minmax(0, 1fr); } .change-evidence + .change-evidence { border-top: 1px solid var(--border-soft); border-left: 0; } }

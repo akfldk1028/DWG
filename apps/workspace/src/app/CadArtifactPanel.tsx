@@ -218,16 +218,21 @@ export function CadArtifactPanel({
         {tab === "changes" && (
           <ChangeReview
             busy={changeReview.busy}
+            documentId={index.drawingId}
             error={changeReview.error}
+            expectedRevision={changeReview.revision ?? 0}
             onApprove={changeReview.approve}
             onRePreview={changeReview.rePreview}
             onRedo={changeReview.redo}
             onReject={changeReview.reject}
+            onRetry={changeReview.retry}
             onUndo={changeReview.undo}
             phase={changeReview.phase}
             preview={changeReview.preview}
             proposalError={proposalError}
             revision={changeReview.revision}
+            retryAction={changeReview.retryAction}
+            selectedEntity={selected}
           />
         )}
         {tab === "warnings" && (

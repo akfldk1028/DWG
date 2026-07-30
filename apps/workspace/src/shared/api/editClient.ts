@@ -19,35 +19,73 @@ export class EditClientError extends Error {
 
 export async function previewEdit(batch: CadEditBatch, signal?: AbortSignal): Promise<CadEditPreviewResponse> {
   const request = parseCadEditPreviewRequest({ batch: parseCadEditBatch(batch) });
-  return postEdit("/api/edit/preview", request, signal, parseCadEditPreviewResponse);
+  const result = await postEdit("/api/edit/preview", request, signal, parseCadEditPreviewResponse);
+  if (
+    result.documentId !== request.batch.documentId ||
+    result.transactionId !== request.batch.transactionId ||
+    result.baseRevision !== request.batch.expectedRevision
+  ) {
+    throw new EditClientError(
+      "EDIT_PREVIEW_MISMATCH",
+      "Preview response does not match proposal.",
+    );
+  }
+  return result;
 }
 
 export async function applyEdit(
   previewId: string,
   documentId: string,
   expectedRevision: number,
+  transactionId: string,
+  expectedChangeCount: number,
   signal?: AbortSignal
 ): Promise<CadEditApplyResponse> {
   const request = parseCadEditApplyRequest({ previewId, documentId, expectedRevision, approved: true });
-  return postEdit("/api/edit/apply", request, signal, parseCadEditApplyResponse);
+  const result = await postEdit("/api/edit/apply", request, signal, parseCadEditApplyResponse);
+  requireCorrelatedResult(result, {
+    documentId,
+    transactionId,
+    revision: expectedRevision + 1,
+    changeCount: expectedChangeCount
+  }, "EDIT_APPLY_MISMATCH", "Apply response does not match reviewed changes.");
+  return result;
 }
 
 export async function undoEdit(
   documentId: string,
   expectedRevision: number,
+  transactionId: string,
+  expectedChangeCount: number,
   signal?: AbortSignal
 ): Promise<CadEditApplyResponse> {
   const request = parseCadEditHistoryRequest({ documentId, expectedRevision, approved: true });
-  return postEdit("/api/edit/undo", request, signal, parseCadEditApplyResponse);
+  const result = await postEdit("/api/edit/undo", request, signal, parseCadEditApplyResponse);
+  requireCorrelatedResult(result, {
+    documentId,
+    transactionId,
+    revision: expectedRevision + 1,
+    changeCount: expectedChangeCount
+  }, "EDIT_HISTORY_MISMATCH", "History response does not match reviewed changes.");
+  return result;
 }
 
 export async function redoEdit(
   documentId: string,
   expectedRevision: number,
+  transactionId: string,
+  expectedChangeCount: number,
   signal?: AbortSignal
 ): Promise<CadEditApplyResponse> {
   const request = parseCadEditHistoryRequest({ documentId, expectedRevision, approved: true });
-  return postEdit("/api/edit/redo", request, signal, parseCadEditApplyResponse);
+  const result = await postEdit("/api/edit/redo", request, signal, parseCadEditApplyResponse);
+  requireCorrelatedResult(result, {
+    documentId,
+    transactionId,
+    revision: expectedRevision + 1,
+    changeCount: expectedChangeCount
+  }, "EDIT_HISTORY_MISMATCH", "History response does not match reviewed changes.");
+  return result;
 }
 
 async function postEdit<T>(
@@ -88,4 +126,20 @@ function toEditClientError(payload: unknown, status: number): EditClientError {
     }
   }
   return new EditClientError("EDIT_REQUEST_FAILED", `HTTP ${status}`);
+}
+
+function requireCorrelatedResult(
+  result: CadEditApplyResponse,
+  expected: CadEditApplyResponse,
+  code: string,
+  message: string
+) {
+  if (
+    result.documentId !== expected.documentId ||
+    result.transactionId !== expected.transactionId ||
+    result.revision !== expected.revision ||
+    result.changeCount !== expected.changeCount
+  ) {
+    throw new EditClientError(code, message);
+  }
 }

@@ -63,6 +63,15 @@ The gateway binds to `127.0.0.1`, rejects malformed/oversized input, and passes
 browser cancellation through one `AbortSignal`. Do not expose it publicly
 without adding authentication and a separate threat-model review.
 
+#### Workspace edit proposal ingest
+
+The workspace `Changes` tab can create a move proposal only from the currently
+selected, grounded contract entity. The user supplies a finite non-zero delta;
+the feature builds and validates a `CadEditBatch`, then publishes it through
+the versioned browser proposal inbox. The inbox starts preview only. Approval
+remains a separate explicit action, and event publication can never apply an
+edit.
+
 #### CAD skill document scope
 
 `POST /api/skills/run` requires a primary `documentId`. It may also carry
