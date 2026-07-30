@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   parseExportCapabilitiesResponse,
   parseExportCapabilityItem,
+  parseCadOutputVerification,
+  type CadOutputVerification,
   type ExportCapabilityItem
 } from "./export.js";
 
@@ -56,4 +58,35 @@ test("requires every exact export format once", () => {
     }),
     /EXPORT_CAPABILITIES_RESPONSE_INVALID/
   );
+});
+
+test("parses only bounded, strict CAD output verification DTOs", () => {
+  const valid: CadOutputVerification = {
+    id: "verification:1",
+    status: "passed",
+    format: "dxf",
+    version: "AC1032",
+    sourceSha256: "a".repeat(64),
+    outputSha256: "b".repeat(64),
+    intendedChangeCount: 2,
+    verifiedChangeCount: 2,
+    copiedHandleMap: { "20": "120", "10": "110" },
+    warnings: ["source copied"]
+  };
+
+  assert.deepEqual(parseCadOutputVerification(valid), {
+    ...valid,
+    sourceSha256: "A".repeat(64),
+    outputSha256: "B".repeat(64),
+    copiedHandleMap: { "10": "110", "20": "120" }
+  });
+  assert.throws(
+    () => parseCadOutputVerification({ ...valid, unknown: true }),
+    /CAD_OUTPUT_VERIFICATION_INVALID/
+  );
+  assert.throws(
+    () => parseCadOutputVerification({ ...valid, warnings: ["x".repeat(513)] }),
+    /CAD_OUTPUT_VERIFICATION_INVALID/
+  );
+  assert.throws(() => parseCadOutputVerification(null), /CAD_OUTPUT_VERIFICATION_INVALID/);
 });
