@@ -29,6 +29,7 @@
     "providers:smoke": "tsx modules/cad-runtime/harness/provider-smoke.ts"
   },
   "dependencies": {
+    "@dwg/cad-document": "file:modules/cad-document",
     "@dwg/contracts": "file:packages/contracts",
     "@dwg/skill-contracts": "file:packages/skill-contracts",
     "@modelcontextprotocol/sdk": "^1.30.0",
