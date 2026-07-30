@@ -39,6 +39,18 @@ function batch(commands: unknown[]) {
   };
 }
 
+function previewResponse(baseRevision: number, nextRevision: number) {
+  return {
+    previewId: transactionId,
+    documentId,
+    transactionId,
+    baseRevision,
+    nextRevision,
+    changes: [],
+    warnings: []
+  };
+}
+
 test("accepts one guarded example of every deterministic edit command", () => {
   const parsed = parseCadEditBatch(batch([
     guardedProposal({ kind: "layer.create", layerId: "layer:created:annotations", name: "Annotations", color: 3 }),
@@ -111,6 +123,12 @@ test("rejects invalid layer IDs, unknown keys, and overlong replacement text", (
   ])));
 });
 
+test("rejects layer updates without a mutable field", () => {
+  assert.throws(() => parseCadEditBatch(batch([
+    guardedProposal({ kind: "layer.update", layerId: "layer:imported:0" })
+  ])));
+});
+
 test("strictly validates literal approval requests and typed preview evidence", () => {
   assert.equal(cadEditPreviewRequestSchema.safeParse({ batch: batch([
     guardedProposal({ kind: "entity.delete", handles: ["1A"] })
@@ -147,4 +165,18 @@ test("strictly validates literal approval requests and typed preview evidence", 
     warnings: [],
     engine: {}
   }).success, false);
+});
+
+test("rejects preview revisions that do not advance exactly once", () => {
+  assert.equal(cadEditPreviewResponseSchema.safeParse(previewResponse(7, 7)).success, false);
+  assert.equal(cadEditPreviewResponseSchema.safeParse(previewResponse(7, 6)).success, false);
+});
+
+test("rejects preview revisions outside the safe integer range", () => {
+  assert.equal(cadEditPreviewResponseSchema.safeParse(
+    previewResponse(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1)
+  ).success, false);
+  assert.equal(cadEditPreviewResponseSchema.safeParse(
+    previewResponse(Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER + 2)
+  ).success, false);
 });

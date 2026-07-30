@@ -6,7 +6,7 @@ export const CAD_EDIT_LAYER_ID_PATTERN = /^layer:(?:imported|created):[A-Za-z0-9
 
 const nonEmptyString = z.string().min(1);
 const uuid = z.string().uuid();
-const revision = z.number().int().nonnegative();
+const revision = z.number().int().nonnegative().safe();
 const aciColor = z.number().int().min(1).max(255);
 const handle = nonEmptyString;
 const layerId = z.string().regex(CAD_EDIT_LAYER_ID_PATTERN);
@@ -66,7 +66,20 @@ export const cadEditCommandSchema = z.discriminatedUnion("kind", [
     kind: z.literal("entity.delete"),
     handles: cadHandleListSchema
   }).strict()
-]);
+]).superRefine((operation, context) => {
+  if (
+    operation.kind === "layer.update" &&
+    operation.name === undefined &&
+    operation.color === undefined &&
+    operation.visible === undefined &&
+    operation.locked === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "layer.update requires at least one mutable field"
+    });
+  }
+});
 
 export const cadEditOriginSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user"), id: nonEmptyString }).strict(),
@@ -167,7 +180,15 @@ export const cadEditPreviewResponseSchema = z.object({
   nextRevision: revision,
   changes: z.array(cadChangeSchema),
   warnings: z.array(z.string())
-}).strict();
+}).strict().superRefine((preview, context) => {
+  if (preview.nextRevision !== preview.baseRevision + 1) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["nextRevision"],
+      message: "nextRevision must equal baseRevision + 1"
+    });
+  }
+});
 
 export const cadEditApplyResponseSchema = z.object({
   documentId: nonEmptyString,
