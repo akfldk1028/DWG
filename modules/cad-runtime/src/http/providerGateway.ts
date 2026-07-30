@@ -6,6 +6,7 @@ import {
   type InspectionPayload,
   type InspectionRun
 } from "@dwg/contracts";
+import type { CadCapabilityName } from "@dwg/cad-capabilities";
 
 import type {
   GroundedChatRequest
@@ -14,6 +15,7 @@ import type {
   ProviderChatResult,
   ProviderStatus
 } from "../providers/contracts.js";
+import { handleEditGatewayRequest } from "./editGateway.js";
 
 const maxBodyBytes = 64 * 1024;
 
@@ -22,6 +24,7 @@ interface GatewayDependencies {
   inspect(payload: InspectionPayload, signal?: AbortSignal): Promise<InspectionRun>;
   getStatuses(): Promise<ProviderStatus[]>;
   chat(request: GroundedChatRequest, signal?: AbortSignal): Promise<ProviderChatResult>;
+  edit?(name: Extract<CadCapabilityName, `edit.${string}`>, input: unknown, signal?: AbortSignal): Promise<unknown>;
 }
 
 export function createProviderGateway(dependencies: GatewayDependencies) {
@@ -29,6 +32,12 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
     setSecurityHeaders(response);
     try {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (dependencies.edit) {
+        const controller = createRequestAbortController(request, response);
+        if (await handleEditGatewayRequest(request, response, url.pathname, {
+          execute: dependencies.edit
+        }, controller.signal)) return;
+      }
       if (request.method === "GET" && url.pathname === "/api/health") {
         return sendJson(response, 200, { ok: true, service: "dwg-provider-gateway" });
       }

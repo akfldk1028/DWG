@@ -273,3 +273,11 @@ export function parseCadEditApplyRequest(value: unknown): CadEditApplyRequest {
 export function parseCadEditHistoryRequest(value: unknown): CadEditHistoryRequest {
   return cadEditHistoryRequestSchema.parse(value);
 }
+
+export function parseCadEditPreviewResponse(value: unknown): CadEditPreviewResponse {
+  return cadEditPreviewResponseSchema.parse(value);
+}
+
+export function parseCadEditApplyResponse(value: unknown): CadEditApplyResponse {
+  return cadEditApplyResponseSchema.parse(value);
+}

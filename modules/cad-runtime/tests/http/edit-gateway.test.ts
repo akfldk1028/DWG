@@ -1,0 +1,245 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createProviderGateway } from "../../src/http/providerGateway.js";
+import { createCadApplication } from "../../src/application/createCadApplication.js";
+
+const documentId = "dwg:edit-test";
+const transactionId = "11111111-1111-4111-8111-111111111111";
+const commandId = "22222222-2222-4222-8222-222222222222";
+const previewId = "33333333-3333-4333-8333-333333333333";
+
+test("edit gateway validates requests, responses, and only returns public edit DTOs", async (context) => {
+  const calls: Array<{ name: string; input: unknown }> = [];
+  const server = createProviderGateway({
+    ...readDependencies(),
+    edit: async (name, input) => {
+      calls.push({ name, input });
+      if (name === "edit.preview") {
+        return {
+          previewId,
+          documentId,
+          transactionId,
+          baseRevision: 0,
+          nextRevision: 1,
+          changeCount: 0,
+          changesTruncated: false,
+          changes: [],
+          warningCount: 0,
+          warningsTruncated: false,
+          warnings: []
+        };
+      }
+      return { documentId, revision: 1, transactionId, changeCount: 0 };
+    }
+  });
+  const baseUrl = await listen(server, context);
+
+  const malformed = await post(baseUrl, "/api/edit/preview", { batch: {} });
+  assert.equal(malformed.status, 400);
+  assert.deepEqual(await malformed.json(), {
+    error: { code: "EDIT_REQUEST_INVALID", message: "Invalid CAD edit request." }
+  });
+
+  const preview = await post(baseUrl, "/api/edit/preview", { batch: validBatch() });
+  assert.equal(preview.status, 200);
+  assert.deepEqual(await preview.json(), {
+    previewId,
+    documentId,
+    transactionId,
+    baseRevision: 0,
+    nextRevision: 1,
+    changeCount: 0,
+    changesTruncated: false,
+    changes: [],
+    warningCount: 0,
+    warningsTruncated: false,
+    warnings: []
+  });
+  assert.deepEqual(calls, [{ name: "edit.preview", input: { batch: validBatch() } }]);
+
+  const apply = await post(baseUrl, "/api/edit/apply", {
+    previewId,
+    documentId,
+    expectedRevision: 0,
+    approved: true
+  });
+  assert.equal(apply.status, 200);
+  assert.deepEqual(await apply.json(), { documentId, revision: 1, transactionId, changeCount: 0 });
+});
+
+test("edit gateway rejects oversized bodies and malformed capability responses", async (context) => {
+  let calls = 0;
+  const server = createProviderGateway({
+    ...readDependencies(),
+    edit: async () => {
+      calls += 1;
+      return { documentId, revision: 1, transactionId, changeCount: 0, snapshot: { secret: true } };
+    }
+  });
+  const baseUrl = await listen(server, context);
+
+  const oversized = await fetch(`${baseUrl}/api/edit/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "x".repeat(1024 * 1024 + 1)
+  });
+  assert.equal(oversized.status, 413);
+  assert.deepEqual(await oversized.json(), {
+    error: { code: "EDIT_REQUEST_TOO_LARGE", message: "CAD edit request exceeds the 1 MiB limit." }
+  });
+  assert.equal(calls, 0);
+
+  const invalidResponse = await post(baseUrl, "/api/edit/undo", {
+    documentId,
+    expectedRevision: 0,
+    approved: true
+  });
+  assert.equal(invalidResponse.status, 500);
+  assert.deepEqual(await invalidResponse.json(), {
+    error: { code: "EDIT_RESPONSE_INVALID", message: "CAD edit capability returned an invalid response." }
+  });
+});
+
+test("edit gateway forwards the request AbortSignal unchanged", async (context) => {
+  let started!: () => void;
+  let aborted = false;
+  const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+  const server = createProviderGateway({
+    ...readDependencies(),
+    edit: async (_name, _input, signal) => new Promise((resolve) => {
+      started();
+      signal?.addEventListener("abort", () => {
+        aborted = true;
+        resolve({ documentId, revision: 0, transactionId, changeCount: 0 });
+      }, { once: true });
+    })
+  });
+  const baseUrl = await listen(server, context);
+  const controller = new AbortController();
+  const request = fetch(`${baseUrl}/api/edit/undo`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ documentId, expectedRevision: 0, approved: true }),
+    signal: controller.signal
+  });
+  await startedPromise;
+  controller.abort();
+  await assert.rejects(request, /abort/i);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(aborted, true);
+});
+
+test("edit gateway drives preview apply reuse stale undo and redo through one paired application", async (context) => {
+  const application = await createCadApplication({
+    loadInitialIndex: async () => editableIndex(),
+    read: {
+      open: async () => editableIndex(),
+      get: () => editableIndex()
+    }
+  });
+  const server = createProviderGateway({
+    ...readDependencies(),
+    edit: (name, input, signal) => application.capabilities.execute(name, input, signal)
+  });
+  const baseUrl = await listen(server, context);
+
+  const firstPreview = await post(baseUrl, "/api/edit/preview", { batch: validBatch() });
+  const first = await firstPreview.json() as { previewId: string };
+  assert.equal(firstPreview.status, 200, JSON.stringify(first));
+  const applied = await post(baseUrl, "/api/edit/apply", {
+    previewId: first.previewId, documentId, expectedRevision: 0, approved: true
+  });
+  assert.equal(applied.status, 200);
+  assert.equal((await applied.json() as { revision: number }).revision, 1);
+
+  const reused = await post(baseUrl, "/api/edit/apply", {
+    previewId: first.previewId, documentId, expectedRevision: 1, approved: true
+  });
+  assert.equal(reused.status, 409);
+  assert.equal((await reused.json() as { error: { code: string } }).error.code, "EDIT_PREVIEW_REUSED");
+
+  const stalePreview = await post(baseUrl, "/api/edit/preview", { batch: validBatch(1) });
+  const stale = await stalePreview.json() as { previewId: string };
+  const undo = await post(baseUrl, "/api/edit/undo", {
+    documentId, expectedRevision: 1, approved: true
+  });
+  assert.equal(undo.status, 200);
+  assert.equal((await undo.json() as { revision: number }).revision, 2);
+  const staleApply = await post(baseUrl, "/api/edit/apply", {
+    previewId: stale.previewId, documentId, expectedRevision: 1, approved: true
+  });
+  assert.equal(staleApply.status, 409);
+  assert.equal((await staleApply.json() as { error: { code: string } }).error.code, "EDIT_PREVIEW_STALE");
+
+  const redo = await post(baseUrl, "/api/edit/redo", {
+    documentId, expectedRevision: 2, approved: true
+  });
+  assert.equal(redo.status, 200);
+  assert.equal((await redo.json() as { revision: number }).revision, 3);
+});
+
+function readDependencies() {
+  return {
+    getDrawing: async () => { throw new Error("not used"); },
+    inspect: async () => { throw new Error("not used"); },
+    getStatuses: async () => [],
+    chat: async () => { throw new Error("not used"); }
+  };
+}
+
+async function listen(server: ReturnType<typeof createProviderGateway>, context: test.TestContext) {
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  return `http://127.0.0.1:${address.port}`;
+}
+
+function post(baseUrl: string, path: string, body: unknown): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+}
+
+function validBatch(expectedRevision = 0) {
+  return {
+    schemaVersion: "cad-edit/v1",
+    transactionId,
+    documentId,
+    expectedRevision,
+    commands: [{
+      commandId,
+      expectedRevision,
+      origin: { kind: "user", id: "test" },
+      preconditions: [{ target: "10", field: "exists", equals: true }],
+      operation: { kind: "text.replace", handle: "10", text: "updated" }
+    }]
+  };
+}
+
+function editableIndex() {
+  return {
+    schemaVersion: "cad-index/v0.2" as const,
+    drawingId: documentId,
+    source: { kind: "dxf" as const, displayName: "edit-test.dxf", parser: "test" },
+    summary: { entityCount: 1, layerCount: 1, unsupportedCount: 0, modelSpaceCount: 1, paperSpaceCount: 0 },
+    layers: [{ name: "0", entityCount: 1, visible: true, frozen: false }],
+    entities: [{
+      id: "h:10", handle: "10", type: "TEXT", layer: "0", space: "model" as const, layout: "Model",
+      bbox: { min: [0, 0, 0] as [number, number, number], max: [1, 1, 0] as [number, number, number] },
+      text: "original", blockName: null, attributes: {}, warnings: [],
+      geometry: {
+        kind: "text" as const,
+        insertionPoint: [0, 0, 0] as [number, number, number],
+        alignmentPoint: null,
+        height: 1,
+        rotation: 0,
+        width: null
+      }
+    }],
+    unsupported: []
+  };
+}

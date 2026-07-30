@@ -1,6 +1,5 @@
-import { resolve } from "node:path";
-
 import { buildCadIndexForPath } from "../application/cad-tools/runtime.js";
+import { createCadApplication } from "../application/createCadApplication.js";
 import { createChatService } from "../application/chat/chatService.js";
 import { createProviderRegistry, getProviderStatuses } from "../providers/providerRegistry.js";
 import {
@@ -25,6 +24,11 @@ const drawingWorkspace = createDrawingWorkspace(
   workspace,
   runtimePaths.drawingPath
 );
+const application = await createCadApplication({
+  workspaceRoot: workspace,
+  drawingPath: runtimePaths.drawingPath,
+  loadInitialIndex: () => drawingWorkspace.getIndex()
+});
 const providers = createProviderRegistry(workspace);
 const chatService = createChatService({
   providers,
@@ -38,7 +42,8 @@ const server = createProviderGateway({
   getDrawing: () => drawingWorkspace.getIndex(),
   inspect: ({ checks }) => drawingWorkspace.inspect(checks),
   getStatuses: () => getProviderStatuses(providers),
-  chat: (request, signal) => chatService.chat(request, signal)
+  chat: (request, signal) => chatService.chat(request, signal),
+  edit: (name, input, signal) => application.capabilities.execute(name, input, signal)
 });
 
 const port = Number(process.env.DWG_GATEWAY_PORT ?? 4317);
