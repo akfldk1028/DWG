@@ -1,5 +1,6 @@
 import { readdir, realpath, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { TextDecoder } from "node:util";
 
 import {
   parseCadSkillManifest,
@@ -9,6 +10,7 @@ import {
 import { assessCadSkillCompatibility } from "./compatibility.js";
 
 const MAX_INSTRUCTION_BYTES = 64 * 1024;
+const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 export interface InstalledCadSkill {
   root: string;
@@ -75,7 +77,10 @@ async function readInstructions(root: string, skillRoot: string): Promise<string
   if (details.size > MAX_INSTRUCTION_BYTES) {
     throw new Error("SKILL_INSTRUCTIONS_TOO_LARGE");
   }
-  return (await readFile(instructionPath)).toString("utf8");
+  return decodeStrictUtf8(
+    await readFile(instructionPath),
+    "SKILL_INSTRUCTIONS_INVALID_ENCODING"
+  );
 }
 
 async function readManifest(root: string, skillRoot: string): Promise<CadSkillManifest> {
@@ -87,9 +92,24 @@ async function readManifest(root: string, skillRoot: string): Promise<CadSkillMa
   );
 
   try {
-    return parseCadSkillManifest(JSON.parse(await readFile(manifestPath, "utf8")));
+    const manifest = decodeStrictUtf8(
+      await readFile(manifestPath),
+      "SKILL_MANIFEST_INVALID"
+    );
+    return parseCadSkillManifest(JSON.parse(manifest));
   } catch {
     throw new Error("SKILL_MANIFEST_INVALID");
+  }
+}
+
+function decodeStrictUtf8(bytes: Buffer, errorCode: string): string {
+  try {
+    if (bytes.subarray(0, UTF8_BOM.length).equals(UTF8_BOM)) {
+      throw new Error(errorCode);
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error(errorCode);
   }
 }
 

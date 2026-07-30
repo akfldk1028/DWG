@@ -110,6 +110,96 @@ test("rejects instructions above the 64 KiB byte limit", async (t) => {
   });
 });
 
+test("rejects an invalid UTF-8 byte sequence in SKILL.md", async (t) => {
+  await withSkillRoot(t, async ({ root }) => {
+    const skill = join(root, "invalid-instruction-encoding");
+    await writeValidSkill(skill, "invalid-instruction-encoding");
+    await writeFile(
+      join(skill, "SKILL.md"),
+      Buffer.from([0x23, 0x20, 0xc3, 0x28])
+    );
+
+    await assert.rejects(
+      () => discoverCadSkills(root, supportedContract),
+      /^Error: SKILL_INSTRUCTIONS_INVALID_ENCODING$/
+    );
+  });
+});
+
+test("rejects a truncated UTF-8 sequence in SKILL.md", async (t) => {
+  await withSkillRoot(t, async ({ root }) => {
+    const skill = join(root, "truncated-instruction-encoding");
+    await writeValidSkill(skill, "truncated-instruction-encoding");
+    await writeFile(join(skill, "SKILL.md"), Buffer.from([0x23, 0x20, 0xe2, 0x82]));
+
+    await assert.rejects(
+      () => discoverCadSkills(root, supportedContract),
+      /^Error: SKILL_INSTRUCTIONS_INVALID_ENCODING$/
+    );
+  });
+});
+
+test("rejects an invalid UTF-8 byte sequence in manifest.json", async (t) => {
+  await withSkillRoot(t, async ({ root }) => {
+    const skill = join(root, "invalid-manifest-encoding");
+    await writeValidSkill(skill, "invalid-manifest-encoding");
+    await writeManifestWithPurposeBytes(skill, Buffer.from([0xc3, 0x28]));
+
+    await assert.rejects(
+      () => discoverCadSkills(root, supportedContract),
+      /^Error: SKILL_MANIFEST_INVALID$/
+    );
+  });
+});
+
+test("rejects a truncated UTF-8 sequence in manifest.json", async (t) => {
+  await withSkillRoot(t, async ({ root }) => {
+    const skill = join(root, "truncated-manifest-encoding");
+    await writeValidSkill(skill, "truncated-manifest-encoding");
+    await writeManifestWithPurposeBytes(skill, Buffer.from([0xe2, 0x82]));
+
+    await assert.rejects(
+      () => discoverCadSkills(root, supportedContract),
+      /^Error: SKILL_MANIFEST_INVALID$/
+    );
+  });
+});
+
+test("rejects UTF-8 BOMs in both required skill files", async (t) => {
+  for (const fileName of ["SKILL.md", "manifest.json"]) {
+    await withSkillRoot(t, async ({ root }) => {
+      const skill = join(root, `bom-${fileName.replace(".", "-")}`);
+      await writeValidSkill(skill, `bom-${fileName === "SKILL.md" ? "skill" : "manifest"}`);
+      const path = join(skill, fileName);
+      const bytes = await readFile(path);
+      await writeFile(path, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]));
+
+      const expectedCode =
+        fileName === "SKILL.md"
+          ? "SKILL_INSTRUCTIONS_INVALID_ENCODING"
+          : "SKILL_MANIFEST_INVALID";
+      await assert.rejects(
+        () => discoverCadSkills(root, supportedContract),
+        new RegExp(`^Error: ${expectedCode}$`)
+      );
+    });
+  }
+});
+
+test("accepts exactly 64 KiB of valid Korean UTF-8 instructions", async (t) => {
+  await withSkillRoot(t, async ({ root }) => {
+    const skillRoot = join(root, "korean-instructions");
+    await writeValidSkill(skillRoot, "korean-instructions");
+    const instructions = `${"가".repeat(21_845)}\n`;
+    assert.equal(Buffer.byteLength(instructions, "utf8"), 64 * 1024);
+    await writeFile(join(skillRoot, "SKILL.md"), instructions);
+
+    const [skill] = await discoverCadSkills(root, supportedContract);
+
+    assert.equal(skill?.instructions, instructions);
+  });
+});
+
 test("lists an incompatible capability contract without making it executable", async (t) => {
   await withSkillRoot(t, async ({ root }) => {
     await writeValidSkill(join(root, "layer-inspection"), "layer-inspection");
@@ -160,6 +250,17 @@ async function writeValidSkill(root: string, id: string, version = "1.2.3") {
 async function writeManifest(root: string, overrides: Record<string, unknown> = {}) {
   const manifest = JSON.parse(await readFile(join(fixtureRoot, "manifest.json"), "utf8"));
   await writeFile(join(root, "manifest.json"), JSON.stringify({ ...manifest, ...overrides }));
+}
+
+async function writeManifestWithPurposeBytes(root: string, purpose: Buffer) {
+  const manifest = await readFile(join(root, "manifest.json"), "utf8");
+  const originalPurpose = "Inspect drawing layers using deterministic CAD evidence.";
+  const [before, after] = manifest.split(originalPurpose);
+  assert.notEqual(after, undefined);
+  await writeFile(
+    join(root, "manifest.json"),
+    Buffer.concat([Buffer.from(before!), purpose, Buffer.from(after!)])
+  );
 }
 
 async function resolveCanonical(path: string) {
