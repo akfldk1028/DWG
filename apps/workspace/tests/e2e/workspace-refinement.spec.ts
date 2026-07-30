@@ -145,6 +145,72 @@ test("loads with in-memory defaults when browser storage access is blocked", asy
   await expect(page.getByText("export_sample.dwg", { exact: true }).first()).toBeVisible();
 });
 
+test("migrates sidebar defaults from v1 and persists the v2 preference after reload", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("dwg.workspace-preferences.v1", JSON.stringify({
+      theme: "system",
+      artifactWidth: 680,
+      sidebarSections: { project: true, drawing: true, sessions: true }
+    }));
+  });
+  await page.goto("/");
+
+  const resizer = page.getByRole("separator", { name: "Sidebar width" });
+  await expect(resizer).toHaveAttribute("aria-valuenow", "320");
+  await expect(resizer).toHaveAttribute("aria-valuemin", "280");
+  await expect(resizer).toHaveAttribute("aria-valuemax", "420");
+  await expect(resizer).toHaveAttribute("aria-orientation", "vertical");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dwg.workspace-preferences.v2"))).not.toBeNull();
+
+  await page.reload();
+  await expect(resizer).toHaveAttribute("aria-valuenow", "320");
+});
+
+test("sidebar resizer uses 16px keyboard steps and clamps pointer resize at both bounds", async ({ page }) => {
+  await page.goto("/");
+  const resizer = page.getByRole("separator", { name: "Sidebar width" });
+
+  await resizer.press("ArrowRight");
+  await expect(resizer).toHaveAttribute("aria-valuenow", "336");
+  await resizer.press("End");
+  await expect(resizer).toHaveAttribute("aria-valuenow", "420");
+  await resizer.press("Home");
+  await expect(resizer).toHaveAttribute("aria-valuenow", "280");
+
+  const box = await resizer.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(1000, box!.y + box!.height / 2);
+  await page.mouse.up();
+  await expect(resizer).toHaveAttribute("aria-valuenow", "420");
+
+  const maxBox = await resizer.boundingBox();
+  await page.mouse.move(maxBox!.x + maxBox!.width / 2, maxBox!.y + maxBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(0, maxBox!.y + maxBox!.height / 2);
+  await page.mouse.up();
+  await expect(resizer).toHaveAttribute("aria-valuenow", "280");
+});
+
+test("invalid v2 sidebar storage falls back to usable defaults", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("dwg.workspace-preferences.v2", JSON.stringify({
+      theme: "system",
+      artifactWidth: 680,
+      sidebarWidth: 320,
+      sidebarTab: "not-a-tab",
+      sidebarSections: { project: true, drawing: true, sessions: true }
+    }));
+  });
+  await page.goto("/");
+
+  await expect(page.getByRole("separator", { name: "Sidebar width" })).toHaveAttribute(
+    "aria-valuenow",
+    "320"
+  );
+});
+
 test("contains clipboard permission failures without an unhandled rejection", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));

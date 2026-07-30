@@ -65,6 +65,18 @@ test("renders a single overview contact sheet", async ({ page }) => {
   });
 });
 
+test("captures the focused desktop sidebar preference state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockProviderStatus(page);
+  await page.goto("/");
+
+  const resizer = page.getByRole("separator", { name: "Sidebar width" });
+  await expect(resizer).toHaveAttribute("aria-valuenow", "320");
+  await resizer.press("ArrowRight");
+  await expect(resizer).toHaveAttribute("aria-valuenow", "336");
+  await capture(page, "sidebar-preferences.png");
+});
+
 async function mockProviderStatus(page: Page) {
   await page.route("**/api/providers", (route) =>
     route.fulfill({

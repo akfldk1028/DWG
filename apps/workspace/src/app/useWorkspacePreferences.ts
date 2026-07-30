@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  clampSidebarWidth,
   createWorkspacePreferencesStore,
   defaultWorkspacePreferences,
   resolveTheme,
+  type SidebarTab,
   type ThemePreference,
   type WorkspacePreferences
 } from "./workspacePreferences";
@@ -38,6 +40,12 @@ export function useWorkspacePreferences() {
     },
     setArtifactWidth(artifactWidth: number) {
       update({ ...preferences, artifactWidth });
+    },
+    setSidebarWidth(sidebarWidth: number) {
+      update({ ...preferences, sidebarWidth: clampSidebarWidth(sidebarWidth) });
+    },
+    setSidebarTab(sidebarTab: SidebarTab) {
+      update({ ...preferences, sidebarTab });
     },
     toggleSection(section: keyof WorkspacePreferences["sidebarSections"]) {
       update({

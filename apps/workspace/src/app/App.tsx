@@ -32,10 +32,12 @@ export function App() {
     notificationsOpen,
     searchQuery,
     searchRef,
+    sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
     resizeArtifactBy,
+    resizeSidebarBy,
     setArtifactMaximized,
     setArtifactOpen,
     setGridVisible,
@@ -43,10 +45,13 @@ export function App() {
     setSearchQuery,
     setSettingsOpen,
     setSidebarOpen,
-    startArtifactResize
+    startArtifactResize,
+    startSidebarResize
   } = useWorkspaceControls({
     preferredArtifactWidth: workspace.preferences.artifactWidth,
-    setPreferredArtifactWidth: workspace.setArtifactWidth
+    preferredSidebarWidth: workspace.preferences.sidebarWidth,
+    setPreferredArtifactWidth: workspace.setArtifactWidth,
+    setPreferredSidebarWidth: workspace.setSidebarWidth
   });
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
 
@@ -130,7 +135,10 @@ export function App() {
 
       <div
         className={`workspace-grid ${artifactMaximized ? "artifact-maximized" : ""} ${artifactOpen ? "" : "artifact-closed"}`}
-        style={{ "--artifact-width": `${artifactWidth}px` } as React.CSSProperties}
+        style={{
+          "--artifact-width": `${artifactWidth}px`,
+          "--sidebar-width": `${sidebarWidth}px`
+        } as React.CSSProperties}
       >
         {sidebarOpen && (
           <WorkspaceSidebar
@@ -148,6 +156,35 @@ export function App() {
           />
         )}
         {!desktop && sidebarOpen && <button aria-label="탐색 닫기" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
+
+        {desktop && sidebarOpen && (
+          <div
+            aria-label="Sidebar width"
+            aria-orientation="vertical"
+            aria-valuemax={420}
+            aria-valuemin={280}
+            aria-valuenow={Math.round(sidebarWidth)}
+            className="sidebar-resizer"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                resizeSidebarBy(-16);
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                resizeSidebarBy(16);
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                resizeSidebarBy(280 - sidebarWidth);
+              } else if (event.key === "End") {
+                event.preventDefault();
+                resizeSidebarBy(420 - sidebarWidth);
+              }
+            }}
+            onPointerDown={startSidebarResize}
+            role="separator"
+            tabIndex={0}
+          />
+        )}
 
         <AgentWorkspace
           activeSession={chat.activeSession}

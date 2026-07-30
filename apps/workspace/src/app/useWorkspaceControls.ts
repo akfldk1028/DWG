@@ -5,19 +5,23 @@ import {
   type PointerEvent as ReactPointerEvent
 } from "react";
 
-import { clampArtifactWidth } from "./workspacePreferences";
+import { clampArtifactWidth, clampSidebarWidth } from "./workspacePreferences";
 
 const compactArtifactBreakpoint = 886;
 const desktopSidebarBreakpoint = 1280;
 
 interface WorkspaceControlsOptions {
   preferredArtifactWidth: number;
+  preferredSidebarWidth: number;
   setPreferredArtifactWidth(width: number): void;
+  setPreferredSidebarWidth(width: number): void;
 }
 
 export function useWorkspaceControls({
   preferredArtifactWidth,
-  setPreferredArtifactWidth
+  preferredSidebarWidth,
+  setPreferredArtifactWidth,
+  setPreferredSidebarWidth
 }: WorkspaceControlsOptions) {
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -31,20 +35,28 @@ export function useWorkspaceControls({
   const [artifactOpen, setArtifactOpen] = useState(
     () => window.innerWidth > compactArtifactBreakpoint
   );
-  const dragStart = useRef<{ x: number; width: number } | null>(null);
+  const artifactDragStart = useRef<{ x: number; width: number } | null>(null);
+  const sidebarDragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const topActionsRef = useRef<HTMLDivElement>(null);
   const setPreferredArtifactWidthRef = useRef(setPreferredArtifactWidth);
+  const setPreferredSidebarWidthRef = useRef(setPreferredSidebarWidth);
   const desktop = viewportWidth >= desktopSidebarBreakpoint;
+  const sidebarWidth = clampSidebarWidth(preferredSidebarWidth);
   const artifactWidth = clampArtifactWidth(
     viewportWidth,
     preferredArtifactWidth,
-    desktop
+    desktop,
+    sidebarWidth
   );
 
   useEffect(() => {
     setPreferredArtifactWidthRef.current = setPreferredArtifactWidth;
   }, [setPreferredArtifactWidth]);
+
+  useEffect(() => {
+    setPreferredSidebarWidthRef.current = setPreferredSidebarWidth;
+  }, [setPreferredSidebarWidth]);
 
   useEffect(() => {
     const resize = () => {
@@ -85,16 +97,25 @@ export function useWorkspaceControls({
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
-      if (!dragStart.current) return;
-      setPreferredArtifactWidthRef.current(clampArtifactWidth(
-        window.innerWidth,
-        dragStart.current.width + dragStart.current.x - event.clientX,
-        window.innerWidth >= desktopSidebarBreakpoint
-      ));
+      if (artifactDragStart.current) {
+        setPreferredArtifactWidthRef.current(clampArtifactWidth(
+          window.innerWidth,
+          artifactDragStart.current.width + artifactDragStart.current.x - event.clientX,
+          window.innerWidth >= desktopSidebarBreakpoint,
+          sidebarWidth
+        ));
+      }
+      if (sidebarDragStart.current) {
+        setPreferredSidebarWidthRef.current(clampSidebarWidth(
+          sidebarDragStart.current.width + event.clientX - sidebarDragStart.current.x
+        ));
+      }
     };
     const end = () => {
-      dragStart.current = null;
+      artifactDragStart.current = null;
+      sidebarDragStart.current = null;
       document.body.classList.remove("resizing-artifact");
+      document.body.classList.remove("resizing-sidebar");
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
@@ -102,19 +123,30 @@ export function useWorkspaceControls({
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
     };
-  }, []);
+  }, [sidebarWidth]);
 
   function resizeArtifactBy(delta: number) {
     setPreferredArtifactWidth(clampArtifactWidth(
       viewportWidth,
       artifactWidth + delta,
-      desktop
+      desktop,
+      sidebarWidth
     ));
   }
 
+  function resizeSidebarBy(delta: number) {
+    setPreferredSidebarWidth(clampSidebarWidth(sidebarWidth + delta));
+  }
+
   function startArtifactResize(event: ReactPointerEvent<HTMLDivElement>) {
-    dragStart.current = { x: event.clientX, width: artifactWidth };
+    artifactDragStart.current = { x: event.clientX, width: artifactWidth };
     document.body.classList.add("resizing-artifact");
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    sidebarDragStart.current = { x: event.clientX, width: sidebarWidth };
+    document.body.classList.add("resizing-sidebar");
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -127,10 +159,12 @@ export function useWorkspaceControls({
     notificationsOpen,
     searchQuery,
     searchRef,
+    sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
     resizeArtifactBy,
+    resizeSidebarBy,
     setArtifactMaximized,
     setArtifactOpen,
     setGridVisible,
@@ -138,6 +172,7 @@ export function useWorkspaceControls({
     setSearchQuery,
     setSettingsOpen,
     setSidebarOpen,
-    startArtifactResize
+    startArtifactResize,
+    startSidebarResize
   };
 }
