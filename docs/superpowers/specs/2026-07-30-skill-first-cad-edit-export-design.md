@@ -415,14 +415,16 @@ mutation state.
 2. Create `skill-contracts`, `test-kit`, and boundary enforcement.
 3. Extract engine-neutral `cad-document` and place existing ACadSharp mapping
    behind `cad-io-acadsharp` without duplicating `dwg-parser` behavior.
-4. Add `cad-edit` command, transaction, diff, undo, and redo behavior.
-5. Add `cad-capabilities` and migrate existing read-only tools to it.
-6. Add `skill-runtime` and the read-only skills.
+4. Add the read-only `cad-capabilities` surface and migrate existing tools.
+5. Add `cad-edit` command, transaction, diff, undo, redo, and write
+   capabilities.
+6. Add `skill-runtime`, read-only skills, and their loopback listing endpoint.
 7. Add the left-panel Project, Sessions, and Skills layout.
-8. Add edit preview and Changes UI without file writing.
+8. Add edit preview, Changes UI, and a disabled capability-driven Export
+   shell without file writing.
 9. Add DXF Save As and round-trip verification.
 10. Add allowlisted DWG Save As after fixture proof.
-11. Add report exports and Export UI.
+11. Add report exports and enable the Export UI.
 12. Add editing skills and full agent approval workflows.
 13. Run the complete automated, CLI, MCP, OAuth, real-CAD, and PNG review
     loop before each integration milestone.
@@ -457,3 +459,5 @@ into one unreviewable commit.
   <https://github.com/DomCR/ACadSharp/issues/315>
 - ezdxf official repository as a DXF interoperability reference:
   <https://github.com/mozman/ezdxf>
+- MCP TypeScript SDK capabilities and form elicitation:
+  <https://github.com/modelcontextprotocol/typescript-sdk/blob/v1.29.0/docs/capabilities.md>
