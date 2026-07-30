@@ -38,6 +38,8 @@ export function useWorkspaceControls({
   );
   const artifactDragStart = useRef<{ x: number; width: number } | null>(null);
   const sidebarDragStart = useRef<{ x: number; width: number } | null>(null);
+  const artifactOpenRef = useRef(artifactOpen);
+  const sidebarOpenRef = useRef(sidebarOpen);
   const activeResizeTarget = useRef<{
     element: HTMLDivElement;
     pointerId: number;
@@ -58,6 +60,8 @@ export function useWorkspaceControls({
     desktop,
     sidebarWidth
   );
+  artifactOpenRef.current = artifactOpen;
+  sidebarOpenRef.current = sidebarOpen;
 
   useEffect(() => {
     setPreferredArtifactWidthRef.current = setPreferredArtifactWidth;
@@ -111,8 +115,18 @@ export function useWorkspaceControls({
 
   useEffect(() => {
     const resize = () => {
-      setViewportWidth(window.innerWidth);
-      if (window.innerWidth >= desktopSidebarBreakpoint) {
+      const width = window.innerWidth;
+      if (
+        width <= compactArtifactBreakpoint &&
+        artifactOpenRef.current &&
+        sidebarOpenRef.current
+      ) {
+        sidebarOpenRef.current = false;
+        setSidebarOpen(false);
+      }
+      setViewportWidth(width);
+      if (width >= desktopSidebarBreakpoint) {
+        sidebarOpenRef.current = true;
         setSidebarOpen(true);
       }
     };

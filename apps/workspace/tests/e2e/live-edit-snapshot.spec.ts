@@ -21,7 +21,7 @@ test("the real gateway and workspace render apply undo redo from one in-memory s
   if (!address || typeof address === "string") throw new Error("Isolated edit gateway did not expose a TCP address.");
   const probe = await fetch(`http://127.0.0.1:${address.port}/api/drawing`);
   expect(probe.status).toBe(200);
-  await page.route((url) => /^\/api\/(?:drawing|edit\/)/.test(url.pathname), async (route) => {
+  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const target = new URL(route.request().url());
     target.port = String(address.port);
     const request = route.request();
@@ -40,18 +40,17 @@ test("the real gateway and workspace render apply undo redo from one in-memory s
     });
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route("**/api/providers", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ providers: [] })
-  }));
   const sourceHash = sha256(await readFile(fixturePath));
   await page.goto("/");
   const beforePath = await page.locator('[data-handle="239"]').getAttribute("d");
 
   await page.getByRole("button", { name: "Run agents" }).click();
   await page.getByRole("tab", { name: /Findings/ }).click();
-  await page.locator(".finding-group-heading").filter({ hasText: "LWPOLYLINE" }).click();
-  await page.locator(".finding-row").filter({ hasText: "handle 239" }).click();
+  const revisedFinding = page.locator(".finding-row").filter({ hasText: "handle 239" });
+  if (!await revisedFinding.isVisible()) {
+    await page.locator(".finding-group-heading").filter({ hasText: "LWPOLYLINE" }).click();
+  }
+  await revisedFinding.click();
   await page.getByRole("tab", { name: "Changes" }).click();
   await page.getByLabel("Move X").fill("5");
   await page.getByRole("button", { name: "Preview move" }).click();
@@ -60,6 +59,12 @@ test("the real gateway and workspace render apply undo redo from one in-memory s
 
   await expectSnapshot(page, [5, 0, 0], [105, 100, 0], 1);
   await expect(page.locator('[data-handle="239"]')).not.toHaveAttribute("d", beforePath ?? "");
+  await page.getByRole("button", { name: "Run agents" }).click();
+  await page.getByRole("tab", { name: /Findings/ }).click();
+  if (!await revisedFinding.isVisible()) {
+    await page.locator(".finding-group-heading").filter({ hasText: "LWPOLYLINE" }).click();
+  }
+  await revisedFinding.click();
   await page.getByRole("tab", { name: "Evidence" }).click();
   await expect(page.getByTestId("evidence-card")).toContainText("[5,0,0]");
   await expect(page.getByTestId("evidence-card")).toContainText("REVISION");

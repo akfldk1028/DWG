@@ -210,6 +210,7 @@ function isCadIndexEnvelope(
 function isCadDrawingMetadata(value: unknown): value is CadDrawingMetadata {
   return (
     isRecord(value) &&
+    Object.keys(value).every((key) => key === "fileVersion" || key === "units" || key === "revision") &&
     (typeof value.fileVersion === "string" || value.fileVersion === null) &&
     (typeof value.units === "string" || value.units === null) &&
     (value.revision === undefined || isCount(value.revision))

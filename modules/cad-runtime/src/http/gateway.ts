@@ -3,7 +3,6 @@ import { pathToFileURL } from "node:url";
 
 import type { CadApplication } from "../application/createCadApplication.js";
 import {
-  buildCadIndexForPath,
   createCadToolRuntime
 } from "../application/cad-tools/runtime.js";
 import { createCadApplication } from "../application/createCadApplication.js";
@@ -14,7 +13,7 @@ import {
   createRuntimePaths,
   findRepositoryRoot
 } from "../platform/repositoryPaths.js";
-import { createDrawingWorkspace, resolveWorkspaceDrawingPath } from "./drawingWorkspace.js";
+import { createDrawingWorkspace } from "./drawingWorkspace.js";
 import { createExportCapabilityRoutes } from "./exportCapabilityGateway.js";
 import { createProviderGateway } from "./providerGateway.js";
 import { createSkillGatewayRoutes } from "./skillGateway.js";
@@ -45,9 +44,7 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
   const providers = createProviderRegistry(workspace);
   const chatService = createChatService({
     providers,
-    async loadIndex(path) {
-      return buildCadIndexForPath(resolveWorkspaceDrawingPath(workspace, path));
-    }
+    loadIndex: (path) => application.readIndex(path)
   });
   const skills = createSkillGatewayRoutes({
     skillRoot: options.skillRoot ?? resolve(paths.repositoryRoot, "skills"),

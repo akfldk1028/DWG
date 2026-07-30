@@ -50,6 +50,16 @@
       },
       "additionalProperties": false
     },
+    "drawing": {
+      "type": "object",
+      "required": ["fileVersion", "units"],
+      "properties": {
+        "fileVersion": { "type": ["string", "null"] },
+        "units": { "type": ["string", "null"] },
+        "revision": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
     "layer": {
       "type": "object",
       "required": ["name", "entityCount", "visible", "frozen"],
@@ -57,7 +67,9 @@
         "name": { "type": "string" },
         "entityCount": { "type": "integer", "minimum": 0 },
         "visible": { "type": "boolean" },
-        "frozen": { "type": "boolean" }
+        "frozen": { "type": "boolean" },
+        "color": { "type": ["number", "null"] },
+        "locked": { "type": ["boolean", "null"] }
       },
       "additionalProperties": false
     },
@@ -320,6 +332,7 @@
       "properties": {
         "schemaVersion": { "const": "cad-index/v0.2" },
         "drawingId": { "type": "string", "minLength": 1 },
+        "drawing": { "$ref": "#/$defs/drawing" },
         "source": { "$ref": "#/$defs/source" },
         "summary": { "$ref": "#/$defs/summary" },
         "layers": {

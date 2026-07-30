@@ -68,6 +68,16 @@ without adding authentication and a separate threat-model review.
 gateway's paired application. Its optional `drawing.revision` is the current
 edit revision (zero for an unedited snapshot); parser-only indexes may omit it.
 This additive metadata does not modify or rewrite the source DWG/DXF.
+The v0.2 `drawing` object remains strict: `fileVersion` and `units` are
+required nullable strings, `revision` is an optional non-negative integer, and
+unknown drawing metadata keys are rejected. Omitting `revision` remains
+backward-compatible.
+
+Within one assembled application process, drawing, inspection, query, skill,
+and chat reads resolve through the same active edit snapshot. Applying,
+undoing, or redoing a change therefore updates every read surface without
+reopening or modifying the configured source file. MCP and CLI entrypoints
+create independent application processes and do not share edit history.
 
 #### Export capability contract
 

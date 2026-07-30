@@ -35,6 +35,8 @@ export interface CadApplication {
   capabilityNames: readonly (typeof CAD_APPLICATION_CAPABILITY_NAMES)[number][];
   /** Returns the immutable source-derived index with the active edit snapshot applied. */
   currentIndex(): CadEntityIndex;
+  /** Opens a drawing through the application read port, preserving the active snapshot. */
+  readIndex(path: string, signal?: AbortSignal): Promise<CadEntityIndex>;
 }
 
 export interface CadApplicationOptions {
@@ -54,12 +56,21 @@ export async function createCadApplication(
     : options.drawingPath
       ? loadDefaultIndex(workspaceRoot, options.drawingPath)
       : createUnopenedIndex());
-  const read = options.read ?? createDefaultReadDependencies(workspaceRoot);
   const sourceSha256 = options.sourceSha256 ?? createHash("sha256")
     .update(JSON.stringify(initialIndex))
     .digest("hex");
   const history = createCadEditHistory(createDocumentSnapshot(initialIndex, sourceSha256));
   const edit = createEditCapabilityComposition(history);
+  const currentIndex = () => projectCurrentIndex(history.current());
+  const read = createCurrentReadDependencies(
+    options.read ?? createDefaultReadDependencies(workspaceRoot),
+    initialIndex.drawingId,
+    currentIndex,
+    options.drawingPath
+      ? resolveWorkspaceCadPath(workspaceRoot, options.drawingPath)
+      : null,
+    workspaceRoot
+  );
 
   return {
     capabilities: composeCadCapabilityModules([
@@ -68,16 +79,42 @@ export async function createCadApplication(
     ]),
     transactions: edit.transactions,
     capabilityNames: CAD_APPLICATION_CAPABILITY_NAMES,
-    currentIndex() {
-      const current = history.current();
-      return {
-        ...current.index,
-        drawing: {
-          fileVersion: current.drawingVersion,
-          units: current.units,
-          revision: current.revision
-        }
-      };
+    currentIndex,
+    readIndex: (path, signal) => read.open(path, signal)
+  };
+}
+
+function projectCurrentIndex(
+  current: ReturnType<ReturnType<typeof createCadEditHistory>["current"]>
+): CadEntityIndex {
+  return {
+    ...current.index,
+    drawing: {
+      fileVersion: current.drawingVersion,
+      units: current.units,
+      revision: current.revision
+    }
+  };
+}
+
+function createCurrentReadDependencies(
+  source: ReadCapabilityDependencies,
+  activeDrawingId: string,
+  currentIndex: () => CadEntityIndex,
+  activePath: string | null,
+  workspaceRoot: string
+): ReadCapabilityDependencies {
+  return {
+    async open(path, signal) {
+      if (signal?.aborted) throw signal.reason;
+      if (activePath !== null && resolveWorkspaceCadPath(workspaceRoot, path) === activePath) {
+        return currentIndex();
+      }
+      const opened = await source.open(path, signal);
+      return opened.drawingId === activeDrawingId ? currentIndex() : opened;
+    },
+    get(drawingId) {
+      return drawingId === activeDrawingId ? currentIndex() : source.get(drawingId);
     }
   };
 }
