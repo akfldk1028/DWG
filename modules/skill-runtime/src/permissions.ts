@@ -12,7 +12,10 @@ const CAPABILITY_PERMISSIONS: Readonly<Record<CadCapabilityName, SkillPermission
   "edit.preview": "propose-edit",
   "edit.apply": null,
   "edit.undo": null,
-  "edit.redo": null
+  "edit.redo": null,
+  "export.report": "export",
+  "export.drawing": "write-copy",
+  "verification.get": "read"
 };
 
 export function requiredSkillPermission(
