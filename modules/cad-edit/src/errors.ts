@@ -9,7 +9,12 @@ export type CadEditErrorCode =
   | "EDIT_TARGET_NOT_FOUND"
   | "EDIT_UNSUPPORTED_ENTITY"
   | "EDIT_LAYER_EXISTS"
-  | "EDIT_REVISION_LIMIT";
+  | "EDIT_REVISION_LIMIT"
+  | "EDIT_PREVIEW_INVALID"
+  | "EDIT_DUPLICATE_TRANSACTION"
+  | "EDIT_UNDO_UNAVAILABLE"
+  | "EDIT_REDO_UNAVAILABLE"
+  | "EDIT_LINEAGE_LIMIT_REACHED";
 
 export class CadEditError extends Error {
   readonly code: CadEditErrorCode;
