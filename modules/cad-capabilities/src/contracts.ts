@@ -5,7 +5,11 @@ export type CadCapabilityName =
   | "document.describe"
   | "query.layers"
   | "query.entities"
-  | "query.text";
+  | "query.text"
+  | "edit.preview"
+  | "edit.apply"
+  | "edit.undo"
+  | "edit.redo";
 
 export interface CadCapabilityRuntime {
   execute(
