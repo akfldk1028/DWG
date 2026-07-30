@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import test from "node:test";
 
+import { Ajv } from "ajv";
 import { createReadCapabilityModule } from "@dwg/cad-capabilities";
+import type { CadEntityIndex } from "@dwg/contracts";
 import {
   parseCadSkillManifest,
   parseCadSkillWorkflow,
-  type CadEntityIndex
+  type CadSkillWorkflow
 } from "@dwg/skill-contracts";
 
 import { buildCadIndexForPath } from "../../modules/cad-runtime/src/application/cad-tools/runtime.js";
@@ -15,17 +17,37 @@ import { createCadApplication } from "../../modules/cad-runtime/src/application/
 import {
   discoverCadSkills,
   runCadSkillWorkflow,
+  type CadSkillRunResult,
   type InstalledCadSkill
 } from "../../modules/skill-runtime/src/index.js";
 
 const skillRoot = resolve("skills");
-const dxfFixture = "tests/fixtures/dxf/minimal-architectural.dxf";
+const officialFixtureManifest = resolve("tests/fixtures/manifest.json");
 
 const expectedCapabilities: Record<string, readonly string[]> = {
   "inspect-drawing": ["document.open", "document.describe", "query.layers", "query.entities"],
   "extract-schedule": ["query.text", "query.schedule"],
   "compare-drawings": ["query.compare"]
 };
+const stableRunnerFailureCodes = new Set([
+  "CAPABILITY_EXECUTION_FAILED",
+  "INPUT_SCHEMA_INVALID",
+  "OUTPUT_SCHEMA_INVALID"
+]);
+
+interface FixtureEntry {
+  id: string;
+  path: string;
+}
+
+interface DeclaredCase {
+  id: string;
+  fixture: string;
+  scenario: "workflow-input" | "opened-fixture" | "fixture-text-change";
+  input: string;
+  output: string;
+  status: "passed" | "failed";
+}
 
 test("discovers exactly the three grounded read-only built-in skills", async () => {
   const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
@@ -44,122 +66,230 @@ test("discovers exactly the three grounded read-only built-in skills", async () 
   }
 });
 
-test("built-in skills have strict sanitized workflow cases and examples", async () => {
-  for (const id of Object.keys(expectedCapabilities)) {
-    const root = resolve(skillRoot, id);
-    const [manifestValue, workflowValue, casesValue, input, output] = await Promise.all([
-      readJson(resolve(root, "manifest.json")),
-      readJson(resolve(root, "workflows/default.json")),
-      readJson(resolve(root, "tests/cases.json")),
-      readJson(resolve(root, "examples/input.json")),
-      readJson(resolve(root, "examples/output.json"))
-    ]);
-    const manifest = parseCadSkillManifest(manifestValue);
-    const workflow = parseCadSkillWorkflow(workflowValue);
+test("built-in manifests advertise only stable runner-visible failures", async () => {
+  const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
 
-    assert.equal(manifest.id, id);
-    assert.deepEqual(workflow.steps.map((step) => step.capability), expectedCapabilities[id]);
-    assertCases(casesValue, id);
-    assertJson(input);
-    assertJson(output);
-    assert.doesNotMatch(JSON.stringify({ manifestValue, workflowValue, casesValue, input, output }), /(?:[A-Za-z]:[\\/]|\/Users\/|api[_ -]?key|secret)/i);
+  for (const skill of skills) {
+    for (const code of skill.manifest.failureCodes) {
+      assert.ok(
+        stableRunnerFailureCodes.has(code),
+        `${skill.manifest.id} advertises non-observable failure ${code}.`
+      );
+    }
   }
 });
 
-test("inspect-drawing workflow runs against the official DXF fixture with grounded entity evidence", async () => {
-  const skill = await installed("inspect-drawing");
-  const [workflow, input, expected] = await skillFiles(skill.manifest.id);
-  const application = await createCadApplication({ workspaceRoot: resolve(".") });
+test("executes every declared built-in case against its official fixture", async (t) => {
+  const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
+  const fixtures = await loadOfficialFixtures();
 
-  const result = await runCadSkillWorkflow({
-    skill,
-    workflow,
-    input,
-    grantedPermissions: ["read"],
-    capabilities: application.capabilities
-  });
+  for (const skill of skills) {
+    const workflow = parseCadSkillWorkflow(
+      await readJson(resolve(skill.root, "workflows/default.json"))
+    );
+    const declaredCases = await loadCases(skill);
 
-  assert.equal(result.status, "passed");
-  assert.deepEqual(finalOutput(result), expected);
-  assertGroundedMatches(finalOutput(result));
-});
+    for (const declaredCase of declaredCases) {
+      await t.test(`${skill.manifest.id}/${declaredCase.id}`, async () => {
+        const fixture = fixtures.get(declaredCase.fixture);
+        assert.ok(fixture, `Unknown official fixture ${declaredCase.fixture}.`);
+        const fixturePath = resolveOfficialFixture(fixture.path);
+        const input = await readCaseJson(skill.root, declaredCase.input);
+        const expected = await readCaseJson(skill.root, declaredCase.output);
+        assertSanitized({ declaredCase, input, expected });
 
-test("extract-schedule workflow runs against the official DXF fixture", async () => {
-  const skill = await installed("extract-schedule");
-  const [workflow, input, expected] = await skillFiles(skill.manifest.id);
-  const application = await createCadApplication({ workspaceRoot: resolve(".") });
-  const opened = await application.capabilities.execute("document.open", { path: dxfFixture });
-  assert.equal((opened as { drawingId: string }).drawingId, (input as { drawingId: string }).drawingId);
+        const result = await executeCase(
+          skill,
+          workflow,
+          declaredCase,
+          fixturePath,
+          input
+        );
 
-  const result = await runCadSkillWorkflow({
-    skill,
-    workflow,
-    input,
-    grantedPermissions: ["read"],
-    capabilities: application.capabilities
-  });
+        assert.equal(result.status, declaredCase.status);
+        if (declaredCase.status === "passed") {
+          const actual = finalOutput(result);
+          assertManifestOutput(skill, expected);
+          assertManifestOutput(skill, actual);
+          assert.deepEqual(actual, expected);
+          assertGroundedCaseEvidence(skill.manifest.id, result);
+          return;
+        }
 
-  assert.equal(result.status, "passed");
-  assert.deepEqual(finalOutput(result), expected);
-  assertGroundedMatches(result.steps[0]!.output);
-});
-
-test("compare-drawings workflow reports fixture-derived changes with grounded evidence", async () => {
-  const skill = await installed("compare-drawings");
-  const [workflow, input, expected] = await skillFiles(skill.manifest.id);
-  const before = await buildCadIndexForPath(dxfFixture);
-  const after = changedFixtureIndex(before);
-  const capabilities = createReadCapabilityModule({
-    async open() {
-      throw new Error("compare workflow does not open drawings");
-    },
-    get(drawingId) {
-      if (drawingId === "fixture-before") return before;
-      if (drawingId === "fixture-after") return after;
-      return null;
+        assert.deepEqual(result, expected);
+        const code = runnerFailureCode(result);
+        assert.ok(code, "Expected a stable runner-visible failure code.");
+        assert.ok(
+          skill.manifest.failureCodes.includes(code),
+          `${skill.manifest.id} does not declare executed failure ${code}.`
+        );
+      });
     }
-  });
+  }
+});
 
-  const result = await runCadSkillWorkflow({
+async function executeCase(
+  skill: InstalledCadSkill,
+  workflow: CadSkillWorkflow,
+  declaredCase: DeclaredCase,
+  fixturePath: string,
+  input: unknown
+): Promise<CadSkillRunResult> {
+  const capabilities = await capabilitiesForCase(
+    skill.manifest.id,
+    declaredCase.scenario,
+    fixturePath
+  );
+  return runCadSkillWorkflow({
     skill,
     workflow,
     input,
     grantedPermissions: ["read"],
     capabilities
   });
-
-  assert.equal(result.status, "passed");
-  assert.deepEqual(finalOutput(result), expected);
-  const comparison = finalOutput(result) as { added: unknown[]; removed: unknown[]; changed: Array<{ before: unknown; after: unknown }> };
-  for (const match of [...comparison.added, ...comparison.removed, ...comparison.changed.flatMap((change) => [change.before, change.after])]) {
-    assertGroundedMatch(match);
-  }
-});
-
-async function installed(id: string): Promise<InstalledCadSkill> {
-  const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
-  const skill = skills.find((candidate) => candidate.manifest.id === id);
-  assert.ok(skill, `Missing ${id} skill.`);
-  return skill;
 }
 
-async function skillFiles(id: string) {
-  const root = resolve(skillRoot, id);
-  return Promise.all([
-    readJson(resolve(root, "workflows/default.json")).then(parseCadSkillWorkflow),
-    readJson(resolve(root, "examples/input.json")),
-    readJson(resolve(root, "examples/output.json"))
-  ]);
+async function capabilitiesForCase(
+  skillId: string,
+  scenario: DeclaredCase["scenario"],
+  fixturePath: string
+) {
+  if (skillId === "inspect-drawing" && scenario === "workflow-input") {
+    const application = await createCadApplication({ workspaceRoot: resolve(".") });
+    return application.capabilities;
+  }
+
+  const fixture = await buildCadIndexForPath(fixturePath);
+  if (skillId === "extract-schedule" && scenario === "opened-fixture") {
+    return createReadCapabilityModule({
+      async open() {
+        return fixture;
+      },
+      get(drawingId) {
+        return drawingId === fixture.drawingId ? fixture : null;
+      }
+    });
+  }
+
+  if (skillId === "compare-drawings" && scenario === "fixture-text-change") {
+    const before = structuredClone(fixture);
+    before.drawingId = "fixture-before";
+    const after = changedFixtureIndex(before);
+    return createReadCapabilityModule({
+      async open() {
+        return before;
+      },
+      get(drawingId) {
+        if (drawingId === before.drawingId) return before;
+        if (drawingId === after.drawingId) return after;
+        return null;
+      }
+    });
+  }
+
+  assert.fail(`Unsupported case setup ${skillId}/${scenario}.`);
+}
+
+async function loadCases(skill: InstalledCadSkill): Promise<DeclaredCase[]> {
+  const value = await readJson(resolve(skill.root, "tests/cases.json"));
+  const cases = value as {
+    schemaVersion?: unknown;
+    skillId?: unknown;
+    cases?: unknown;
+  };
+  assert.deepEqual(Object.keys(cases).sort(), ["cases", "schemaVersion", "skillId"]);
+  assert.equal(cases.schemaVersion, "cad-skill-cases/v1");
+  assert.equal(cases.skillId, skill.manifest.id);
+  assert.ok(Array.isArray(cases.cases) && cases.cases.length > 0);
+
+  const ids = new Set<string>();
+  return cases.cases.map((value): DeclaredCase => {
+    const entry = value as Record<string, unknown>;
+    assert.deepEqual(
+      Object.keys(entry).sort(),
+      ["fixture", "id", "input", "output", "scenario", "status"]
+    );
+    assert.equal(typeof entry.id, "string");
+    assert.ok(!ids.has(entry.id), `Duplicate case id ${entry.id}.`);
+    ids.add(entry.id);
+    assert.equal(typeof entry.fixture, "string");
+    assert.ok(
+      ["workflow-input", "opened-fixture", "fixture-text-change"].includes(
+        entry.scenario as string
+      )
+    );
+    assert.equal(typeof entry.input, "string");
+    assert.equal(typeof entry.output, "string");
+    assert.ok(entry.status === "passed" || entry.status === "failed");
+    return entry as unknown as DeclaredCase;
+  });
+}
+
+async function loadOfficialFixtures(): Promise<Map<string, FixtureEntry>> {
+  const value = await readJson(officialFixtureManifest) as {
+    version?: unknown;
+    fixtures?: unknown;
+  };
+  assert.equal(value.version, 1);
+  assert.ok(Array.isArray(value.fixtures));
+  return new Map(value.fixtures.map((entry) => {
+    const fixture = entry as FixtureEntry;
+    return [fixture.id, fixture];
+  }));
+}
+
+function resolveOfficialFixture(path: string): string {
+  const fixtureRoot = resolve("tests/fixtures");
+  const candidate = resolve(path);
+  assertContained(fixtureRoot, candidate);
+  return candidate;
+}
+
+async function readCaseJson(root: string, path: string): Promise<unknown> {
+  const candidate = resolve(root, path);
+  assertContained(root, candidate);
+  return readJson(candidate);
 }
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-function finalOutput(result: { steps: Array<{ output: unknown }> }): unknown {
+function assertContained(root: string, candidate: string): void {
+  const pathFromRoot = relative(root, candidate);
+  assert.ok(
+    pathFromRoot !== "" &&
+      pathFromRoot !== ".." &&
+      !pathFromRoot.startsWith(`..${sep}`) &&
+      !isAbsolute(pathFromRoot),
+    `Case path escapes its root: ${candidate}`
+  );
+}
+
+function assertManifestOutput(skill: InstalledCadSkill, value: unknown): void {
+  const manifest = parseCadSkillManifest(skill.manifest);
+  const validate = new Ajv({ allErrors: true, strict: true }).compile(
+    manifest.outputSchema
+  );
+  assert.equal(
+    validate(value),
+    true,
+    `${skill.manifest.id} output violates its manifest: ${JSON.stringify(validate.errors)}`
+  );
+}
+
+function finalOutput(result: CadSkillRunResult): unknown {
   const step = result.steps.at(-1);
   assert.ok(step, "Expected a workflow result step.");
   return step.output;
+}
+
+function runnerFailureCode(result: CadSkillRunResult): string | null {
+  const lastOutput = result.steps.at(-1)?.output as {
+    error?: { code?: unknown };
+  } | undefined;
+  if (typeof lastOutput?.error?.code === "string") return lastOutput.error.code;
+  return result.warnings.length === 1 ? result.warnings[0]! : null;
 }
 
 function changedFixtureIndex(index: CadEntityIndex): CadEntityIndex {
@@ -169,6 +299,32 @@ function changedFixtureIndex(index: CadEntityIndex): CadEntityIndex {
   assert.ok(text, "Expected TEXT handle 30 in the official DXF fixture.");
   text.text = "ROOM 102";
   return changed;
+}
+
+function assertGroundedCaseEvidence(skillId: string, result: CadSkillRunResult): void {
+  if (skillId === "inspect-drawing") {
+    assertGroundedMatches(finalOutput(result));
+    return;
+  }
+  if (skillId === "extract-schedule") {
+    assertGroundedMatches(result.steps[0]!.output);
+    return;
+  }
+
+  const comparison = finalOutput(result) as {
+    added: unknown[];
+    removed: unknown[];
+    changed: Array<{ before: unknown; after: unknown }>;
+  };
+  for (
+    const match of [
+      ...comparison.added,
+      ...comparison.removed,
+      ...comparison.changed.flatMap((change) => [change.before, change.after])
+    ]
+  ) {
+    assertGroundedMatch(match);
+  }
 }
 
 function assertGroundedMatches(value: unknown): void {
@@ -185,22 +341,9 @@ function assertGroundedMatch(value: unknown): void {
   assert.ok(match.bbox && typeof match.bbox === "object");
 }
 
-function assertCases(value: unknown, id: string): void {
-  const cases = value as { schemaVersion?: unknown; skillId?: unknown; cases?: unknown };
-  assert.deepEqual(Object.keys(cases).sort(), ["cases", "schemaVersion", "skillId"]);
-  assert.equal(cases.schemaVersion, "cad-skill-cases/v1");
-  assert.equal(cases.skillId, id);
-  assert.ok(Array.isArray(cases.cases) && cases.cases.length > 0);
-  for (const testCase of cases.cases) {
-    const entry = testCase as Record<string, unknown>;
-    assert.deepEqual(Object.keys(entry).sort(), ["fixture", "id", "input", "output"]);
-    assert.equal(typeof entry.id, "string");
-    assert.match(entry.fixture as string, /^(?:dxf\.minimal-architectural|dwg\.export-sample)$/);
-    assert.equal(entry.input, "examples/input.json");
-    assert.equal(entry.output, "examples/output.json");
-  }
-}
-
-function assertJson(value: unknown): void {
-  assert.doesNotThrow(() => JSON.stringify(value));
+function assertSanitized(value: unknown): void {
+  assert.doesNotMatch(
+    JSON.stringify(value),
+    /(?:[A-Za-z]:[\\/]|\/Users\/|api[_ -]?key|secret)/i
+  );
 }

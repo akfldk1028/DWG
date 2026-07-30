@@ -136,12 +136,23 @@ test("read capability module exposes bounded grounded schedule and comparison qu
   });
 
   assert.deepEqual(await capabilities.execute("query.schedule", {
-    drawingId: "before", yTolerance: 0.5
+    drawingId: "before",
+    matches: [{
+      id: "h:10", handle: "10", type: "TEXT", layer: "A-TEXT",
+      bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "BEFORE",
+      reason: "text contains query", confidence: 1
+    }],
+    yTolerance: 0.5
   }), {
     rows: [{
       sourceHandles: ["10"], cells: ["BEFORE"], layer: "A-TEXT",
       bbox: { min: [0, 0, 0], max: [1, 1, 0] }
     }]
+  });
+  assert.deepEqual(await capabilities.execute("query.schedule", {
+    drawingId: "before", matches: [], yTolerance: 0.5
+  }), {
+    rows: []
   });
   assert.deepEqual(await capabilities.execute("query.compare", {
     beforeDrawingId: "before", afterDrawingId: "after"
@@ -171,7 +182,11 @@ test("read capability module rejects a pre-aborted grounded query", async () => 
   });
 
   await assert.rejects(
-    () => capabilities.execute("query.schedule", { drawingId: "fixture", yTolerance: 1 }, controller.signal),
+    () => capabilities.execute(
+      "query.schedule",
+      { drawingId: "fixture", matches: [], yTolerance: 1 },
+      controller.signal
+    ),
     /CAD read operation was cancelled/
   );
 });
@@ -196,7 +211,7 @@ test("read capability module rejects when a grounded query aborts during lookup"
   await assert.rejects(
     () => capabilities.execute(
       "query.schedule",
-      { drawingId: "fixture", yTolerance: 1 },
+      { drawingId: "fixture", matches: [], yTolerance: 1 },
       controller.signal
     ),
     /CAD read operation was cancelled/

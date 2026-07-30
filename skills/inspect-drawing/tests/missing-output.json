@@ -1,0 +1,12 @@
+{
+  "skillId": "inspect-drawing",
+  "status": "failed",
+  "steps": [
+    {
+      "id": "open",
+      "status": "failed",
+      "output": { "error": { "code": "CAPABILITY_EXECUTION_FAILED" } }
+    }
+  ],
+  "warnings": []
+}

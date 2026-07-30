@@ -5,8 +5,18 @@
     {
       "id": "dxf-wall-evidence",
       "fixture": "dxf.minimal-architectural",
+      "scenario": "workflow-input",
       "input": "examples/input.json",
-      "output": "examples/output.json"
+      "output": "examples/output.json",
+      "status": "passed"
+    },
+    {
+      "id": "missing-drawing",
+      "fixture": "dxf.minimal-architectural",
+      "scenario": "workflow-input",
+      "input": "tests/missing-input.json",
+      "output": "tests/missing-output.json",
+      "status": "failed"
     }
   ]
 }
