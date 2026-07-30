@@ -294,6 +294,87 @@ test("edit undo and redo operate on the paired history and require the current d
   );
 });
 
+test("pre-aborted edit operations do not allocate consume or mutate lifecycle state", async () => {
+  const history = createCadEditHistory(snapshot());
+  const composition = createEditCapabilityComposition(history);
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    () => composition.module.execute(
+      "edit.preview",
+      { batch: batch(0, 600) },
+      controller.signal
+    ),
+    (error) => codeOf(error) === "EDIT_CANCELLED" &&
+      error instanceof Error &&
+      error.message === "CAD edit operation was cancelled."
+  );
+
+  const retained = [] as Awaited<ReturnType<typeof preview>>[];
+  for (let index = 0; index < 20; index += 1) {
+    retained.push(await preview(composition, 0, 601 + index));
+  }
+  const proposed = retained[0]!;
+
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: proposed.previewId,
+      documentId: "drawing:capabilities",
+      expectedRevision: 0,
+      approved: true
+    }, controller.signal),
+    (error) => codeOf(error) === "EDIT_CANCELLED"
+  );
+  assert.equal(history.current().revision, 0);
+  assert.equal(composition.transactions.getCommittedTransaction(proposed.transactionId), null);
+
+  assert.equal((await composition.module.execute("edit.apply", {
+    previewId: proposed.previewId,
+    documentId: "drawing:capabilities",
+    expectedRevision: 0,
+    approved: true
+  }) as { revision: number }).revision, 1);
+
+  await assert.rejects(
+    () => composition.module.execute("edit.undo", {
+      documentId: "drawing:capabilities",
+      expectedRevision: 1,
+      approved: true
+    }, controller.signal),
+    (error) => codeOf(error) === "EDIT_CANCELLED"
+  );
+  assert.deepEqual(
+    [history.current().revision, composition.transactions.getCommittedTransaction(proposed.transactionId)?.status],
+    [1, "applied"]
+  );
+
+  assert.equal((await composition.module.execute("edit.undo", {
+    documentId: "drawing:capabilities",
+    expectedRevision: 1,
+    approved: true
+  }) as { revision: number }).revision, 2);
+
+  await assert.rejects(
+    () => composition.module.execute("edit.redo", {
+      documentId: "drawing:capabilities",
+      expectedRevision: 2,
+      approved: true
+    }, controller.signal),
+    (error) => codeOf(error) === "EDIT_CANCELLED"
+  );
+  assert.deepEqual(
+    [history.current().revision, composition.transactions.getCommittedTransaction(proposed.transactionId)?.status],
+    [2, "undone"]
+  );
+
+  assert.equal((await composition.module.execute("edit.redo", {
+    documentId: "drawing:capabilities",
+    expectedRevision: 2,
+    approved: true
+  }) as { revision: number }).revision, 3);
+});
+
 test("edit undo and redo return exact transaction metadata when the UI history limit is zero", async () => {
   const history = createCadEditHistory(snapshot(), 0);
   const composition = createEditCapabilityComposition(history);

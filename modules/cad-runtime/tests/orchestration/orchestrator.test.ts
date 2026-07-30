@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { createCadToolRuntime } from "../../src/application/cad-tools/runtime.js";
+import { createCadApplication } from "../../src/application/createCadApplication.js";
 import {
   createInspectionOrchestrator,
   type OrchestrationCadRuntime
 } from "../../src/orchestration/orchestrator.js";
 
 test("runs a real layer inspection through named specialist agents", async () => {
-  const orchestrator = createInspectionOrchestrator(createCadToolRuntime());
+  const application = await createCadApplication();
+  const orchestrator = createInspectionOrchestrator(
+    createCadToolRuntime(application.capabilities)
+  );
 
   const run = await orchestrator.run({
     path: "tests/fixtures/dxf/minimal-architectural.dxf",

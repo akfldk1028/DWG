@@ -38,6 +38,7 @@ interface PreviewTombstone {
 }
 
 export type CadEditCapabilityErrorCode =
+  | "EDIT_CANCELLED"
   | "EDIT_PREVIEW_UNKNOWN"
   | "EDIT_PREVIEW_REUSED"
   | "EDIT_PREVIEW_REJECTED"
@@ -167,7 +168,8 @@ export function createEditCapabilityComposition(
 
   const module: CadCapabilityModule = {
     names: ["edit.preview", "edit.apply", "edit.undo", "edit.redo"] as const satisfies readonly CadCapabilityName[],
-    async execute(name, input) {
+    async execute(name, input, signal) {
+      requireNotAborted(signal);
       switch (name) {
         case "edit.preview":
           return createPreview(input);
@@ -264,6 +266,15 @@ export function createEditCapabilityComposition(
   }
 
   return { module, transactions: history };
+}
+
+function requireNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new CadEditCapabilityError(
+      "EDIT_CANCELLED",
+      "CAD edit operation was cancelled."
+    );
+  }
 }
 
 function parseApproval(input: unknown): {

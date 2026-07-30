@@ -5,11 +5,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createCadMcpServer } from "../../src/mcp/createServer.js";
-import { createCadCapabilityRuntime } from "../../src/application/cad-tools/runtime.js";
+import { createCadApplication } from "../../src/application/createCadApplication.js";
 import { CAD_TOOL_NAMES } from "../../src/mcp/toolDefinitions.js";
 
 test("lists the complete deterministic CAD tool surface", async (t) => {
-  const server = createCadMcpServer();
+  const application = await createCadApplication();
+  const server = createCadMcpServer(application.capabilities);
   const client = new Client({ name: "cad-test-client", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
@@ -32,7 +33,8 @@ test("lists the complete deterministic CAD tool surface", async (t) => {
 });
 
 test("runs the complete indexed DXF query loop through MCP", async (t) => {
-  const server = createCadMcpServer();
+  const application = await createCadApplication();
+  const server = createCadMcpServer(application.capabilities);
   const client = new Client({ name: "cad-loop-client", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
@@ -129,7 +131,8 @@ test("runs the complete indexed DXF query loop through MCP", async (t) => {
 });
 
 test("official DXF capability results preserve MCP drawing IDs and read summaries", async (t) => {
-  const runtime = createCadCapabilityRuntime();
+  const application = await createCadApplication();
+  const runtime = application.capabilities;
   const server = createCadMcpServer(runtime);
   const client = new Client({ name: "capability-parity-client", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -189,7 +192,8 @@ test("official DXF capability results preserve MCP drawing IDs and read summarie
 });
 
 test("returns a stable structured MCP error for an unknown drawing", async (t) => {
-  const server = createCadMcpServer();
+  const application = await createCadApplication();
+  const server = createCadMcpServer(application.capabilities);
   const client = new Client({ name: "cad-error-client", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 

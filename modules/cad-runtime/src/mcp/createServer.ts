@@ -2,16 +2,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { CadCapabilityRuntime } from "@dwg/cad-capabilities";
 
-import {
-  createCadCapabilityRuntime,
-  executeCadTool
-} from "../application/cad-tools/runtime.js";
+import { executeCadTool } from "../application/cad-tools/runtime.js";
 import { CAD_TOOL_DEFINITIONS } from "./toolDefinitions.js";
 
 type ToolArguments = Record<string, unknown>;
 
 export function createCadMcpServer(
-  runtime: CadCapabilityRuntime = createCadCapabilityRuntime()
+  runtime: CadCapabilityRuntime
 ): McpServer {
   const server = new McpServer({
     name: "dwg-intelligence",

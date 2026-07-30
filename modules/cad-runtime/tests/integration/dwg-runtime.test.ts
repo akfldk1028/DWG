@@ -8,6 +8,7 @@ import {
   buildCadIndexForPath,
   createCadToolRuntime
 } from "../../src/application/cad-tools/runtime.js";
+import { createCadApplication } from "../../src/application/createCadApplication.js";
 
 const fixture = resolve("tests/fixtures/dwg/export_sample.dwg");
 
@@ -16,7 +17,8 @@ async function sha256(path: string) {
 }
 
 test("opens and indexes a real DWG without modifying the source", async () => {
-  const runtime = createCadToolRuntime();
+  const application = await createCadApplication();
+  const runtime = createCadToolRuntime(application.capabilities);
   const before = await sha256(fixture);
 
   const opened = await runtime.call("cad.open_drawing", { path: fixture });
@@ -43,7 +45,8 @@ test("opens and indexes a real DWG without modifying the source", async () => {
 });
 
 test("rejects unsupported drawing formats before reading them", async () => {
-  const runtime = createCadToolRuntime();
+  const application = await createCadApplication();
+  const runtime = createCadToolRuntime(application.capabilities);
   await assert.rejects(
     runtime.call("cad.open_drawing", { path: "missing.pdf" }),
     /Unsupported drawing format: \.pdf/
@@ -51,9 +54,10 @@ test("rejects unsupported drawing formats before reading them", async () => {
 });
 
 test("rejects CAD files outside the configured workspace", async () => {
-  const runtime = createCadToolRuntime({
+  const application = await createCadApplication({
     workspaceRoot: resolve("tests/fixtures/dxf")
   });
+  const runtime = createCadToolRuntime(application.capabilities);
 
   await assert.rejects(
     runtime.call("cad.open_drawing", { path: fixture }),
@@ -62,7 +66,8 @@ test("rejects CAD files outside the configured workspace", async () => {
 });
 
 test("rejects regular expressions with executable grouping", async () => {
-  const runtime = createCadToolRuntime();
+  const application = await createCadApplication();
+  const runtime = createCadToolRuntime(application.capabilities);
   const opened = await runtime.call("cad.open_drawing", {
     path: resolve("tests/fixtures/dxf/minimal-architectural.dxf")
   });
@@ -78,7 +83,8 @@ test("rejects regular expressions with executable grouping", async () => {
 });
 
 test("rejects text queries above the public search limit", async () => {
-  const runtime = createCadToolRuntime();
+  const application = await createCadApplication();
+  const runtime = createCadToolRuntime(application.capabilities);
   const opened = await runtime.call("cad.open_drawing", {
     path: resolve("tests/fixtures/dxf/minimal-architectural.dxf")
   });

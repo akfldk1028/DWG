@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { Readable } from "node:stream";
 import test from "node:test";
 
 import { createProviderGateway } from "../../src/http/providerGateway.js";
 import { createCadApplication } from "../../src/application/createCadApplication.js";
+import { handleEditGatewayRequest } from "../../src/http/editGateway.js";
 
 const documentId = "dwg:edit-test";
 const transactionId = "11111111-1111-4111-8111-111111111111";
@@ -177,6 +180,65 @@ test("edit gateway drives preview apply reuse stale undo and redo through one pa
   });
   assert.equal(redo.status, 200);
   assert.equal((await redo.json() as { revision: number }).revision, 3);
+});
+
+test("pre-aborted edit gateway apply preserves the preview and transaction lifecycle", async () => {
+  const application = await createCadApplication({
+    loadInitialIndex: async () => editableIndex(),
+    read: {
+      open: async () => editableIndex(),
+      get: () => editableIndex()
+    }
+  });
+  const proposed = await application.capabilities.execute("edit.preview", {
+    batch: validBatch()
+  }) as { previewId: string; transactionId: string };
+  const controller = new AbortController();
+  controller.abort();
+  const request = Readable.from([Buffer.from(JSON.stringify({
+    previewId: proposed.previewId,
+    documentId,
+    expectedRevision: 0,
+    approved: true
+  }))]) as IncomingMessage;
+  request.method = "POST";
+  request.headers = { "content-type": "application/json" };
+  let responseBody = "";
+  const response = {
+    destroyed: false,
+    writableEnded: false,
+    statusCode: 0,
+    end(value: string) {
+      responseBody = value;
+    }
+  } as unknown as ServerResponse;
+
+  const handled = await handleEditGatewayRequest(
+    request,
+    response,
+    "/api/edit/apply",
+    {
+      execute: (name, input, signal) => application.capabilities.execute(name, input, signal)
+    },
+    controller.signal
+  );
+
+  assert.equal(handled, true);
+  assert.equal(response.statusCode, 409);
+  assert.deepEqual(JSON.parse(responseBody), {
+    error: {
+      code: "EDIT_CANCELLED",
+      message: "CAD edit operation could not be completed."
+    }
+  });
+  assert.equal(application.transactions.getCommittedTransaction(transactionId), null);
+
+  assert.equal((await application.capabilities.execute("edit.apply", {
+    previewId: proposed.previewId,
+    documentId,
+    expectedRevision: 0,
+    approved: true
+  }) as { revision: number }).revision, 1);
 });
 
 function readDependencies() {

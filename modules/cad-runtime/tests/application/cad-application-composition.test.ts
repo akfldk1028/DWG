@@ -8,6 +8,7 @@ import {
   CAD_APPLICATION_CAPABILITY_NAMES,
   createCadApplication
 } from "../../src/application/createCadApplication.js";
+import { createCadToolRuntime } from "../../src/application/cad-tools/runtime.js";
 import { createCadMcpServer } from "../../src/mcp/createServer.js";
 import { CAD_TOOL_NAMES } from "../../src/mcp/toolDefinitions.js";
 
@@ -31,6 +32,16 @@ test("root CAD application composes one named capability set for adapters and fo
   await application.capabilities.execute("document.open", { path: "fixture.dxf" }, controller.signal);
   assert.equal(receivedSignal, controller.signal);
 
+  const cadTools = createCadToolRuntime(application.capabilities);
+  assert.deepEqual(await cadTools.call("cad.get_layers", {
+    drawingId: index.drawingId
+  }), { layers: index.layers });
+
+  assert.equal(
+    createCadMcpServer.length,
+    1,
+    "MCP server must require the root-composed capability runtime"
+  );
   const server = createCadMcpServer(application.capabilities);
   const client = new Client({ name: "cad-application-composition", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -39,8 +50,8 @@ test("root CAD application composes one named capability set for adapters and fo
     await client.close();
     await server.close();
   });
-  const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [...CAD_TOOL_NAMES].sort());
+  const mcpTools = await client.listTools();
+  assert.deepEqual(mcpTools.tools.map((tool) => tool.name).sort(), [...CAD_TOOL_NAMES].sort());
 });
 
 function fakeIndex() {

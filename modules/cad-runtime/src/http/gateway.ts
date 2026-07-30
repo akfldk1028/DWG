@@ -1,4 +1,7 @@
-import { buildCadIndexForPath } from "../application/cad-tools/runtime.js";
+import {
+  buildCadIndexForPath,
+  createCadToolRuntime
+} from "../application/cad-tools/runtime.js";
 import { createCadApplication } from "../application/createCadApplication.js";
 import { createChatService } from "../application/chat/chatService.js";
 import { createProviderRegistry, getProviderStatuses } from "../providers/providerRegistry.js";
@@ -20,15 +23,15 @@ const runtimePaths = createRuntimePaths(
   process.env.DWG_DRAWING_PATH
 );
 const workspace = runtimePaths.workspace;
-const drawingWorkspace = createDrawingWorkspace(
-  workspace,
-  runtimePaths.drawingPath
-);
 const application = await createCadApplication({
   workspaceRoot: workspace,
-  drawingPath: runtimePaths.drawingPath,
-  loadInitialIndex: () => drawingWorkspace.getIndex()
+  drawingPath: runtimePaths.drawingPath
 });
+const drawingWorkspace = createDrawingWorkspace(
+  workspace,
+  runtimePaths.drawingPath,
+  createCadToolRuntime(application.capabilities)
+);
 const providers = createProviderRegistry(workspace);
 const chatService = createChatService({
   providers,

@@ -2,55 +2,26 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 
 import {
-  composeCadCapabilityModules,
-  createReadCapabilityModule,
   type CadCapabilityRuntime
 } from "@dwg/cad-capabilities";
 import type { CadEntityIndex } from "@dwg/contracts";
 
 import { buildIndexFromDxfFileName } from "../../parsers/dxf/dxfIndexer.js";
 import { buildIndexFromDwgFile } from "../../parsers/dwg/acadSharpIndexer.js";
-import { resolveWorkspaceCadPath } from "../drawing-access/workspacePath.js";
-
 type ToolArguments = Record<string, unknown>;
-
-interface CadToolRuntimeOptions {
-  workspaceRoot?: string;
-}
 
 export interface CadToolRuntime {
   call(name: string, args: ToolArguments, signal?: AbortSignal): Promise<any>;
 }
 
 export function createCadToolRuntime(
-  options: CadToolRuntimeOptions = {}
+  runtime: CadCapabilityRuntime
 ): CadToolRuntime {
-  const runtime = createCadCapabilityRuntime(options);
   return {
     call(name, args, signal) {
       return executeCadTool(runtime, name, args, signal);
     }
   };
-}
-
-export function createCadCapabilityRuntime(
-  options: CadToolRuntimeOptions = {}
-): CadCapabilityRuntime {
-  const drawings = new Map<string, CadEntityIndex>();
-  const workspaceRoot = options.workspaceRoot ?? process.cwd();
-  const readCapabilities = createReadCapabilityModule({
-    async open(path, signal) {
-      const fullPath = resolveWorkspaceCadPath(workspaceRoot, path);
-      const index = await buildCadIndexForPath(fullPath, signal);
-      drawings.set(index.drawingId, index);
-      return index;
-    },
-    get(drawingId) {
-      return drawings.get(drawingId) ?? null;
-    }
-  });
-
-  return composeCadCapabilityModules([readCapabilities]);
 }
 
 export async function executeCadTool(

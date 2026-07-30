@@ -6,7 +6,10 @@ import type {
 
 import { buildCadIndexForPath } from "../application/cad-tools/runtime.js";
 import { resolveWorkspaceCadPath } from "../application/drawing-access/workspacePath.js";
-import { createInspectionOrchestrator } from "../orchestration/orchestrator.js";
+import {
+  createInspectionOrchestrator,
+  type OrchestrationCadRuntime
+} from "../orchestration/orchestrator.js";
 
 export { resolveWorkspaceCadPath as resolveWorkspaceDrawingPath }
   from "../application/drawing-access/workspacePath.js";
@@ -18,11 +21,12 @@ export interface DrawingWorkspace {
 
 export function createDrawingWorkspace(
   workspaceRoot: string,
-  configuredPath: string
+  configuredPath: string,
+  runtime: OrchestrationCadRuntime
 ): DrawingWorkspace {
   const drawingPath = resolveWorkspaceCadPath(workspaceRoot, configuredPath);
 
-  const orchestrator = createInspectionOrchestrator();
+  const orchestrator = createInspectionOrchestrator(runtime);
   return {
     getIndex: () => buildCadIndexForPath(drawingPath),
     inspect: (checks) => orchestrator.run({ path: drawingPath, checks })
