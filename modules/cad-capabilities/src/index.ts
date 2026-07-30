@@ -6,6 +6,7 @@ export {
   CadEditCapabilityError,
   createEditCapabilityComposition,
   type CadEditCapabilityComposition,
+  type CadEditCapabilityDependencies,
   type CadEditCapabilityErrorCode
 } from "./editCapabilities.js";
 export type {

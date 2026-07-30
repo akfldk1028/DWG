@@ -46,8 +46,22 @@ function previewResponse(baseRevision: number, nextRevision: number) {
     transactionId,
     baseRevision,
     nextRevision,
+    changeCount: 0,
+    changesTruncated: false,
     changes: [],
+    warningCount: 0,
+    warningsTruncated: false,
     warnings: []
+  };
+}
+
+function entityDeleteChange() {
+  return {
+    commandId,
+    kind: "entity.delete" as const,
+    targetId: "h:1A",
+    before: { id: "h:1A", handle: "1A", type: "TEXT", layer: "0", bbox: null, text: "Old" },
+    after: null
   };
 }
 
@@ -99,6 +113,21 @@ test("rejects empty or duplicate entity handles", () => {
   ])));
 });
 
+test("bounds edit batches to one hundred commands and two hundred handles per command", () => {
+  const commands = Array.from({ length: 101 }, (_, index) => guardedProposal(
+    { kind: "entity.delete", handles: [`H${index}`] },
+    { commandId: `20000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}` }
+  ));
+  assert.throws(() => parseCadEditBatch(batch(commands)));
+  assert.throws(() => parseCadEditBatch(batch([
+    guardedProposal({
+      kind: "entity.move",
+      handles: Array.from({ length: 201 }, (_, index) => `H${index}`),
+      delta: [0, 0, 0]
+    })
+  ])));
+});
+
 test("rejects non-finite deltas and colors outside the AutoCAD Color Index range", () => {
   assert.throws(() => parseCadEditBatch(batch([
     guardedProposal({ kind: "entity.move", handles: ["1A"], delta: [Infinity, 0, 0] })
@@ -146,13 +175,11 @@ test("strictly validates literal approval requests and typed preview evidence", 
     transactionId,
     baseRevision: 7,
     nextRevision: 8,
-    changes: [{
-      commandId,
-      kind: "entity.delete",
-      targetId: "h:1A",
-      before: { id: "h:1A", handle: "1A", type: "TEXT", layer: "0", bbox: null, text: "Old" },
-      after: null
-    }],
+    changeCount: 1,
+    changesTruncated: false,
+    changes: [entityDeleteChange()],
+    warningCount: 0,
+    warningsTruncated: false,
     warnings: []
   }).success, true);
   assert.equal(cadEditPreviewResponseSchema.safeParse({
@@ -161,9 +188,43 @@ test("strictly validates literal approval requests and typed preview evidence", 
     transactionId,
     baseRevision: 7,
     nextRevision: 8,
+    changeCount: 0,
+    changesTruncated: false,
     changes: [],
+    warningCount: 0,
+    warningsTruncated: false,
     warnings: [],
     engine: {}
+  }).success, false);
+});
+
+test("preview responses bound evidence and strictly describe every omission", () => {
+  assert.equal(cadEditPreviewResponseSchema.safeParse({
+    ...previewResponse(7, 8),
+    changeCount: 201,
+    changesTruncated: true,
+    changes: Array.from({ length: 200 }, entityDeleteChange),
+    warningCount: 101,
+    warningsTruncated: true,
+    warnings: Array.from({ length: 100 }, (_, index) => `warning-${index}`)
+  }).success, true);
+
+  assert.equal(cadEditPreviewResponseSchema.safeParse({
+    ...previewResponse(7, 8),
+    changeCount: 201,
+    changesTruncated: true,
+    changes: Array.from({ length: 201 }, entityDeleteChange)
+  }).success, false);
+  assert.equal(cadEditPreviewResponseSchema.safeParse({
+    ...previewResponse(7, 8),
+    warningCount: 101,
+    warningsTruncated: true,
+    warnings: Array.from({ length: 101 }, (_, index) => `warning-${index}`)
+  }).success, false);
+  assert.equal(cadEditPreviewResponseSchema.safeParse({
+    ...previewResponse(7, 8),
+    changeCount: 1,
+    changesTruncated: false
   }).success, false);
 });
 

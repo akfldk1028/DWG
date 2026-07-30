@@ -43,12 +43,19 @@ export interface CadSaveState {
   lineage: readonly CadCommittedTransaction[];
 }
 
+export interface CadHistoryTransition {
+  current: CadDocumentSnapshot;
+  transaction: CadCommittedTransaction;
+}
+
 export interface CadEditHistory extends CadCommittedTransactionStore {
   current(): CadDocumentSnapshot;
   preview(batch: CadEditBatch): CadEditPreview;
   apply(preview: CadEditPreview): CadDocumentSnapshot;
   undo(expectedRevision: number): CadDocumentSnapshot;
   redo(expectedRevision: number): CadDocumentSnapshot;
+  undoWithTransaction(expectedRevision: number): CadHistoryTransition;
+  redoWithTransaction(expectedRevision: number): CadHistoryTransition;
   entries(): readonly CadHistoryEntry[];
 }
 
@@ -141,35 +148,45 @@ export function createCadEditHistory(
   }
 
   function undo(expectedRevision: number): CadDocumentSnapshot {
+    return undoWithTransaction(expectedRevision).current;
+  }
+
+  function undoWithTransaction(expectedRevision: number): CadHistoryTransition {
     requireCurrentRevision(expectedRevision);
     const transaction = active.at(-1);
     if (!transaction) {
       throw new CadEditError("EDIT_UNDO_UNAVAILABLE", "There is no applied edit transaction to undo.");
     }
     const restored = restoreWithNextRevision(transaction.before);
-    const result = cloneDocumentSnapshot(restored);
-
     active.pop();
     transaction.status = "undone";
     redoStack.push(transaction);
     current = restored;
-    return result;
+    return {
+      current: cloneDocumentSnapshot(restored),
+      transaction: cloneCommittedTransaction(transaction)
+    };
   }
 
   function redo(expectedRevision: number): CadDocumentSnapshot {
+    return redoWithTransaction(expectedRevision).current;
+  }
+
+  function redoWithTransaction(expectedRevision: number): CadHistoryTransition {
     requireCurrentRevision(expectedRevision);
     const transaction = redoStack.at(-1);
     if (!transaction) {
       throw new CadEditError("EDIT_REDO_UNAVAILABLE", "There is no undone edit transaction to redo.");
     }
     const restored = restoreWithNextRevision(transaction.after);
-    const result = cloneDocumentSnapshot(restored);
-
     redoStack.pop();
     transaction.status = "applied";
     active.push(transaction);
     current = restored;
-    return result;
+    return {
+      current: cloneDocumentSnapshot(restored),
+      transaction: cloneCommittedTransaction(transaction)
+    };
   }
 
   function entries(): readonly CadHistoryEntry[] {
@@ -231,6 +248,8 @@ export function createCadEditHistory(
     apply,
     undo,
     redo,
+    undoWithTransaction,
+    redoWithTransaction,
     entries,
     getCommittedTransaction,
     getSaveState

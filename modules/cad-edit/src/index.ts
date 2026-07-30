@@ -5,6 +5,7 @@ export {
   type CadCommittedTransaction,
   type CadCommittedTransactionStore,
   type CadEditHistory,
+  type CadHistoryTransition,
   type CadHistoryEntry,
   type CadSaveState
 } from "./history.js";

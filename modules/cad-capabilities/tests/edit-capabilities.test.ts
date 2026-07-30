@@ -53,6 +53,51 @@ function batch(revision: number, index: number, text = `text-${index}`): CadEdit
   };
 }
 
+function largeSnapshot(entityCount: number): CadDocumentSnapshot {
+  const value = snapshot();
+  value.index.summary.entityCount = entityCount;
+  value.index.summary.modelSpaceCount = entityCount;
+  value.index.layers[0]!.entityCount = entityCount;
+  value.index.entities = Array.from({ length: entityCount }, (_, index) => ({
+    id: `h:H${index}`,
+    handle: `H${index}`,
+    type: "LINE",
+    layer: "0",
+    space: "model" as const,
+    layout: "Model",
+    bbox: { min: [index, 0, 0] as [number, number, number], max: [index + 1, 0, 0] as [number, number, number] },
+    text: null,
+    blockName: null,
+    attributes: {},
+    warnings: [`warning-${index.toString().padStart(3, "0")}`],
+    geometry: { kind: "line" as const, start: [index, 0, 0] as [number, number, number], end: [index + 1, 0, 0] as [number, number, number] }
+  }));
+  return value;
+}
+
+function largeBatch(): CadEditBatch {
+  const firstHandles = Array.from({ length: 200 }, (_, index) => `H${index}`);
+  return {
+    schemaVersion: "cad-edit/v1",
+    transactionId: uuid(8_000),
+    documentId: "drawing:capabilities",
+    expectedRevision: 0,
+    commands: [{
+      commandId: uuid(8_001),
+      expectedRevision: 0,
+      origin: { kind: "user", id: "user:local" },
+      preconditions: firstHandles.map((target) => ({ target, field: "exists" as const, equals: true })),
+      operation: { kind: "entity.move", handles: firstHandles, delta: [1, 0, 0] }
+    }, {
+      commandId: uuid(8_002),
+      expectedRevision: 0,
+      origin: { kind: "user", id: "user:local" },
+      preconditions: [{ target: "H200", field: "exists", equals: true }],
+      operation: { kind: "entity.move", handles: ["H200"], delta: [1, 0, 0] }
+    }]
+  };
+}
+
 function codeOf(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
     ? String(error.code)
@@ -70,7 +115,11 @@ async function preview(
     transactionId: string;
     baseRevision: number;
     nextRevision: number;
+    changeCount: number;
+    changesTruncated: boolean;
     changes: unknown[];
+    warningCount: number;
+    warningsTruncated: boolean;
     warnings: string[];
   }>;
 }
@@ -82,17 +131,41 @@ test("edit preview exposes a bounded review summary without a document snapshot"
   assert.match(result.previewId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   assert.deepEqual(
     Object.keys(result).sort(),
-    ["baseRevision", "changes", "documentId", "nextRevision", "previewId", "transactionId", "warnings"]
+    [
+      "baseRevision", "changeCount", "changes", "changesTruncated", "documentId", "nextRevision",
+      "previewId", "transactionId", "warningCount", "warnings", "warningsTruncated"
+    ]
   );
   assert.equal(result.baseRevision, 0);
   assert.equal(result.nextRevision, 1);
+  assert.equal(result.changeCount, 1);
+  assert.equal(result.changesTruncated, false);
   assert.equal(result.changes.length, 1);
+  assert.equal(result.warningCount, 0);
+  assert.equal(result.warningsTruncated, false);
   assert.deepEqual(result.warnings, []);
+});
+
+test("edit preview caps returned changes and warnings while reporting exact totals", async () => {
+  const composition = createEditCapabilityComposition(createCadEditHistory(largeSnapshot(201)));
+  const result = await composition.module.execute("edit.preview", { batch: largeBatch() }) as Awaited<ReturnType<typeof preview>>;
+
+  assert.deepEqual(
+    [result.changeCount, result.changes.length, result.changesTruncated],
+    [201, 200, true]
+  );
+  assert.deepEqual(
+    [result.warningCount, result.warnings.length, result.warningsTruncated],
+    [201, 100, true]
+  );
+  assert.equal("snapshot" in result, false);
+  assert.equal("resolvedCommands" in result, false);
 });
 
 test("edit apply consumes an approved preview once and shares its history transaction store", async () => {
   const history = createCadEditHistory(snapshot());
   const composition = createEditCapabilityComposition(history);
+  assert.equal(composition.transactions, history);
   const proposed = await preview(composition, 0, 2);
 
   const applied = await composition.module.execute("edit.apply", {
@@ -221,33 +294,119 @@ test("edit undo and redo operate on the paired history and require the current d
   );
 });
 
-test("edit previews expire after ten minutes and retain at most twenty active previews per document", async () => {
-  const realNow = Date.now;
-  let now = 1_000;
-  Date.now = () => now;
-  try {
-    const composition = createEditCapabilityComposition(createCadEditHistory(snapshot()));
-    const expiring = await preview(composition, 0, 8);
-    now += 10 * 60 * 1000;
-    await assert.rejects(
-      () => composition.module.execute("edit.apply", {
-        previewId: expiring.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
-      }),
-      (error) => codeOf(error) === "EDIT_PREVIEW_EXPIRED"
-    );
+test("edit undo and redo return exact transaction metadata when the UI history limit is zero", async () => {
+  const history = createCadEditHistory(snapshot(), 0);
+  const composition = createEditCapabilityComposition(history);
+  const proposed = await preview(composition, 0, 70);
+  await composition.module.execute("edit.apply", {
+    previewId: proposed.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+  });
 
-    const previews = [] as Awaited<ReturnType<typeof preview>>[];
-    for (let index = 0; index < 21; index += 1) previews.push(await preview(composition, 0, 20 + index));
-    await assert.rejects(
-      () => composition.module.execute("edit.apply", {
-        previewId: previews[0]!.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
-      }),
-      (error) => codeOf(error) === "EDIT_PREVIEW_EVICTED"
-    );
-    assert.equal((await composition.module.execute("edit.apply", {
-      previewId: previews[20]!.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
-    }) as { revision: number }).revision, 1);
-  } finally {
-    Date.now = realNow;
+  const undone = await composition.module.execute("edit.undo", {
+    documentId: "drawing:capabilities", expectedRevision: 1, approved: true
+  });
+  const redone = await composition.module.execute("edit.redo", {
+    documentId: "drawing:capabilities", expectedRevision: 2, approved: true
+  });
+
+  assert.deepEqual(undone, {
+    documentId: "drawing:capabilities", revision: 2, transactionId: uuid(70), changeCount: 1
+  });
+  assert.deepEqual(redone, {
+    documentId: "drawing:capabilities", revision: 3, transactionId: uuid(70), changeCount: 1
+  });
+  assert.deepEqual(history.entries(), []);
+});
+
+test("edit undo reports the exact transaction after it falls beyond one hundred UI entries", async () => {
+  const history = createCadEditHistory(snapshot());
+  const composition = createEditCapabilityComposition(history);
+  for (let index = 0; index < 101; index += 1) {
+    const proposed = await preview(composition, index, 200 + index);
+    await composition.module.execute("edit.apply", {
+      previewId: proposed.previewId,
+      documentId: "drawing:capabilities",
+      expectedRevision: index,
+      approved: true
+    });
   }
+  assert.equal(history.entries().length, 100);
+
+  let response: unknown;
+  for (let index = 0; index < 101; index += 1) {
+    response = await composition.module.execute("edit.undo", {
+      documentId: "drawing:capabilities",
+      expectedRevision: 101 + index,
+      approved: true
+    });
+  }
+  assert.deepEqual(response, {
+    documentId: "drawing:capabilities", revision: 202, transactionId: uuid(200), changeCount: 1
+  });
+});
+
+test("edit previews expire after ten minutes and retain at most twenty active previews per document", async () => {
+  let now = 1_000;
+  const composition = createEditCapabilityComposition(
+    createCadEditHistory(snapshot()),
+    { now: () => now }
+  );
+  const expiring = await preview(composition, 0, 8);
+  now += 10 * 60 * 1000;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_EXPIRED"
+  );
+
+  const previews = [] as Awaited<ReturnType<typeof preview>>[];
+  for (let index = 0; index < 21; index += 1) previews.push(await preview(composition, 0, 20 + index));
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: previews[0]!.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_EVICTED"
+  );
+  assert.equal((await composition.module.execute("edit.apply", {
+    previewId: previews[20]!.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+  }) as { revision: number }).revision, 1);
+});
+
+test("edit lifecycle tombstones expire and retain only the newest forty per document", async () => {
+  let now = 1_000;
+  const composition = createEditCapabilityComposition(
+    createCadEditHistory(snapshot()),
+    { now: () => now }
+  );
+  const expiring = await preview(composition, 0, 90);
+  now += 10 * 60 * 1000;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_EXPIRED"
+  );
+  now += 10 * 60 * 1000;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_UNKNOWN"
+  );
+
+  const previews = [] as Awaited<ReturnType<typeof preview>>[];
+  for (let index = 0; index < 61; index += 1) previews.push(await preview(composition, 0, 400 + index));
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: previews[0]!.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_UNKNOWN"
+  );
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: previews[1]!.previewId, documentId: "drawing:capabilities", expectedRevision: 0, approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_EVICTED"
+  );
 });

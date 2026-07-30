@@ -20,6 +20,11 @@ evidence from each edited entity is sorted and de-duplicated on that resolved
 record; preview warnings are the sorted, de-duplicated union for edited targets
 only.
 
+History consumers that need exact undo/redo response metadata use
+`undoWithTransaction` and `redoWithTransaction`. Each transition returns the
+new defensive document snapshot and the exact defensive committed transaction
+from the active/redo lineage, independent of the bounded UI history window.
+
 From the repository root, run:
 
 ```powershell

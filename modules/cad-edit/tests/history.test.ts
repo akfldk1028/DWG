@@ -148,6 +148,28 @@ test("undo and redo restore content while assigning monotonic revisions", () => 
   );
 });
 
+test("undo and redo transitions return exact defensive transaction evidence without UI entries", () => {
+  const history = createCadEditHistory(snapshot(), 0);
+  applyText(history, "first", transactionIds[0], "10000000-0000-4000-8000-000000000001");
+  assert.deepEqual(history.entries(), []);
+
+  const undone = history.undoWithTransaction(1);
+  assert.deepEqual(
+    [undone.current.revision, undone.transaction.batch.transactionId, undone.transaction.status, undone.transaction.changes.length],
+    [2, transactionIds[0], "undone", 1]
+  );
+  undone.current.revision = 99;
+  undone.transaction.changes.length = 0;
+  assert.equal(history.current().revision, 2);
+  assert.equal(history.getCommittedTransaction(transactionIds[0])?.changes.length, 1);
+
+  const redone = history.redoWithTransaction(2);
+  assert.deepEqual(
+    [redone.current.revision, redone.transaction.batch.transactionId, redone.transaction.status, redone.transaction.changes.length],
+    [3, transactionIds[0], "applied", 1]
+  );
+});
+
 test("undo revision overflow leaves the complete history unchanged", () => {
   const history = createCadEditHistory(snapshot(Number.MAX_SAFE_INTEGER - 1));
   applyText(history, "at revision limit", transactionIds[0], "10000000-0000-4000-8000-000000000001");

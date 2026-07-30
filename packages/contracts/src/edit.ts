@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const CAD_EDIT_SCHEMA_VERSION = "cad-edit/v1" as const;
 export const MAX_CAD_EDIT_TEXT_CHARS = 16_384;
+export const MAX_CAD_EDIT_COMMANDS_PER_BATCH = 100;
+export const MAX_CAD_EDIT_HANDLES_PER_COMMAND = 200;
+export const MAX_CAD_EDIT_PREVIEW_CHANGES = 200;
+export const MAX_CAD_EDIT_PREVIEW_WARNINGS = 100;
 export const CAD_EDIT_LAYER_ID_PATTERN = /^layer:(?:imported|created):[A-Za-z0-9_-]+$/;
 
 const nonEmptyString = z.string().min(1);
@@ -22,7 +26,7 @@ export const cadPointBoxSchema = z.object({
   max: cadEditPoint3Schema
 }).strict();
 
-const cadHandleListSchema = z.array(handle).min(1).superRefine((handles, context) => {
+const cadHandleListSchema = z.array(handle).min(1).max(MAX_CAD_EDIT_HANDLES_PER_COMMAND).superRefine((handles, context) => {
   const duplicate = handles.find((item, index) => handles.indexOf(item) !== index);
   if (duplicate !== undefined) {
     context.addIssue({
@@ -111,7 +115,7 @@ export const cadEditBatchSchema = z.object({
   transactionId: uuid,
   documentId: nonEmptyString,
   expectedRevision: revision,
-  commands: z.array(cadCommandProposalSchema).min(1)
+  commands: z.array(cadCommandProposalSchema).min(1).max(MAX_CAD_EDIT_COMMANDS_PER_BATCH)
 }).strict().superRefine((batch, context) => {
   batch.commands.forEach((command, index) => {
     if (command.expectedRevision !== batch.expectedRevision) {
@@ -178,14 +182,38 @@ export const cadEditPreviewResponseSchema = z.object({
   transactionId: uuid,
   baseRevision: revision,
   nextRevision: revision,
-  changes: z.array(cadChangeSchema),
-  warnings: z.array(z.string())
+  changeCount: z.number().int().nonnegative().safe(),
+  changesTruncated: z.boolean(),
+  changes: z.array(cadChangeSchema).max(MAX_CAD_EDIT_PREVIEW_CHANGES),
+  warningCount: z.number().int().nonnegative().safe(),
+  warningsTruncated: z.boolean(),
+  warnings: z.array(z.string()).max(MAX_CAD_EDIT_PREVIEW_WARNINGS)
 }).strict().superRefine((preview, context) => {
   if (preview.nextRevision !== preview.baseRevision + 1) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["nextRevision"],
       message: "nextRevision must equal baseRevision + 1"
+    });
+  }
+  if (
+    preview.changeCount < preview.changes.length ||
+    preview.changesTruncated !== (preview.changeCount > preview.changes.length)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["changesTruncated"],
+      message: "changesTruncated must exactly describe omitted changes"
+    });
+  }
+  if (
+    preview.warningCount < preview.warnings.length ||
+    preview.warningsTruncated !== (preview.warningCount > preview.warnings.length)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["warningsTruncated"],
+      message: "warningsTruncated must exactly describe omitted warnings"
     });
   }
 });

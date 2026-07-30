@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  MAX_CAD_EDIT_PREVIEW_CHANGES,
+  MAX_CAD_EDIT_PREVIEW_WARNINGS,
   parseCadEditApplyRequest,
   parseCadEditHistoryRequest,
   parseCadEditPreviewRequest,
@@ -10,16 +12,16 @@ import {
 } from "@dwg/contracts";
 import {
   CadEditError,
-  type CadCommittedTransaction,
   type CadCommittedTransactionStore,
-  type CadEditHistory,
-  type CadHistoryEntry
+  type CadEditHistory
 } from "@dwg/cad-edit";
 
 import type { CadCapabilityModule, CadCapabilityName } from "./contracts.js";
 
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
 const MAX_PREVIEWS_PER_DOCUMENT = 20;
+const PREVIEW_TOMBSTONE_TTL_MS = 10 * 60 * 1000;
+const MAX_PREVIEW_TOMBSTONES_PER_DOCUMENT = 40;
 
 type PreviewStatus = "applied" | "rejected" | "stale" | "expired" | "evicted";
 
@@ -32,6 +34,7 @@ interface StoredPreview {
 interface PreviewTombstone {
   documentId: string;
   status: PreviewStatus;
+  expiresAt: number;
 }
 
 export type CadEditCapabilityErrorCode =
@@ -59,12 +62,19 @@ export interface CadEditCapabilityComposition {
   transactions: CadCommittedTransactionStore;
 }
 
+export interface CadEditCapabilityDependencies {
+  now?: () => number;
+}
+
 export function createEditCapabilityComposition(
-  history: CadEditHistory
+  history: CadEditHistory,
+  dependencies: CadEditCapabilityDependencies = {}
 ): CadEditCapabilityComposition {
+  const now = dependencies.now ?? Date.now;
   const activePreviews = new Map<string, StoredPreview>();
   const previewsByDocument = new Map<string, string[]>();
   const tombstones = new Map<string, PreviewTombstone>();
+  const tombstonesByDocument = new Map<string, string[]>();
 
   function retire(previewId: string, status: PreviewStatus): void {
     const stored = activePreviews.get(previewId);
@@ -76,11 +86,37 @@ export function createEditCapabilityComposition(
       if (index >= 0) ids.splice(index, 1);
       if (ids.length === 0) previewsByDocument.delete(stored.documentId);
     }
-    tombstones.set(previewId, { documentId: stored.documentId, status });
+    appendTombstone(previewId, stored.documentId, status);
+  }
+
+  function appendTombstone(previewId: string, documentId: string, status: PreviewStatus): void {
+    pruneTombstones(documentId);
+    const ids = tombstonesByDocument.get(documentId) ?? [];
+    tombstones.set(previewId, {
+      documentId,
+      status,
+      expiresAt: now() + PREVIEW_TOMBSTONE_TTL_MS
+    });
+    ids.push(previewId);
+    while (ids.length > MAX_PREVIEW_TOMBSTONES_PER_DOCUMENT) {
+      tombstones.delete(ids.shift()!);
+    }
+    tombstonesByDocument.set(documentId, ids);
+  }
+
+  function pruneTombstones(documentId: string): void {
+    const ids = tombstonesByDocument.get(documentId);
+    if (!ids) return;
+    while (ids.length > 0) {
+      const tombstone = tombstones.get(ids[0]!);
+      if (tombstone && tombstone.expiresAt > now()) break;
+      tombstones.delete(ids.shift()!);
+    }
+    if (ids.length === 0) tombstonesByDocument.delete(documentId);
   }
 
   function expireDocument(documentId: string): void {
-    const cutoff = Date.now() - PREVIEW_TTL_MS;
+    const cutoff = now() - PREVIEW_TTL_MS;
     for (const previewId of [...(previewsByDocument.get(documentId) ?? [])]) {
       const stored = activePreviews.get(previewId);
       if (stored && stored.createdAt <= cutoff) retire(previewId, "expired");
@@ -105,6 +141,7 @@ export function createEditCapabilityComposition(
       if (active) return active;
     }
 
+    pruneTombstones(documentId);
     const tombstone = tombstones.get(previewId);
     if (!tombstone) {
       throw new CadEditCapabilityError("EDIT_PREVIEW_UNKNOWN", "Edit preview ID is not known.");
@@ -140,7 +177,7 @@ export function createEditCapabilityComposition(
     while (existing.length >= MAX_PREVIEWS_PER_DOCUMENT) retire(existing[0]!, "evicted");
     activePreviews.set(previewId, {
       documentId: request.batch.documentId,
-      createdAt: Date.now(),
+      createdAt: now(),
       preview
     });
     (previewsByDocument.get(request.batch.documentId) ?? existing).push(previewId);
@@ -153,8 +190,12 @@ export function createEditCapabilityComposition(
       transactionId: preview.transactionId,
       baseRevision: preview.baseRevision,
       nextRevision: preview.nextRevision,
-      changes: structuredClone(preview.changes),
-      warnings: structuredClone(preview.warnings)
+      changeCount: preview.changes.length,
+      changesTruncated: preview.changes.length > MAX_CAD_EDIT_PREVIEW_CHANGES,
+      changes: structuredClone(preview.changes.slice(0, MAX_CAD_EDIT_PREVIEW_CHANGES)),
+      warningCount: preview.warnings.length,
+      warningsTruncated: preview.warnings.length > MAX_CAD_EDIT_PREVIEW_WARNINGS,
+      warnings: structuredClone(preview.warnings.slice(0, MAX_CAD_EDIT_PREVIEW_WARNINGS))
     };
   }
 
@@ -196,17 +237,14 @@ export function createEditCapabilityComposition(
     const request = parseApprovedHistoryRequest(input);
     const current = history.current();
     assertDocument(current.documentId, request.documentId);
-    const transaction = action === "undo"
-      ? latestTransaction(history.entries(), history, "applied")
-      : latestTransaction(history.entries(), history, "undone");
-    const next = action === "undo"
-      ? history.undo(request.expectedRevision)
-      : history.redo(request.expectedRevision);
+    const transition = action === "undo"
+      ? history.undoWithTransaction(request.expectedRevision)
+      : history.redoWithTransaction(request.expectedRevision);
     return {
-      documentId: next.documentId,
-      revision: next.revision,
-      transactionId: transaction?.batch.transactionId ?? "00000000-0000-4000-8000-000000000000",
-      changeCount: transaction?.changes.length ?? 0
+      documentId: transition.current.documentId,
+      revision: transition.current.revision,
+      transactionId: transition.transaction.batch.transactionId,
+      changeCount: transition.transaction.changes.length
     };
   }
 
@@ -269,16 +307,4 @@ function lifecycleError(status: PreviewStatus): CadEditCapabilityError {
     case "evicted":
       return new CadEditCapabilityError("EDIT_PREVIEW_EVICTED", "Edit preview was evicted by the document preview limit.");
   }
-}
-
-function latestTransaction(
-  entries: readonly CadHistoryEntry[],
-  transactions: CadCommittedTransactionStore,
-  status: CadCommittedTransaction["status"]
-): CadCommittedTransaction | null {
-  for (const entry of [...entries].reverse()) {
-    const transaction = transactions.getCommittedTransaction(entry.transactionId);
-    if (transaction?.status === status) return transaction;
-  }
-  return null;
 }
