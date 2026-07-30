@@ -12,7 +12,16 @@ public static class DwgIndexBuilder
     public static CadIndex Build(string path)
     {
         string fullPath = Path.GetFullPath(path);
-        CadDocument document = DwgReader.Read(fullPath);
+        using FileStream stream = File.OpenRead(fullPath);
+        return Build(stream, fullPath);
+    }
+
+    internal static CadIndex Build(Stream stream, string sourceName)
+    {
+        stream.Position = 0;
+        string drawingId = CreateDrawingId(stream);
+        stream.Position = 0;
+        CadDocument document = DwgReader.Read(stream);
         var unsupported = new Dictionary<(string Type, string Reason), int>();
         var entities = new List<CadEntityItem>();
 
@@ -49,10 +58,10 @@ public static class DwgIndexBuilder
 
         return new CadIndex(
             "cad-index/v0.2",
-            CreateDrawingId(fullPath),
+            drawingId,
             new CadIndexSource(
                 "dwg",
-                Path.GetFileName(fullPath),
+                Path.GetFileName(sourceName),
                 "acadsharp@3.6.35"),
             new CadDrawingMetadata(
                 document.Header.VersionString,
@@ -222,9 +231,8 @@ public static class DwgIndexBuilder
             : increment;
     }
 
-    private static string CreateDrawingId(string path)
+    private static string CreateDrawingId(Stream stream)
     {
-        using FileStream stream = File.OpenRead(path);
         string hash = Convert.ToHexString(SHA256.HashData(stream));
         return $"dwg:{hash[..24].ToLowerInvariant()}";
     }

@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32.SafeHandles;
 using ACadSharp;
 using ACadSharp.IO;
 using DwgIntelligence.CadIo;
@@ -19,11 +21,27 @@ public static class DwgVersionProbe
 
     public static void Run(string sourcePath, string outputPath)
     {
+        Run(
+            sourcePath,
+            outputPath,
+            afterCandidateWrite: null,
+            beforeCleanup: null);
+    }
+
+    internal static void Run(
+        string sourcePath,
+        string outputPath,
+        Action<string>? afterCandidateWrite,
+        Action<string>? beforeCleanup)
+    {
         string source = Path.GetFullPath(sourcePath);
         string output = Path.GetFullPath(outputPath);
         if (
             !File.Exists(source)
-            || Path.GetExtension(source) != ".dwg"
+            || !string.Equals(
+                Path.GetExtension(source),
+                ".dwg",
+                StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 source,
                 output,
@@ -58,11 +76,14 @@ public static class DwgVersionProbe
         Directory.CreateDirectory(tempRoot);
         string ownerToken = Convert.ToHexString(
             RandomNumberGenerator.GetBytes(32));
-        var candidateHandles = new List<FileStream>();
+        var ownedFiles = new List<OwnedProbeFile>();
         var results = new List<DwgVersionProbeResult>();
         try
         {
-            WriteMarker(tempRoot, OwnerMarkerName, ownerToken);
+            ownedFiles.Add(CreateOwnedFile(
+                tempRoot,
+                OwnerMarkerName,
+                Encoding.UTF8.GetBytes(ownerToken)));
             foreach (
                 string candidate in DwgVersionPolicy.CandidateVersions)
             {
@@ -72,7 +93,8 @@ public static class DwgVersionProbe
                     sourceInvariant,
                     candidate,
                     tempRoot,
-                    candidateHandles));
+                    ownedFiles,
+                    afterCandidateWrite));
             }
             if (Sha256File(source) != sourceSha256)
             {
@@ -81,10 +103,11 @@ public static class DwgVersionProbe
         }
         finally
         {
+            beforeCleanup?.Invoke(tempRoot);
             CleanupCandidateRoot(
                 tempRoot,
                 ownerToken,
-                candidateHandles);
+                ownedFiles);
         }
 
         var report = new DwgVersionProbeReport(
@@ -123,7 +146,50 @@ public static class DwgVersionProbe
         string ownerToken,
         ICollection<FileStream> candidateHandles)
     {
-        NeutralizeAndClose(candidateHandles);
+        var ownedFiles = new List<OwnedProbeFile>();
+        try
+        {
+            foreach (FileStream handle in candidateHandles)
+            {
+                ownedFiles.Add(new OwnedProbeFile(
+                    Path.GetFileName(handle.Name),
+                    handle,
+                    FileIdentity.FromHandle(handle.SafeFileHandle),
+                    IsCandidate: true));
+            }
+            string markerPath = Path.Combine(
+                originalPath,
+                OwnerMarkerName);
+            if (File.Exists(markerPath))
+            {
+                FileStream markerHandle = OpenOwnedFile(markerPath);
+                ownedFiles.Add(new OwnedProbeFile(
+                    OwnerMarkerName,
+                    markerHandle,
+                    FileIdentity.FromHandle(markerHandle.SafeFileHandle),
+                    IsCandidate: false));
+            }
+            CleanupCandidateRoot(
+                originalPath,
+                ownerToken,
+                ownedFiles);
+        }
+        finally
+        {
+            candidateHandles.Clear();
+        }
+    }
+
+    private static void CleanupCandidateRoot(
+        string originalPath,
+        string ownerToken,
+        ICollection<OwnedProbeFile> ownedFiles)
+    {
+        Exception? closeFailure = NeutralizeAndClose(ownedFiles);
+        if (closeFailure is not null)
+        {
+            throw CleanupFailed(closeFailure);
+        }
         string quarantinePath = Path.Combine(
             Path.GetDirectoryName(originalPath)
                 ?? Path.GetTempPath(),
@@ -145,25 +211,62 @@ public static class DwgVersionProbe
             throw CleanupFailed();
         }
 
+        if (!OwnedChildrenMatch(quarantinePath, ownedFiles))
+        {
+            TryRestoreUnrelatedReplacement(
+                quarantinePath,
+                originalPath);
+            throw CleanupFailed();
+        }
+
         try
         {
-            Directory.Delete(quarantinePath, recursive: true);
+            foreach (
+                OwnedProbeFile owned
+                in ownedFiles.Where(file => file.IsCandidate))
+            {
+                DeleteOwnedFile(quarantinePath, owned);
+            }
+            OwnedProbeFile marker = ownedFiles.Single(
+                file => !file.IsCandidate);
+            DeleteOwnedFile(quarantinePath, marker);
+            Directory.Delete(quarantinePath, recursive: false);
         }
         catch (Exception exception)
         {
+            TryRestoreUnrelatedReplacement(
+                quarantinePath,
+                originalPath);
             throw CleanupFailed(exception);
         }
     }
 
-    private static void WriteMarker(
+    private static OwnedProbeFile CreateOwnedFile(
         string root,
         string name,
-        string token)
+        byte[]? initialBytes = null)
     {
-        File.WriteAllText(
-            Path.Combine(root, name),
-            token,
-            new UTF8Encoding(false));
+        string path = Path.Combine(root, name);
+        FileStream handle = CreateOwnedStream(path);
+        try
+        {
+            if (initialBytes is not null)
+            {
+                handle.Write(initialBytes);
+                handle.Flush(flushToDisk: true);
+                handle.Position = 0;
+            }
+            return new OwnedProbeFile(
+                name,
+                handle,
+                FileIdentity.FromHandle(handle.SafeFileHandle),
+                name != OwnerMarkerName);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
     }
 
     private static bool MarkerMatches(
@@ -211,34 +314,78 @@ public static class DwgVersionProbe
         }
     }
 
-    private static void NeutralizeAndClose(
-        ICollection<FileStream> candidateHandles)
+    private static bool OwnedChildrenMatch(
+        string root,
+        ICollection<OwnedProbeFile> ownedFiles)
     {
-        foreach (FileStream handle in candidateHandles)
+        string[] actualNames = Directory
+            .EnumerateFileSystemEntries(root)
+            .Select(Path.GetFileName)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray()!;
+        string[] expectedNames = ownedFiles
+            .Select(file => file.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        if (!actualNames.SequenceEqual(
+            expectedNames,
+            StringComparer.Ordinal))
+        {
+            return false;
+        }
+        return ownedFiles.All(owned =>
+            PathMatchesIdentity(
+                Path.Combine(root, owned.Name),
+                owned.Identity));
+    }
+
+    private static Exception? NeutralizeAndClose(
+        ICollection<OwnedProbeFile> ownedFiles)
+    {
+        Exception? firstFailure = null;
+        foreach (OwnedProbeFile owned in ownedFiles)
         {
             try
             {
-                handle.Position = 0;
-                handle.SetLength(0);
-                handle.Flush(flushToDisk: true);
+                if (owned.IsCandidate)
+                {
+                    owned.Handle.Position = 0;
+                    owned.Handle.SetLength(0);
+                    owned.Handle.Flush(flushToDisk: true);
+                }
             }
-            catch
+            catch (Exception exception)
             {
-                // Continue neutralizing every owned candidate handle.
+                firstFailure ??= exception;
             }
             finally
             {
                 try
                 {
-                    handle.Dispose();
+                    owned.Handle.Dispose();
                 }
-                catch
+                catch (Exception exception)
                 {
-                    // Continue closing every owned candidate handle.
+                    firstFailure ??= exception;
                 }
             }
         }
-        candidateHandles.Clear();
+        return firstFailure;
+    }
+
+    private static void DeleteOwnedFile(
+        string root,
+        OwnedProbeFile owned)
+    {
+        string path = Path.Combine(root, owned.Name);
+        using FileStream verificationHandle = OpenOwnedFile(path);
+        if (
+            FileIdentity.FromHandle(verificationHandle.SafeFileHandle)
+            != owned.Identity)
+        {
+            throw new IOException("Owned file identity changed.");
+        }
+        File.Delete(path);
     }
 
     private static CadIoException CleanupFailed(
@@ -276,7 +423,8 @@ public static class DwgVersionProbe
         string sourceInvariant,
         string candidate,
         string tempRoot,
-        ICollection<FileStream> candidateHandles)
+        ICollection<OwnedProbeFile> ownedFiles,
+        Action<string>? afterCandidateWrite)
     {
         var warnings = new List<string>();
         string observedInvariant = "";
@@ -284,6 +432,10 @@ public static class DwgVersionProbe
         string candidatePath = Path.Combine(
             tempRoot,
             $"{candidate}.dwg");
+        OwnedProbeFile owned = CreateOwnedFile(
+            tempRoot,
+            $"{candidate}.dwg");
+        ownedFiles.Add(owned);
         try
         {
             if (!Enum.TryParse(candidate, out ACadVersion version))
@@ -295,8 +447,56 @@ public static class DwgVersionProbe
                 CadDocument document = DwgReader.Read(source);
                 document.Header.Version = version;
                 document.UpdateDxfClasses(reset: false);
-                DwgWriter.Write(candidatePath, document);
-                CadIndex reopened = DwgIndexBuilder.Build(candidatePath);
+                using FileStream writerHandle =
+                    OpenOwnedFile(candidatePath);
+                if (
+                    FileIdentity.FromHandle(writerHandle.SafeFileHandle)
+                    != owned.Identity)
+                {
+                    writerHandle.Dispose();
+                    warnings.Add("candidate-identity-mismatch");
+                    return new DwgVersionProbeResult(
+                        candidate,
+                        sourceSha256,
+                        sourceInvariant,
+                        observedInvariant,
+                        false,
+                        BoundWarnings(warnings));
+                }
+                writerHandle.Position = 0;
+                writerHandle.SetLength(0);
+                DwgWriter.Write(writerHandle, document);
+                owned.Handle.Flush(flushToDisk: true);
+                afterCandidateWrite?.Invoke(candidatePath);
+                if (!PathMatchesIdentity(candidatePath, owned.Identity))
+                {
+                    warnings.Add("candidate-identity-mismatch");
+                    return new DwgVersionProbeResult(
+                        candidate,
+                        sourceSha256,
+                        sourceInvariant,
+                        observedInvariant,
+                        false,
+                        BoundWarnings(warnings));
+                }
+                using FileStream readerHandle =
+                    OpenOwnedFile(candidatePath);
+                if (
+                    FileIdentity.FromHandle(readerHandle.SafeFileHandle)
+                    != owned.Identity)
+                {
+                    warnings.Add("candidate-identity-mismatch");
+                    return new DwgVersionProbeResult(
+                        candidate,
+                        sourceSha256,
+                        sourceInvariant,
+                        observedInvariant,
+                        false,
+                        BoundWarnings(warnings));
+                }
+                CadIndex reopened = DwgIndexBuilder.Build(
+                    readerHandle,
+                    candidatePath);
                 observedInvariant =
                     DwgRoundTripInvariant.ComputeSha256(reopened);
                 if (reopened.Drawing.FileVersion != candidate)
@@ -315,12 +515,6 @@ public static class DwgVersionProbe
             warnings.Add(
                 $"candidate-failed:{exception.GetType().Name}");
         }
-        finally
-        {
-            CaptureCandidateHandle(
-                candidatePath,
-                candidateHandles);
-        }
         return new DwgVersionProbeResult(
             candidate,
             sourceSha256,
@@ -330,31 +524,96 @@ public static class DwgVersionProbe
             BoundWarnings(warnings));
     }
 
-    private static void CaptureCandidateHandle(
+    private static bool PathMatchesIdentity(
         string path,
-        ICollection<FileStream> candidateHandles)
+        FileIdentity expected)
     {
         try
         {
-            candidateHandles.Add(new FileStream(
-                path,
-                FileMode.Open,
-                FileAccess.ReadWrite,
-                FileShare.ReadWrite | FileShare.Delete));
+            using FileStream handle = OpenOwnedFile(path);
+            return FileIdentity.FromHandle(handle.SafeFileHandle)
+                == expected;
         }
-        catch (FileNotFoundException)
+        catch
         {
-            // A writer failure may leave no candidate inode.
-        }
-        catch (DirectoryNotFoundException)
-        {
-            // A writer failure may leave no candidate inode.
-        }
-        catch (Exception exception)
-        {
-            throw CleanupFailed(exception);
+            return false;
         }
     }
+
+    private static FileStream CreateOwnedStream(string path)
+    {
+        return new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.ReadWrite,
+            FileShare.ReadWrite | FileShare.Delete);
+    }
+
+    private static FileStream OpenOwnedFile(string path)
+    {
+        return new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.ReadWrite | FileShare.Delete);
+    }
+
+    private sealed record OwnedProbeFile(
+        string Name,
+        FileStream Handle,
+        FileIdentity Identity,
+        bool IsCandidate);
+
+    private readonly record struct FileIdentity(
+        uint VolumeSerialNumber,
+        ulong FileIndex)
+    {
+        public static FileIdentity FromHandle(
+            SafeFileHandle handle)
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                throw new PlatformNotSupportedException(
+                    "DWG probe identity requires Windows.");
+            }
+            if (!GetFileInformationByHandle(
+                handle,
+                out ByHandleFileInformation information))
+            {
+                throw new IOException(
+                    "Unable to read owned file identity.",
+                    Marshal.GetExceptionForHR(
+                        Marshal.GetHRForLastWin32Error()));
+            }
+            return new FileIdentity(
+                information.VolumeSerialNumber,
+                ((ulong)information.FileIndexHigh << 32)
+                    | information.FileIndexLow);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle file,
+        out ByHandleFileInformation fileInformation);
 
     private static IReadOnlyList<string> BoundWarnings(
         IEnumerable<string> warnings)

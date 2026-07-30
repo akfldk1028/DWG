@@ -333,6 +333,194 @@ public sealed class DwgRoundTripTests
         }
     }
 
+    [Theory]
+    [InlineData(".DWG")]
+    [InlineData(".Dwg")]
+    public void ProbeAcceptsDwgExtensionCaseInsensitively(string extension)
+    {
+        string sourceFixture = Path.Combine(
+            RepositoryRoot(),
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-extension-{Guid.NewGuid():N}");
+        string sourcePath = Path.Combine(testRoot, $"source{extension}");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        Directory.CreateDirectory(testRoot);
+        File.Copy(sourceFixture, sourcePath);
+        try
+        {
+            DwgVersionProbe.Run(sourcePath, outputPath);
+
+            using JsonDocument report = JsonDocument.Parse(
+                File.ReadAllText(outputPath));
+            Assert.Equal(
+                5,
+                report.RootElement
+                    .GetProperty("candidates")
+                    .EnumerateArray()
+                    .Count(candidate =>
+                        candidate
+                            .GetProperty("verified")
+                            .GetBoolean()));
+        }
+        finally
+        {
+            Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProbeRejectsANonDwgExtension()
+    {
+        string sourceFixture = Path.Combine(
+            RepositoryRoot(),
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-extension-{Guid.NewGuid():N}");
+        string sourcePath = Path.Combine(testRoot, "source.dxf");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        Directory.CreateDirectory(testRoot);
+        File.Copy(sourceFixture, sourcePath);
+        try
+        {
+            CadIoException error = Assert.Throws<CadIoException>(
+                () => DwgVersionProbe.Run(sourcePath, outputPath));
+
+            Assert.Equal("DWG_PROBE_INVALID", error.Code);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProbeRejectsCandidatePathReplacementWithoutTouchingReplacement()
+    {
+        string sourcePath = Path.Combine(
+            RepositoryRoot(),
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-candidate-swap-{Guid.NewGuid():N}");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        string? ownedMovedPath = null;
+        string? replacementPath = null;
+        Directory.CreateDirectory(testRoot);
+        try
+        {
+            CadIoException error = Assert.Throws<CadIoException>(
+                () => DwgVersionProbe.Run(
+                    sourcePath,
+                    outputPath,
+                    afterCandidateWrite: candidatePath =>
+                    {
+                        if (
+                            !candidatePath.EndsWith(
+                                "AC1032.dwg",
+                                StringComparison.Ordinal))
+                        {
+                            return;
+                        }
+                        ownedMovedPath = Path.Combine(
+                            testRoot,
+                            "owned-ac1032.moved");
+                        File.Move(candidatePath, ownedMovedPath);
+                        File.WriteAllText(candidatePath, "UNRELATED");
+                        replacementPath = candidatePath;
+                    },
+                    beforeCleanup: null));
+
+            Assert.Equal("DWG_PROBE_CLEANUP_FAILED", error.Code);
+            Assert.False(File.Exists(outputPath));
+            Assert.NotNull(replacementPath);
+            Assert.Equal("UNRELATED", File.ReadAllText(replacementPath));
+            Assert.NotNull(ownedMovedPath);
+            Assert.Equal(0, new FileInfo(ownedMovedPath).Length);
+        }
+        finally
+        {
+            string? candidateRoot = replacementPath is null
+                ? null
+                : Path.GetDirectoryName(replacementPath);
+            if (
+                candidateRoot is not null
+                && Directory.Exists(candidateRoot))
+            {
+                Directory.Delete(candidateRoot, recursive: true);
+            }
+            if (Directory.Exists(testRoot))
+            {
+                Directory.Delete(testRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void ProbeCleanupPreservesAnUnknownChildInAValidOwnedRoot()
+    {
+        string sourcePath = Path.Combine(
+            RepositoryRoot(),
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-unknown-child-{Guid.NewGuid():N}");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        string? unknownPath = null;
+        Directory.CreateDirectory(testRoot);
+        try
+        {
+            CadIoException error = Assert.Throws<CadIoException>(
+                () => DwgVersionProbe.Run(
+                    sourcePath,
+                    outputPath,
+                    afterCandidateWrite: null,
+                    beforeCleanup: candidateRoot =>
+                    {
+                        unknownPath = Path.Combine(
+                            candidateRoot,
+                            "unrelated.txt");
+                        File.WriteAllText(unknownPath, "UNRELATED");
+                    }));
+
+            Assert.Equal("DWG_PROBE_CLEANUP_FAILED", error.Code);
+            Assert.False(File.Exists(outputPath));
+            Assert.NotNull(unknownPath);
+            Assert.Equal("UNRELATED", File.ReadAllText(unknownPath));
+        }
+        finally
+        {
+            string? candidateRoot = unknownPath is null
+                ? null
+                : Path.GetDirectoryName(unknownPath);
+            if (
+                candidateRoot is not null
+                && Directory.Exists(candidateRoot))
+            {
+                Directory.Delete(candidateRoot, recursive: true);
+            }
+            if (Directory.Exists(testRoot))
+            {
+                Directory.Delete(testRoot, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public async Task ProbeCandidateCleanupFailurePreventsReportPublication()
     {

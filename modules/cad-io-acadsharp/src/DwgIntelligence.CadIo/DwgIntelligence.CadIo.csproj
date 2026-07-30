@@ -10,5 +10,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="DwgIntelligence.DwgParser.Tests" />
     <InternalsVisibleTo Include="DwgIntelligence.CadIo.Tests" />
+    <InternalsVisibleTo Include="DwgIntelligence.CadIo.Host" />
   </ItemGroup>
 </Project>
