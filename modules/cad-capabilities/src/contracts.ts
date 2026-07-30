@@ -115,7 +115,7 @@ export interface CadSaveFileSystem {
   statIdentity(path: string): Promise<CadSaveFileIdentity>;
   lstatIdentity(path: string): Promise<CadSaveFileIdentity>;
   openRead(path: string): Promise<CadSaveReadHandle>;
-  sha256(path: string): Promise<string>;
+  sha256(path: string, signal?: AbortSignal): Promise<string>;
   exists(path: string): Promise<boolean>;
   preflightNoReplace(directory: string): void;
   publishVerifiedNoReplace(

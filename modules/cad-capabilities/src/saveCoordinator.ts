@@ -92,7 +92,7 @@ export function createSaveCoordinator(
         throw new CadSaveError("CAD_SAVE_SOURCE_MISMATCH");
       }
       throwIfAborted(signal);
-      const sourceHashBefore = await fileSystem.sha256(canonicalSource);
+      const sourceHashBefore = await fileSystem.sha256(canonicalSource, signal);
       throwIfAborted(signal);
       if (sourceHashBefore !== upperHash(source.sourceSha256)) {
         throw new CadSaveError("CAD_SAVE_SOURCE_MISMATCH");
@@ -175,7 +175,11 @@ export function createSaveCoordinator(
         throwIfAborted(signal);
         temporaryHandle = await fileSystem.openRead(temporaryPath);
         const temporaryIdentity = temporaryHandle.identity();
-        if (!sameFileIdentity(temporaryIdentity, temporaryPathIdentity)) {
+        if (
+          temporaryPathIdentity.nlink !== "1"
+          || temporaryIdentity.nlink !== "1"
+          || !sameFileIdentity(temporaryIdentity, temporaryPathIdentity)
+        ) {
           throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
         }
         const outputSha256 = await temporaryHandle.sha256(signal);
@@ -227,6 +231,13 @@ export function createSaveCoordinator(
         }
         published = true;
         throwIfAborted(signal);
+        const linkedFileIdentity = temporaryHandle.identity();
+        if (
+          linkedFileIdentity.nlink !== "2"
+          || !sameFileIdentity(linkedFileIdentity, finalIdentity)
+        ) {
+          throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+        }
 
         const temporaryCleanup = await cleanupPath(fileSystem, temporaryPath);
         if (temporaryCleanup.disposition === "quarantined") {
@@ -235,7 +246,8 @@ export function createSaveCoordinator(
         throwIfAborted(signal);
         const committedFileIdentity = temporaryHandle.identity();
         if (
-          !sameFileObjectAndSize(
+          committedFileIdentity.nlink !== "1"
+          || !sameFileObjectSizeAndMtime(
             committedFileIdentity,
             finalIdentity
           )
@@ -253,6 +265,16 @@ export function createSaveCoordinator(
           expectedFinalIdentity: committedFileIdentity
         });
         throwIfAborted(signal);
+        const finalCommitIdentity = temporaryHandle.identity();
+        if (
+          finalCommitIdentity.nlink !== "1"
+          || !sameFileIdentity(
+            finalCommitIdentity,
+            committedFileIdentity
+          )
+        ) {
+          throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+        }
         verifications.set(verification.id, storedVerification);
         try {
           temporaryHandle.close();
@@ -266,15 +288,15 @@ export function createSaveCoordinator(
         verifications.delete(saveRequestId);
         let cleanupFailed = false;
         let sanitizedIdentity: CadSaveFileIdentity | null = null;
-        if (published && temporaryHandle && !temporaryHandleClosed) {
+        if (temporaryHandle && !temporaryHandleClosed) {
           try {
             sanitizedIdentity = temporaryHandle.sanitize();
           } catch {
             cleanupFailed = true;
           }
         }
+        let provenQuarantinedAliases = 0n;
         if (published) {
-          let provenQuarantinedAliases = 0n;
           try {
             const result = await cleanupPath(fileSystem, finalPath);
             provenQuarantinedAliases += await provenQuarantineCount(
@@ -282,35 +304,28 @@ export function createSaveCoordinator(
               result,
               sanitizedIdentity
             );
-            published = false;
           } catch {
             cleanupFailed = true;
           }
+        }
+        try {
+          const result = await cleanupPath(fileSystem, temporaryPath);
+          provenQuarantinedAliases += await provenQuarantineCount(
+            fileSystem,
+            result,
+            sanitizedIdentity
+          );
+        } catch {
+          cleanupFailed = true;
+        }
+        if (temporaryHandle && !temporaryHandleClosed) {
           try {
-            const result = await cleanupPath(fileSystem, temporaryPath);
-            provenQuarantinedAliases += await provenQuarantineCount(
-              fileSystem,
-              result,
-              sanitizedIdentity
-            );
-          } catch {
-            cleanupFailed = true;
-          }
-          if (temporaryHandle && !temporaryHandleClosed) {
-            try {
-              if (
-                BigInt(temporaryHandle.identity().nlink)
-                !== provenQuarantinedAliases
-              ) {
-                cleanupFailed = true;
-              }
-            } catch {
+            if (
+              BigInt(temporaryHandle.identity().nlink)
+              !== provenQuarantinedAliases
+            ) {
               cleanupFailed = true;
             }
-          }
-        } else {
-          try {
-            await cleanupPath(fileSystem, temporaryPath);
           } catch {
             cleanupFailed = true;
           }
@@ -376,8 +391,8 @@ export function createNodeCadSaveFileSystem(): CadSaveFileSystem {
         }
       };
     },
-    async sha256(path) {
-      return hashPathAsync(path);
+    async sha256(path, signal) {
+      return hashPathAsync(path, signal);
     },
     async exists(path) {
       try {
@@ -481,12 +496,15 @@ function publishVerifiedNoReplace(
       lstatSync(input.finalPath, { bigint: true })
     );
     if (
-      !sameFileObjectAndSize(
+      input.expectedTemporaryIdentity.nlink !== "1"
+      || temporaryIdentity.nlink !== "2"
+      || temporaryPathIdentity.nlink !== "2"
+      || finalIdentity.nlink !== "2"
+      || finalPathIdentity.nlink !== "2"
+      || !sameFileObjectSizeAndMtime(
         temporaryIdentity,
         input.expectedTemporaryIdentity
       )
-      || BigInt(temporaryIdentity.nlink)
-        !== BigInt(input.expectedTemporaryIdentity.nlink) + 1n
       || !sameFileIdentity(temporaryIdentity, temporaryPathIdentity)
       || !sameFileIdentity(temporaryIdentity, finalIdentity)
       || !sameFileIdentity(temporaryIdentity, finalPathIdentity)
@@ -783,6 +801,8 @@ async function revalidateBeforePublication(input: {
   if (
     !sameFileIdentity(handleIdentity, input.temporaryIdentity)
     || !sameFileIdentity(pathIdentity, input.temporaryIdentity)
+    || handleIdentity.nlink !== "1"
+    || pathIdentity.nlink !== "1"
     || pathIdentity.kind !== "file"
     || pathIdentity.symbolicLink
   ) {
@@ -805,7 +825,10 @@ async function revalidateBeforePublication(input: {
   }
   if (
     !sameFileIdentity(currentSourceIdentity, input.sourceIdentity)
-    || await input.fileSystem.sha256(input.canonicalSource)
+    || await input.fileSystem.sha256(
+      input.canonicalSource,
+      input.signal
+    )
       !== input.sourceHashBefore
   ) {
     throw new CadSaveError("CAD_SAVE_SOURCE_MUTATED");
@@ -930,6 +953,16 @@ function sameFileObjectAndSize(
   return sameObjectIdentity(left, right) && left.size === right.size;
 }
 
+function sameFileObjectSizeAndMtime(
+  left: CadSaveFileIdentity,
+  right: CadSaveFileIdentity
+): boolean {
+  return (
+    sameFileObjectAndSize(left, right)
+    && left.mtimeNs === right.mtimeNs
+  );
+}
+
 function assertExpectedPath(
   path: string,
   expectedIdentity: CadSaveFileIdentity
@@ -991,6 +1024,7 @@ async function hashDescriptorAsync(
       buffer,
       position
     );
+    throwIfAborted(signal);
     if (bytesRead === 0) break;
     hash.update(buffer.subarray(0, bytesRead));
     position += bytesRead;
@@ -999,23 +1033,31 @@ async function hashDescriptorAsync(
   return hash.digest("hex").toUpperCase();
 }
 
-async function hashPathAsync(path: string): Promise<string> {
+async function hashPathAsync(
+  path: string,
+  signal?: AbortSignal
+): Promise<string> {
+  throwIfAborted(signal);
   const handle = await open(path, "r");
   try {
+    throwIfAborted(signal);
     const hash = createHash("sha256");
     const buffer = Buffer.allocUnsafe(64 * 1024);
     let position = 0;
     while (true) {
+      throwIfAborted(signal);
       const { bytesRead } = await handle.read(
         buffer,
         0,
         buffer.byteLength,
         position
       );
+      throwIfAborted(signal);
       if (bytesRead === 0) break;
       hash.update(buffer.subarray(0, bytesRead));
       position += bytesRead;
     }
+    throwIfAborted(signal);
     return hash.digest("hex").toUpperCase();
   } finally {
     await handle.close();

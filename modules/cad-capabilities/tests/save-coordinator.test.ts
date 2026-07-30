@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  linkSync,
   mkdirSync,
   renameSync,
   rmSync,
@@ -12,6 +13,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   symlink,
   truncate,
@@ -53,6 +55,9 @@ const CMD1 = "20000000-0000-4000-8000-000000000001";
 const CMD2 = "20000000-0000-4000-8000-000000000002";
 const CMD3 = "20000000-0000-4000-8000-000000000003";
 const OUTPUT_BYTES = new TextEncoder().encode("independently reopened output");
+const LARGE_SOURCE_BYTES = 64 * 1024 * 1024;
+const LARGE_ZERO_SHA256 =
+  "3B6A07D0D404FAB4E23B6D34BC6696A6A312DD92821332385E5AF7C01C421351";
 
 test("destination grants are canonical, opaque, expiring, and one use", async (t) => {
   const root = await temporaryDirectory(t);
@@ -115,6 +120,80 @@ test("large sparse output hashing yields to the event loop and stays bounded", a
   assert.ok(Date.now() - startedAt < 5_000);
 });
 
+test("path and handle hashing reject a pre-aborted signal without opening or reading", async (t) => {
+  const root = await temporaryDirectory(t);
+  const path = join(root, "pre-aborted.dxf");
+  await writeFile(path, "source");
+  const fileSystem = createNodeCadSaveFileSystem();
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    fileSystem.sha256(join(root, "missing.dxf"), controller.signal),
+    isAbort
+  );
+  const handle = await fileSystem.openRead(path);
+  await assert.rejects(handle.sha256(controller.signal), isAbort);
+  handle.close();
+
+  const moved = join(root, "pre-aborted-moved.dxf");
+  await rename(path, moved);
+  assert.equal(await readFile(moved, "utf8"), "source");
+});
+
+test("real 64 MiB path hashing aborts between bounded reads and closes its descriptor", async (t) => {
+  const root = await temporaryDirectory(t);
+  const path = join(root, "large-source.dxf");
+  await writeFile(path, "");
+  await truncate(path, LARGE_SOURCE_BYTES);
+  const fileSystem = createNodeCadSaveFileSystem();
+  const controller = new AbortController();
+  const startedAt = Date.now();
+
+  const pending = fileSystem.sha256(path, controller.signal);
+  setTimeout(() => controller.abort(), 0);
+
+  await assert.rejects(pending, isAbort);
+  assert.ok(Date.now() - startedAt < 1_000);
+  const moved = join(root, "large-source-moved.dxf");
+  await rename(path, moved);
+  assert.equal((await lstat(moved)).size, LARGE_SOURCE_BYTES);
+});
+
+test("initial 64 MiB source hash cancellation forwards the signal and never launches writer", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  const controller = new AbortController();
+  const seenSignals: Array<AbortSignal | undefined> = [];
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async sha256(path, signal) {
+      seenSignals.push(signal);
+      setTimeout(() => controller.abort(), 0);
+      return base.sha256(path, signal);
+    }
+  };
+  const harness = await createHarness(
+    t,
+    createCadEditHistory(snapshot(LARGE_ZERO_SHA256)),
+    {
+      fileSystem,
+      sourceSizeBytes: LARGE_SOURCE_BYTES,
+      sourceSha256: LARGE_ZERO_SHA256
+    }
+  );
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input, controller.signal),
+    isAbort
+  );
+  assert.deepEqual(seenSignals, [controller.signal]);
+  assert.equal(harness.requests.length, 0);
+  assert.equal(await exists(harness.finalPath), false);
+  const moved = `${harness.sourcePath}.moved`;
+  await rename(harness.sourcePath, moved);
+  assert.equal((await lstat(moved)).size, LARGE_SOURCE_BYTES);
+});
+
 test("successful save uses resolver source and active two-transaction lineage then atomically finalizes", async (t) => {
   const history = createCadEditHistory(snapshot());
   apply(history, textBatch(0, "updated", TX1, CMD1));
@@ -146,6 +225,87 @@ test("successful save uses resolver source and active two-transaction lineage th
   const copy = harness.coordinator.getVerification(verification.id)!;
   copy.warnings.push("outside mutation");
   assert.deepEqual(harness.coordinator.getVerification(verification.id), verification);
+});
+
+test("writer-created external hard link is neutralized without deleting the unknown alias", async (t) => {
+  let aliasPath = "";
+  let verificationId = "";
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), {
+    afterWriterOutput(path) {
+      aliasPath = join(dirname(path), "writer-owned-elsewhere.dxf");
+      verificationId = verificationIdFromTemporaryPath(path);
+      linkSync(path, aliasPath);
+    }
+  });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+  assert.equal(await exists(aliasPath), true);
+  assert.equal((await readFile(aliasPath)).byteLength, 0);
+  assert.equal(harness.coordinator.getVerification(verificationId), null);
+});
+
+test("external hard link created after output hashing is neutralized before publication", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let aliasPath = "";
+  let verificationId = "";
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async openRead(path) {
+      const handle = await base.openRead(path);
+      return {
+        identity: () => handle.identity(),
+        async sha256(signal) {
+          const result = await handle.sha256(signal);
+          aliasPath = join(dirname(path), "post-hash-alias.dxf");
+          verificationId = verificationIdFromTemporaryPath(path);
+          linkSync(path, aliasPath);
+          return result;
+        },
+        sanitize: () => handle.sanitize(),
+        close: () => handle.close()
+      };
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+  assert.equal(await exists(aliasPath), true);
+  assert.equal((await readFile(aliasPath)).byteLength, 0);
+  assert.equal(harness.coordinator.getVerification(verificationId), null);
+});
+
+test("external hard link created after publication is neutralized before commit", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let aliasPath = "";
+  let verificationId = "";
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    publishVerifiedNoReplace(input) {
+      const result = base.publishVerifiedNoReplace(input);
+      aliasPath = join(dirname(input.finalPath), "post-publish-alias.dxf");
+      verificationId = verificationIdFromTemporaryPath(input.temporaryPath);
+      linkSync(input.finalPath, aliasPath);
+      return result;
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+  assert.equal(await exists(aliasPath), true);
+  assert.equal((await readFile(aliasPath)).byteLength, 0);
+  assert.equal(harness.coordinator.getVerification(verificationId), null);
 });
 
 test("atomic publication preserves a racing existing destination without overwriting it", async (t) => {
@@ -283,12 +443,12 @@ test("late cancellation during the pre-publication source hash never exposes fin
   const hashRelease = new Promise<void>((resolve) => { releaseHash = resolve; });
   const fileSystem: CadSaveFileSystem = {
     ...base,
-    async sha256(path) {
+    async sha256(path, signal) {
       if (basename(path) === "source.dxf" && ++sourceHashes === 2) {
         markHashStarted();
         await hashRelease;
       }
-      return base.sha256(path);
+      return base.sha256(path, signal);
     }
   };
   const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
@@ -301,6 +461,44 @@ test("late cancellation during the pre-publication source hash never exposes fin
 
   await assert.rejects(pending, isAbort);
   assert.equal(await exists(harness.finalPath), false);
+});
+
+test("prepublication 64 MiB source hash cancellation closes the descriptor and retracts output", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  const controller = new AbortController();
+  const seenSignals: Array<AbortSignal | undefined> = [];
+  let sourceHashes = 0;
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async sha256(path, signal) {
+      seenSignals.push(signal);
+      if (basename(path) === "source.dxf" && ++sourceHashes === 2) {
+        setTimeout(() => controller.abort(), 0);
+      }
+      return base.sha256(path, signal);
+    }
+  };
+  const harness = await createHarness(
+    t,
+    createCadEditHistory(snapshot(LARGE_ZERO_SHA256)),
+    {
+      fileSystem,
+      sourceSizeBytes: LARGE_SOURCE_BYTES,
+      sourceSha256: LARGE_ZERO_SHA256
+    }
+  );
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input, controller.signal),
+    isAbort
+  );
+  assert.deepEqual(seenSignals, [controller.signal, controller.signal]);
+  assert.equal(harness.requests.length, 1);
+  assert.equal(await exists(harness.finalPath), false);
+  assert.deepEqual(await temporaryOutputs(harness.destination), []);
+  const moved = `${harness.sourcePath}.moved`;
+  await rename(harness.sourcePath, moved);
+  assert.equal((await lstat(moved)).size, LARGE_SOURCE_BYTES);
 });
 
 test("cancellation immediately after atomic link removes final and never stores passed verification", async (t) => {
@@ -385,6 +583,78 @@ test("post-publication temporary cleanup failure retracts final and reports fata
   );
   assert.equal(await exists(harness.finalPath), false);
   assert.ok((await temporaryOutputs(harness.destination)).every((name) => name.includes(".failed.")));
+});
+
+test("sanitize failure still closes the retained handle and reports cleanup failure", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let aliasPath = "";
+  let closeAttempts = 0;
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async openRead(path) {
+      const handle = await base.openRead(path);
+      return {
+        identity: () => handle.identity(),
+        async sha256(signal) {
+          const hash = await handle.sha256(signal);
+          aliasPath = join(dirname(path), "sanitize-failure-alias.dxf");
+          linkSync(path, aliasPath);
+          return hash;
+        },
+        sanitize() {
+          throw new Error("sanitize probe");
+        },
+        close() {
+          closeAttempts += 1;
+          handle.close();
+        }
+      };
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
+  );
+  assert.equal(closeAttempts, 1);
+  assert.equal(await exists(harness.finalPath), false);
+  await rm(aliasPath);
+});
+
+test("close failure retracts a would-be verification and reports cleanup failure", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let closeAttempts = 0;
+  let verificationId = "";
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async openRead(path) {
+      verificationId = verificationIdFromTemporaryPath(path);
+      const handle = await base.openRead(path);
+      return {
+        identity: () => handle.identity(),
+        sha256: (signal) => handle.sha256(signal),
+        sanitize: () => handle.sanitize(),
+        close() {
+          closeAttempts += 1;
+          if (closeAttempts === 1) {
+            handle.close();
+          }
+          throw new Error("close probe");
+        }
+      };
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
+  );
+  assert.ok(closeAttempts >= 1);
+  assert.equal(await exists(harness.finalPath), false);
+  assert.equal(harness.coordinator.getVerification(verificationId), null);
+  await rm(harness.destination, { recursive: true });
 });
 
 test("an undone branch exports only the active branch and rebases process revisions without caller lineage", async (t) => {
@@ -669,6 +939,9 @@ interface HarnessOptions {
   evidenceUnits?: string | null;
   mutateEvidence?: (evidence: CadParsedDocumentEvidence) => void;
   fileSystem?: CadSaveFileSystem;
+  sourceSizeBytes?: number;
+  sourceSha256?: string;
+  afterWriterOutput?: (path: string) => void | Promise<void>;
 }
 
 async function createHarness(
@@ -679,8 +952,14 @@ async function createHarness(
   const root = await temporaryDirectory(t);
   const sourcePath = join(root, "source.dxf");
   const sourceText = "immutable source drawing";
-  await writeFile(sourcePath, sourceText);
-  const sourceSha256 = sha256(new TextEncoder().encode(sourceText));
+  if (options.sourceSizeBytes === undefined) {
+    await writeFile(sourcePath, sourceText);
+  } else {
+    await writeFile(sourcePath, "");
+    await truncate(sourcePath, options.sourceSizeBytes);
+  }
+  const sourceSha256 = options.sourceSha256
+    ?? sha256(new TextEncoder().encode(sourceText));
   const destination = options.destinationIsSourceDirectory ? root : join(root, "destination");
   if (!options.destinationIsSourceDirectory) {
     await import("node:fs/promises").then(({ mkdir }) => mkdir(destination));
@@ -719,6 +998,7 @@ async function createHarness(
         markWriterStarted();
       }
       await writeFile(request.temporaryOutputPath, OUTPUT_BYTES);
+      await options.afterWriterOutput?.(request.temporaryOutputPath);
       events.push("writer:closed");
       return {
         format: request.format,
@@ -801,11 +1081,13 @@ async function createHarness(
   };
 }
 
-function snapshot(): CadDocumentSnapshot {
+function snapshot(
+  sourceSha256 = sha256(new TextEncoder().encode("immutable source drawing"))
+): CadDocumentSnapshot {
   return {
     documentId: "drawing:save",
     revision: 0,
-    sourceSha256: sha256(new TextEncoder().encode("immutable source drawing")),
+    sourceSha256,
     drawingVersion: "AC1032",
     units: "Millimeters",
     index: {
