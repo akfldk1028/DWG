@@ -43,7 +43,11 @@ interface FixtureEntry {
 interface DeclaredCase {
   id: string;
   fixture: string;
-  scenario: "workflow-input" | "opened-fixture" | "fixture-text-change";
+  scenario:
+    | "workflow-input"
+    | "opened-fixture"
+    | "fixture-text-change"
+    | "fixture-missing-before";
   input: string;
   output: string;
   status: "passed" | "failed";
@@ -83,6 +87,7 @@ test("rejects an inspect case whose opened path disagrees with its fixture", asy
   await assert.rejects(
     () => assertFixtureBoundInput(
       "inspect-drawing",
+      "workflow-input",
       resolve("tests/fixtures/dxf/minimal-architectural.dxf"),
       { path: "tests/fixtures/dwg/export_sample.dwg", layer: "A-WALL" }
     ),
@@ -108,10 +113,17 @@ test("executes every declared built-in case against its official fixture", async
         const input = await readCaseJson(skill.root, declaredCase.input);
         const expected = await readCaseJson(skill.root, declaredCase.output);
         assertSanitized({ declaredCase, input, expected });
-        await assertFixtureBoundInput(
+        const boundInput = await bindFixtureInput(
           skill.manifest.id,
+          declaredCase.scenario,
           fixturePath,
           input
+        );
+        await assertFixtureBoundInput(
+          skill.manifest.id,
+          declaredCase.scenario,
+          fixturePath,
+          boundInput
         );
 
         const result = await executeCase(
@@ -119,7 +131,7 @@ test("executes every declared built-in case against its official fixture", async
           workflow,
           declaredCase,
           fixturePath,
-          input
+          boundInput
         );
 
         assert.equal(result.status, declaredCase.status);
@@ -146,6 +158,7 @@ test("executes every declared built-in case against its official fixture", async
 
 async function assertFixtureBoundInput(
   skillId: string,
+  scenario: DeclaredCase["scenario"],
   fixturePath: string,
   input: unknown
 ): Promise<void> {
@@ -169,11 +182,40 @@ async function assertFixtureBoundInput(
   }
 
   if (
-    args.beforeDrawingId !== `${fixture.drawingId}:before` ||
+    args.beforeDrawingId !== (
+      scenario === "fixture-missing-before"
+        ? `${fixture.drawingId}:missing`
+        : `${fixture.drawingId}:before`
+    ) ||
     args.afterDrawingId !== `${fixture.drawingId}:after`
   ) {
     throw new Error("CASE_FIXTURE_INPUT_MISMATCH");
   }
+}
+
+async function bindFixtureInput(
+  skillId: string,
+  scenario: DeclaredCase["scenario"],
+  fixturePath: string,
+  input: unknown
+): Promise<Record<string, unknown>> {
+  const args = structuredClone(input) as Record<string, unknown>;
+  if (skillId === "inspect-drawing") {
+    args.path = relative(resolve("."), fixturePath).split(sep).join("/");
+    return args;
+  }
+
+  const fixture = await buildCadIndexForPath(fixturePath);
+  if (skillId === "extract-schedule") {
+    args.drawingId = fixture.drawingId;
+    return args;
+  }
+
+  args.beforeDrawingId = scenario === "fixture-missing-before"
+    ? `${fixture.drawingId}:missing`
+    : `${fixture.drawingId}:before`;
+  args.afterDrawingId = `${fixture.drawingId}:after`;
+  return args;
 }
 
 async function executeCase(
@@ -221,8 +263,30 @@ async function capabilitiesForCase(
 
   if (skillId === "compare-drawings" && scenario === "fixture-text-change") {
     const before = structuredClone(fixture);
-    before.drawingId = "fixture-before";
-    const after = changedFixtureIndex(before);
+    before.drawingId = `${fixture.drawingId}:before`;
+    const after = changedFixtureIndex(
+      before,
+      `${fixture.drawingId}:after`
+    );
+    return createReadCapabilityModule({
+      async open() {
+        return before;
+      },
+      get(drawingId) {
+        if (drawingId === before.drawingId) return before;
+        if (drawingId === after.drawingId) return after;
+        return null;
+      }
+    });
+  }
+
+  if (skillId === "compare-drawings" && scenario === "fixture-missing-before") {
+    const before = structuredClone(fixture);
+    before.drawingId = `${fixture.drawingId}:before`;
+    const after = changedFixtureIndex(
+      before,
+      `${fixture.drawingId}:after`
+    );
     return createReadCapabilityModule({
       async open() {
         return before;
@@ -262,7 +326,12 @@ async function loadCases(skill: InstalledCadSkill): Promise<DeclaredCase[]> {
     ids.add(entry.id);
     assert.equal(typeof entry.fixture, "string");
     assert.ok(
-      ["workflow-input", "opened-fixture", "fixture-text-change"].includes(
+      [
+        "workflow-input",
+        "opened-fixture",
+        "fixture-text-change",
+        "fixture-missing-before"
+      ].includes(
         entry.scenario as string
       )
     );
@@ -340,9 +409,12 @@ function runnerFailureCode(result: CadSkillRunResult): string | null {
   return result.warnings.length === 1 ? result.warnings[0]! : null;
 }
 
-function changedFixtureIndex(index: CadEntityIndex): CadEntityIndex {
+function changedFixtureIndex(
+  index: CadEntityIndex,
+  drawingId: string
+): CadEntityIndex {
   const changed = structuredClone(index);
-  changed.drawingId = "fixture-after";
+  changed.drawingId = drawingId;
   const text = changed.entities.find((entity) => entity.handle === "30");
   assert.ok(text, "Expected TEXT handle 30 in the official DXF fixture.");
   text.text = "ROOM 102";

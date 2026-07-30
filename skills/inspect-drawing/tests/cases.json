@@ -11,11 +11,11 @@
       "status": "passed"
     },
     {
-      "id": "missing-drawing",
+      "id": "invalid-layer",
       "fixture": "dxf.minimal-architectural",
       "scenario": "workflow-input",
-      "input": "tests/missing-input.json",
-      "output": "tests/missing-output.json",
+      "input": "tests/invalid-input.json",
+      "output": "tests/invalid-output.json",
       "status": "failed"
     }
   ]

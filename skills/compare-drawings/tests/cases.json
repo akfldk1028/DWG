@@ -13,7 +13,7 @@
     {
       "id": "missing-before-drawing",
       "fixture": "dxf.minimal-architectural",
-      "scenario": "fixture-text-change",
+      "scenario": "fixture-missing-before",
       "input": "tests/missing-input.json",
       "output": "tests/missing-output.json",
       "status": "failed"
