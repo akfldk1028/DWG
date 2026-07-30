@@ -1,22 +1,34 @@
 import type { CadReportInput } from "./index.js";
-import { compareText } from "./index.js";
+import { canonicalReport } from "./index.js";
+import { BoundedTextWriter } from "./textWriter.js";
 
 export function createCsvReport(input: CadReportInput): string {
+  const normalized = canonicalReport(input) as unknown as CadReportInput;
   const rows: string[][] = [["section", "id", "type", "layer", "text", "detail"]];
-  for (const entity of [...input.document.index.entities].sort((left, right) => compareText(left.id, right.id))) {
+  for (const entity of normalized.document.index.entities) {
     rows.push(["entity", entity.id, entity.type, entity.layer, entity.text ?? "", geometryDetail(entity.geometry)]);
   }
-  for (const finding of [...(input.findings?.findings ?? [])].sort((left, right) => compareText(left.id, right.id))) {
+  for (const finding of normalized.findings?.findings ?? []) {
     rows.push(["finding", finding.id, finding.type, finding.layer, finding.text ?? "", finding.reason]);
   }
-  for (const warning of [...(input.findings?.warnings ?? [])].sort()) rows.push(["warning", "", "", "", warning, ""]);
-  for (const transactionId of [...(input.changeSet?.transactionIds ?? [])].sort(compareText)) {
+  for (const warning of normalized.findings?.warnings ?? []) rows.push(["warning", "", "", "", warning, ""]);
+  for (const transactionId of normalized.changeSet?.transactionIds ?? []) {
     rows.push(["transaction", transactionId, "", "", "", ""]);
   }
-  for (const change of [...(input.changeSet?.changes ?? [])].sort((left, right) => compareText(left.commandId, right.commandId) || compareText(left.targetId, right.targetId))) {
+  for (const change of normalized.changeSet?.changes ?? []) {
     rows.push(["change", change.commandId, change.kind, "", "", change.targetId]);
   }
-  return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+  const writer = new BoundedTextWriter();
+  writer.append("\uFEFF");
+  rows.forEach((row, rowIndex) => {
+    if (rowIndex > 0) writer.append("\r\n");
+    row.forEach((cell, cellIndex) => {
+      if (cellIndex > 0) writer.append(",");
+      writer.append(csvCell(cell));
+    });
+  });
+  writer.append("\r\n");
+  return writer.finish();
 }
 
 function geometryDetail(geometry: CadReportInput["document"]["index"]["entities"][number]["geometry"]): string {
@@ -24,6 +36,6 @@ function geometryDetail(geometry: CadReportInput["document"]["index"]["entities"
 }
 
 function csvCell(value: string): string {
-  const literal = /^[=+\-@]/u.test(value) ? `'${value}` : value;
+  const literal = /^[\p{White_Space}\p{Cc}]*[=+\-@]/u.test(value) ? `'${value}` : value;
   return /[",\r\n]/u.test(literal) ? `"${literal.replaceAll('"', '""')}"` : literal;
 }

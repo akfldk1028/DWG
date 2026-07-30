@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
 import type { CadOutputVerification, InspectionRun } from "@dwg/contracts";
 import type { CadDocumentSnapshot } from "@dwg/cad-document";
-import { exportCadReport, type CadReportInput } from "../src/index.js";
+import {
+  encodeBounded,
+  exportCadReport,
+  MAX_REPORT_BYTES,
+  type CadReportInput
+} from "../src/index.js";
 
 const transactionIds = [
   "00000000-0000-4000-8000-000000000002",
@@ -20,12 +26,16 @@ test("exports stable ordered JSON with the full cumulative change set", async ()
 
   assert.equal(report.mediaType, "application/json; charset=utf-8");
   assert.equal(report.filename, "unsafe-name-rev-2-report.json");
-  assert.deepEqual(decoded.changeSet.transactionIds, [...transactionIds].sort());
+  assert.deepEqual(decoded.changeSet.transactionIds, [...transactionIds]);
   assert.deepEqual(
     decoded.changeSet.changes.map((change) => [change.commandId, change.kind]),
     [
-      ["10000000-0000-4000-8000-000000000001", "entity.move"],
-      ["10000000-0000-4000-8000-000000000002", "text.replace"]
+      ["10000000-0000-4000-8000-000000000006", "entity.delete"],
+      ["10000000-0000-4000-8000-000000000005", "entity.copy"],
+      ["10000000-0000-4000-8000-000000000004", "entity.move"],
+      ["10000000-0000-4000-8000-000000000003", "text.replace"],
+      ["10000000-0000-4000-8000-000000000002", "layer.update"],
+      ["10000000-0000-4000-8000-000000000001", "layer.create"]
     ]
   );
   assert.equal(report.sha256, repeated.sha256);
@@ -33,11 +43,26 @@ test("exports stable ordered JSON with the full cumulative change set", async ()
   assert.equal(report.sha256, sha256(report.bytes));
 });
 
+test("normalizes every semantically unordered report collection for all formats", async () => {
+  const original = input();
+  const permuted = permuteUnorderedCollections(input());
+
+  for (const format of ["json", "csv", "pdf", "svg"] as const) {
+    const [left, right] = await Promise.all([
+      exportCadReport(original, format),
+      exportCadReport(permuted, format)
+    ]);
+    assert.equal(right.sha256, left.sha256, format);
+    assert.deepEqual(right.bytes, left.bytes, format);
+  }
+});
+
 test("uses bytewise key ordering instead of host locale collation", async () => {
   const report = await exportCadReport(input(), "json");
   const text = new TextDecoder().decode(report.bytes);
 
   assert.ok(text.indexOf('"z":"last"') < text.indexOf('"ä":"umlaut"'));
+  assert.ok(text.indexOf('"":"bmp"') < text.indexOf('"𐀀":"supplementary"'));
 });
 
 test("exports UTF-8 CSV with spreadsheet formulas made literal", async () => {
@@ -55,6 +80,17 @@ test("exports UTF-8 CSV with spreadsheet formulas made literal", async () => {
   assert.match(text, /entity\.move/u);
 });
 
+test("CSV neutralizes formulas after control whitespace and preserves RFC 4180 data", async () => {
+  const adversarial = "\u00a0 \t\u000b=SUM(1,1),\"quoted\"\r\nnext";
+  const report = await exportCadReport(input(adversarial), "csv");
+  const rows = parseCsv(new TextDecoder().decode(report.bytes).replace(/^\uFEFF/u, ""));
+  const finding = rows.find((row) => row[0] === "finding");
+
+  assert.ok(finding);
+  assert.equal(finding[4], `'${adversarial}`);
+  assert.equal(finding[5], "'-formula");
+});
+
 test("exports a deterministic PDF 1.7 report without an external renderer", async () => {
   const report = await exportCadReport(input(), "pdf");
   const repeated = await exportCadReport(input(), "pdf");
@@ -67,6 +103,20 @@ test("exports a deterministic PDF 1.7 report without an external renderer", asyn
   assert.match(text, /%%EOF\n$/u);
   assert.deepEqual(report.bytes, repeated.bytes);
   assert.equal(report.sha256, sha256(report.bytes));
+});
+
+test("PDF xref and object offsets resolve to exact byte positions", async () => {
+  const report = await exportCadReport(input(), "pdf");
+  const text = new TextDecoder().decode(report.bytes);
+  const startXref = Number(/startxref\n(\d+)\n%%EOF/u.exec(text)?.[1]);
+  assert.equal(text.slice(startXref, startXref + 4), "xref");
+
+  const xref = text.slice(startXref).split("\n");
+  assert.equal(xref[1], "0 6");
+  for (let objectNumber = 1; objectNumber <= 5; objectNumber += 1) {
+    const offset = Number(xref[2 + objectNumber]?.slice(0, 10));
+    assert.equal(text.slice(offset, offset + 7), `${objectNumber} 0 obj`);
+  }
 });
 
 test("exports valid SVG while explicitly retaining unsupported geometry", async () => {
@@ -83,11 +133,82 @@ test("exports valid SVG while explicitly retaining unsupported geometry", async 
   assert.doesNotMatch(text, /<path /u);
 });
 
+test("SVG is well-formed XML and escapes report text and attributes", async () => {
+  const unsafe = input();
+  unsafe.document.documentId = `drawing:&<>\"'`;
+  unsafe.document.index.source.displayName = `&<>\"'\u0000.dxf`;
+  const report = await exportCadReport(unsafe, "svg");
+  const text = new TextDecoder().decode(report.bytes);
+
+  assertWellFormedXml(text);
+  assert.match(text, /&amp;&lt;&gt;&quot;&apos;/u);
+  assert.doesNotMatch(text, /<title>[^<]*&<>/u);
+});
+
+test("serializes all six typed CAD change variants without reordering", async () => {
+  const report = await exportCadReport(input(), "json");
+  const decoded = JSON.parse(new TextDecoder().decode(report.bytes)) as {
+    changeSet: { changes: Array<{ kind: string }> };
+  };
+  assert.deepEqual(decoded.changeSet.changes.map(({ kind }) => kind), [
+    "entity.delete",
+    "entity.copy",
+    "entity.move",
+    "text.replace",
+    "layer.update",
+    "layer.create"
+  ]);
+});
+
 test("rejects report bytes beyond the bounded export ceiling", async () => {
   const overlong = input("x".repeat(1_048_577));
 
   await assert.rejects(
     exportCadReport(overlong, "json"),
+    /EXPORT_REPORT_BYTE_LIMIT/u
+  );
+});
+
+test("preflights multibyte oversized input before every serializer", async () => {
+  for (const format of ["json", "csv", "pdf", "svg"] as const) {
+    await assert.rejects(
+      exportCadReport(input("한".repeat(350_000)), format),
+      /EXPORT_REPORT_INPUT_STRING_LIMIT/u,
+      format
+    );
+  }
+});
+
+test("bounded writers reject serializer expansion before a body exceeds one MiB", async () => {
+  const escaped = input("\u0000".repeat(170_000));
+  for (const format of ["json", "pdf", "svg"] as const) {
+    await assert.rejects(exportCadReport(escaped, format), /^Error: EXPORT_REPORT_BYTE_LIMIT$/u, format);
+  }
+
+  const quoted = input('"'.repeat(524_280));
+  quoted.changeSet = null;
+  await assert.rejects(exportCadReport(quoted, "csv"), /^Error: EXPORT_REPORT_BYTE_LIMIT$/u);
+});
+
+test("preflights excessive depth and collection counts", async () => {
+  const deep = input() as CadReportInput & { extra?: unknown };
+  let nested: Record<string, unknown> = {};
+  deep.extra = nested;
+  for (let depth = 0; depth < 40; depth += 1) {
+    nested.next = {};
+    nested = nested.next as Record<string, unknown>;
+  }
+  await assert.rejects(exportCadReport(deep, "json"), /EXPORT_REPORT_INPUT_DEPTH_LIMIT/u);
+
+  const numerous = input() as CadReportInput & { extra?: unknown };
+  numerous.extra = Array.from({ length: 20_001 }, (_, index) => index);
+  await assert.rejects(exportCadReport(numerous, "json"), /EXPORT_REPORT_INPUT_COLLECTION_LIMIT/u);
+});
+
+test("enforces the exact final encoded-byte boundary including multibyte text", () => {
+  assert.equal(encodeBounded("한".repeat(349_525) + "x").byteLength, MAX_REPORT_BYTES);
+  assert.throws(
+    () => encodeBounded("한".repeat(349_525) + "xx"),
     /EXPORT_REPORT_BYTE_LIMIT/u
   );
 });
@@ -102,18 +223,46 @@ function input(formula = "@formula"): CadReportInput {
       transactionIds: [...transactionIds],
       changes: [
         {
-          commandId: "10000000-0000-4000-8000-000000000002",
-          kind: "text.replace",
-          targetId: "h:20",
-          before: { id: "h:20", handle: "20", type: "TEXT", layer: "A", bbox: null, text: "before" },
-          after: { id: "h:20", handle: "20", type: "TEXT", layer: "A", bbox: null, text: formula }
+          commandId: "10000000-0000-4000-8000-000000000006",
+          kind: "entity.delete",
+          targetId: "h:30",
+          before: entityState("h:30", "30", "LINE", "0", "delete"),
+          after: null
         },
         {
-          commandId: "10000000-0000-4000-8000-000000000001",
+          commandId: "10000000-0000-4000-8000-000000000005",
+          kind: "entity.copy",
+          targetId: "copy:h:10",
+          before: null,
+          after: entityState("copy:h:10", null, "LINE", "0", "copy")
+        },
+        {
+          commandId: "10000000-0000-4000-8000-000000000004",
           kind: "entity.move",
           targetId: "h:10",
           before: { id: "h:10", handle: "10", type: "LINE", layer: "0", bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: null },
           after: { id: "h:10", handle: "10", type: "LINE", layer: "0", bbox: { min: [2, 0, 0], max: [3, 1, 0] }, text: null }
+        },
+        {
+          commandId: "10000000-0000-4000-8000-000000000003",
+          kind: "text.replace",
+          targetId: "h:20",
+          before: entityState("h:20", "20", "TEXT", "A", "before"),
+          after: entityState("h:20", "20", "TEXT", "A", formula)
+        },
+        {
+          commandId: "10000000-0000-4000-8000-000000000002",
+          kind: "layer.update",
+          targetId: "layer:imported:MA",
+          before: layerState("layer:imported:MA", "0", 7),
+          after: layerState("layer:imported:MA", "0", 1)
+        },
+        {
+          commandId: "10000000-0000-4000-8000-000000000001",
+          kind: "layer.create",
+          targetId: "layer:created:QQ",
+          before: null,
+          after: layerState("layer:created:QQ", "A", 3)
         }
       ]
     },
@@ -139,7 +288,7 @@ function documentSnapshot(): CadDocumentSnapshot {
       entities: [
         {
           id: "h:20", handle: "20", type: "TEXT", layer: "0", space: "model", layout: "Model",
-          bbox: { min: [0, 0, 0], max: [0, 0, 0] }, text: "=SUM(1,1)", blockName: null, attributes: {}, warnings: [],
+          bbox: { min: [0, 0, 0], max: [0, 0, 0] }, text: "=SUM(1,1)", blockName: null, attributes: { z: "last", a: "first" }, warnings: ["z", "a"],
           geometry: { kind: "text", insertionPoint: [0, 0, 0], alignmentPoint: null, height: 1, rotation: 0, width: null }
         },
         {
@@ -162,10 +311,19 @@ function findings(formula: string): InspectionRun {
   return {
     status: "completed",
     drawingId: "drawing:unsafe<>:/\\name",
-    events: [],
-    findings: [{ id: "finding:1", handle: "20", type: "TEXT", layer: "0", bbox: null, text: formula, reason: "-formula", confidence: 1 }],
-    issues: [],
-    warnings: ["+formula", "-formula", "@formula"]
+    events: [
+      { sequence: 1, agentId: "evidence-agent", action: "verify", status: "completed" },
+      { sequence: 0, agentId: "orchestrator", action: "plan", status: "planned" }
+    ],
+    findings: [
+      { id: "finding:2", handle: "30", type: "LINE", layer: "0", bbox: null, text: null, reason: "z", confidence: 1 },
+      { id: "finding:1", handle: "20", type: "TEXT", layer: "0", bbox: null, text: formula, reason: "-formula", confidence: 1 }
+    ],
+    issues: [
+      { entityId: "h:30", missing: ["bbox", "handle"] },
+      { entityId: "h:20", missing: ["type", "id"] }
+    ],
+    warnings: ["+formula", "-formula", "@formula", "a-warning"]
   };
 }
 
@@ -179,9 +337,100 @@ function verification(): CadOutputVerification {
     outputSha256: "B".repeat(64),
     intendedChangeCount: 2,
     verifiedChangeCount: 2,
-    copiedHandleMap: { z: "last", ä: "umlaut", "10": "110", "20": "120" },
-    warnings: []
+    copiedHandleMap: {
+      z: "last",
+      ä: "umlaut",
+      "": "bmp",
+      "𐀀": "supplementary",
+      "10": "110",
+      "20": "120"
+    },
+    warnings: ["z-warning", "a-warning"]
   };
+}
+
+function entityState(
+  id: string,
+  handle: string | null,
+  type: string,
+  layer: string,
+  text: string
+) {
+  return { id, handle, type, layer, bbox: null, text };
+}
+
+function layerState(id: string, name: string, color: number) {
+  return { id, name, color, visible: true, frozen: false, locked: false };
+}
+
+function permuteUnorderedCollections(value: CadReportInput): CadReportInput {
+  const result = structuredClone(value);
+  result.document.index.entities.reverse();
+  result.document.index.layers.reverse();
+  result.document.index.unsupported.reverse();
+  result.document.layers.reverse();
+  for (const entity of result.document.index.entities) {
+    entity.warnings.reverse();
+    entity.attributes = Object.fromEntries(Object.entries(entity.attributes).reverse());
+  }
+  if (result.findings) {
+    result.findings.findings.reverse();
+    result.findings.issues.reverse();
+    result.findings.warnings.reverse();
+    for (const issue of result.findings.issues) issue.missing.reverse();
+  }
+  if (result.verification) {
+    result.verification.warnings.reverse();
+    result.verification.copiedHandleMap = Object.fromEntries(
+      Object.entries(result.verification.copiedHandleMap).reverse()
+    );
+  }
+  return result;
+}
+
+function parseCsv(value: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]!;
+    if (quoted && character === '"' && value[index + 1] === '"') {
+      cell += '"';
+      index += 1;
+    } else if (character === '"') {
+      quoted = !quoted;
+    } else if (!quoted && character === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (!quoted && character === "\r" && value[index + 1] === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      index += 1;
+    } else {
+      cell += character;
+    }
+  }
+  assert.equal(quoted, false);
+  return rows;
+}
+
+function assertWellFormedXml(value: string): void {
+  assert.doesNotMatch(value, /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/u);
+  const parsed = spawnSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "[Console]::InputEncoding=[Text.UTF8Encoding]::new($false); $xml=[Console]::In.ReadToEnd(); $document=[xml]$xml; $document.DocumentElement.LocalName"
+    ],
+    { input: value, encoding: "utf8", windowsHide: true }
+  );
+  assert.equal(parsed.status, 0, parsed.stderr);
+  assert.equal(parsed.stdout.trim(), "svg");
 }
 
 function sha256(bytes: Uint8Array): string {

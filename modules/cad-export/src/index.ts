@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Buffer } from "node:buffer";
 
 import type {
   CadChange,
@@ -12,8 +13,12 @@ import { createCsvReport } from "./csvReport.js";
 import { createJsonReport } from "./jsonReport.js";
 import { createPdfReport } from "./pdfReport.js";
 import { createSvgReport } from "./svgReport.js";
+import { BoundedTextWriter, MAX_REPORT_BYTES } from "./textWriter.js";
 
-export const MAX_REPORT_BYTES = 1_048_576;
+export { MAX_REPORT_BYTES } from "./textWriter.js";
+export const MAX_REPORT_INPUT_DEPTH = 32;
+export const MAX_REPORT_INPUT_COLLECTION_ITEMS = 20_000;
+export const MAX_REPORT_INPUT_STRING_BYTES = 524_288;
 
 /** Internal application input; it is deliberately not a @dwg/contracts DTO. */
 export interface CadReportInput {
@@ -42,6 +47,7 @@ export async function exportCadReport(
   input: CadReportInput,
   format: ReportFormat
 ): Promise<ExportedReport> {
+  preflightReportInput(input);
   const body = createReportBody(input, format);
   const bytes = encodeBounded(body);
   return {
@@ -57,21 +63,15 @@ export function canonicalReport(input: CadReportInput): Record<string, unknown> 
   return canonicalize({
     document: input.document,
     findings: input.findings,
-    changeSet: input.changeSet === null ? null : {
-      ...input.changeSet,
-      transactionIds: [...input.changeSet.transactionIds].sort(),
-      changes: [...input.changeSet.changes].sort(compareChanges)
-    },
-    verification: input.verification === null ? null : {
-      ...input.verification,
-      copiedHandleMap: Object.fromEntries(Object.entries(input.verification.copiedHandleMap).sort(([left], [right]) => compareText(left, right))),
-      warnings: [...input.verification.warnings].sort()
-    }
-  }) as Record<string, unknown>;
+    changeSet: input.changeSet,
+    verification: input.verification
+  }, []) as Record<string, unknown>;
 }
 
 export function stableJson(value: unknown): string {
-  return JSON.stringify(canonicalize(value));
+  const writer = new BoundedTextWriter();
+  writeStableJson(writer, canonicalize(value, []));
+  return writer.finish();
 }
 
 export function encodeBounded(text: string): Uint8Array {
@@ -121,20 +121,165 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex").toUpperCase();
 }
 
-function compareChanges(left: CadChange, right: CadChange): number {
-  return compareText(left.commandId, right.commandId) || compareText(left.targetId, right.targetId) || compareText(left.kind, right.kind);
-}
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
+function canonicalize(value: unknown, path: readonly string[]): unknown {
+  if (Array.isArray(value)) {
+    const items = value.map((item) => canonicalize(item, [...path, "[]"]));
+    const collection = path.at(-1);
+    return collection !== undefined && unorderedCollections.has(collection)
+      ? items.sort((left, right) => compareText(collectionKey(collection, left), collectionKey(collection, right)))
+      : items;
+  }
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => compareText(left, right))
-      .map(([key, item]) => [key, canonicalize(item)])
+      .map(([key, item]) => [key, canonicalize(item, [...path, key])])
   );
 }
 
+function collectionKey(collection: string, value: unknown): string {
+  const object = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  const fields = collectionSortFields[collection] ?? [];
+  const explicit = object === null
+    ? scalarKey(value)
+    : fields.map((field) => scalarKey(object[field])).join("\u0000");
+  return `${explicit}\u0000${stableSortKey(value)}`;
+}
+
+function scalarKey(value: unknown): string {
+  if (value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return stableSortKey(value);
+}
+
+function stableSortKey(value: unknown): string {
+  const writer = new BoundedTextWriter();
+  writeStableJson(writer, value);
+  return writer.finish();
+}
+
+function writeStableJson(writer: BoundedTextWriter, value: unknown): void {
+  if (value === null) {
+    writer.append("null");
+  } else if (typeof value === "string") {
+    writeJsonString(writer, value);
+  } else if (typeof value === "number") {
+    writer.append(Number.isFinite(value) ? String(value) : "null");
+  } else if (typeof value === "boolean") {
+    writer.append(value ? "true" : "false");
+  } else if (Array.isArray(value)) {
+    writer.append("[");
+    value.forEach((item, index) => {
+      if (index > 0) writer.append(",");
+      writeStableJson(writer, item);
+    });
+    writer.append("]");
+  } else if (value && typeof value === "object") {
+    writer.append("{");
+    Object.entries(value as Record<string, unknown>).forEach(([key, item], index) => {
+      if (index > 0) writer.append(",");
+      writeJsonString(writer, key);
+      writer.append(":");
+      writeStableJson(writer, item);
+    });
+    writer.append("}");
+  } else {
+    writer.append("null");
+  }
+}
+
+function writeJsonString(writer: BoundedTextWriter, value: string): void {
+  writer.append('"');
+  let run = "";
+  const flush = () => {
+    if (run.length > 0) writer.append(run);
+    run = "";
+  };
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    if (character === '"' || character === "\\") {
+      flush();
+      writer.append(`\\${character}`);
+    } else if (codePoint <= 0x1f) {
+      flush();
+      writer.append(`\\u${codePoint.toString(16).padStart(4, "0")}`);
+    } else {
+      run += character;
+      if (run.length >= 4_096) flush();
+    }
+  }
+  flush();
+  writer.append('"');
+}
+
+function preflightReportInput(input: CadReportInput): void {
+  const seen = new WeakSet<object>();
+  const stack: Array<{ value: unknown; depth: number }> = [{ value: input, depth: 0 }];
+  let collectionItems = 0;
+  let estimatedBytes = 0;
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current.depth > MAX_REPORT_INPUT_DEPTH) {
+      throw new Error("EXPORT_REPORT_INPUT_DEPTH_LIMIT");
+    }
+    const value = current.value;
+    if (typeof value === "string") {
+      const bytes = Buffer.byteLength(value, "utf8");
+      if (bytes > MAX_REPORT_INPUT_STRING_BYTES) {
+        throw new Error("EXPORT_REPORT_INPUT_STRING_LIMIT EXPORT_REPORT_BYTE_LIMIT");
+      }
+      estimatedBytes += bytes;
+    } else if (value && typeof value === "object") {
+      if (seen.has(value)) throw new Error("EXPORT_REPORT_INPUT_INVALID");
+      seen.add(value);
+      const descriptors = Object.getOwnPropertyDescriptors(value);
+      const entries = Object.entries(descriptors);
+      collectionItems += entries.length;
+      if (collectionItems > MAX_REPORT_INPUT_COLLECTION_ITEMS) {
+        throw new Error("EXPORT_REPORT_INPUT_COLLECTION_LIMIT");
+      }
+      for (const [key, descriptor] of entries) {
+        if (!("value" in descriptor)) throw new Error("EXPORT_REPORT_INPUT_INVALID");
+        estimatedBytes += Buffer.byteLength(key, "utf8");
+        stack.push({ value: descriptor.value, depth: current.depth + 1 });
+      }
+    } else {
+      estimatedBytes += 16;
+    }
+    if (estimatedBytes > MAX_REPORT_BYTES) {
+      throw new Error("EXPORT_REPORT_INPUT_BYTE_LIMIT EXPORT_REPORT_BYTE_LIMIT");
+    }
+  }
+}
+
+const unorderedCollections = new Set([
+  "entities",
+  "layers",
+  "layouts",
+  "linetypes",
+  "unsupported",
+  "warnings",
+  "findings",
+  "issues",
+  "missing",
+  "evidence"
+]);
+
+const collectionSortFields: Record<string, readonly string[]> = {
+  entities: ["id", "handle", "type", "layer", "layout"],
+  layers: ["id", "name"],
+  layouts: ["id", "name"],
+  linetypes: ["id", "name"],
+  unsupported: ["type", "reason", "count"],
+  findings: ["id", "handle", "type", "layer", "reason"],
+  issues: ["entityId"],
+  evidence: ["id", "handle", "type", "layer"]
+};
+
 export function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
 }

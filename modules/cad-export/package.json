@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "@dwg/cad-document": "0.1.0",
-    "@dwg/cad-edit": "0.1.0",
     "@dwg/contracts": "0.1.0"
   }
 }

@@ -15,7 +15,7 @@ const allowedDependencies = {
   "modules/cad-document": ["@dwg/contracts"],
   "modules/cad-edit": ["@dwg/contracts", "@dwg/cad-document"],
   "modules/cad-query": ["@dwg/contracts"],
-  "modules/cad-export": ["@dwg/contracts", "@dwg/cad-document", "@dwg/cad-edit"],
+  "modules/cad-export": ["@dwg/contracts", "@dwg/cad-document"],
   "modules/cad-io-acadsharp": ["@dwg/contracts", "@dwg/cad-edit"],
   "modules/cad-capabilities": ["@dwg/contracts", "@dwg/cad-edit", "@dwg/cad-query"],
   "modules/skill-runtime": [
