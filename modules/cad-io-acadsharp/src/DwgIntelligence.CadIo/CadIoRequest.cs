@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -17,12 +18,17 @@ public sealed record CadIoRequest(
     public const int MaxCommands = 10_000;
     public const long MaxSafeRevision = 9_007_199_254_740_991;
 
+    private const string UuidPatternText =
+        "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
     private static readonly Regex UuidPattern = new(
-        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        $"^{UuidPatternText}$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex HandlePattern = new(
-        "^[0-9A-F]+$",
+        "^(?:0|[1-9A-F][0-9A-F]{0,15})$",
         RegexOptions.CultureInvariant);
+    private static readonly Regex TemporaryIdPattern = new(
+        $"^copy:(?<transaction>{UuidPatternText}):(?<command>{UuidPatternText}):(?<index>0|[1-9][0-9]*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex VersionPattern = new(
         "^AC[0-9]{4}$",
         RegexOptions.CultureInvariant);
@@ -333,23 +339,20 @@ public sealed record CadIoRequest(
             throw new CadIoException("CAD_REQUEST_INVALID");
         }
         var ids = new List<string>();
-        string prefix = $"copy:{transactionId}:";
         foreach (JsonElement item in element.EnumerateArray())
         {
             string id = ElementString(item, 256);
-            string suffix = id.StartsWith(
-                prefix,
-                StringComparison.Ordinal)
-                ? id[prefix.Length..]
-                : "";
-            int separator = suffix.LastIndexOf(':');
+            Match match = TemporaryIdPattern.Match(id);
             if (
-                separator <= 0
-                || !UuidPattern.IsMatch(suffix[..separator])
+                !match.Success
+                || !StringComparer.OrdinalIgnoreCase.Equals(
+                    match.Groups["transaction"].Value,
+                    transactionId)
                 || !int.TryParse(
-                    suffix[(separator + 1)..],
+                    match.Groups["index"].Value,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
                     out int entityIndex)
-                || entityIndex < 0
                 || !allIds.Add(id))
             {
                 throw new CadIoException("CAD_REQUEST_INVALID");
@@ -394,7 +397,13 @@ public sealed record CadIoRequest(
     private static string RequireHandle(JsonElement element)
     {
         string handle = ElementString(element, 32);
-        if (!HandlePattern.IsMatch(handle))
+        if (
+            !HandlePattern.IsMatch(handle)
+            || !ulong.TryParse(
+                handle,
+                NumberStyles.HexNumber,
+                CultureInfo.InvariantCulture,
+                out _))
         {
             throw new CadIoException("CAD_REQUEST_INVALID");
         }

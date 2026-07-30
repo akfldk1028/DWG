@@ -13,7 +13,9 @@ const MAX_WARNINGS = 1_000;
 const MAX_WARNING_CHARS = 240;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const HANDLE_PATTERN = /^[0-9A-F]+$/u;
+const HANDLE_PATTERN = /^(?:0|[1-9A-F][0-9A-F]{0,15})$/u;
+const TEMPORARY_ID_PATTERN =
+  /^copy:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(0|[1-9][0-9]*)$/iu;
 const VERSION_PATTERN = /^AC[0-9]{4}$/u;
 const LAYER_ID_PATTERN = /^layer:(?:imported|created):[A-Za-z0-9_-]+$/u;
 
@@ -728,16 +730,16 @@ function requireTemporaryIds(
   if (!Array.isArray(value) || value.length === 0 || value.length > 200) {
     throw new CadIoError("CAD_REQUEST_INVALID");
   }
-  const prefix = `copy:${transactionId}:`;
   return value.map((candidate) => {
     const id = requireString(candidate, 1, 256);
-    const suffix = id.slice(prefix.length);
-    const separator = suffix.lastIndexOf(":");
+    const match = TEMPORARY_ID_PATTERN.exec(id);
+    const index = match?.[3];
     if (
-      !id.startsWith(prefix)
-      || separator <= 0
-      || !UUID_PATTERN.test(suffix.slice(0, separator))
-      || !/^(?:0|[1-9][0-9]*)$/u.test(suffix.slice(separator + 1))
+      match === null
+      || match[1]?.toLowerCase() !== transactionId.toLowerCase()
+      || index === undefined
+      || index.length > 10
+      || (index.length === 10 && index > "2147483647")
       || allIds.has(id)
     ) {
       throw new CadIoError("CAD_REQUEST_INVALID");

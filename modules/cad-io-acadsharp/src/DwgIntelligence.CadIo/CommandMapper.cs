@@ -62,7 +62,7 @@ internal static class CommandMapper
                 CreateLayer(document, create, layers);
                 return;
             case LayerUpdateCommand update:
-                UpdateLayer(update, layers);
+                UpdateLayer(document, update, layers);
                 return;
             case TextReplaceCommand replace:
                 ReplaceText(document, replace);
@@ -118,6 +118,7 @@ internal static class CommandMapper
     }
 
     private static void UpdateLayer(
+        CadDocument document,
         LayerUpdateCommand command,
         IDictionary<string, Layer> layers)
     {
@@ -127,7 +128,15 @@ internal static class CommandMapper
         }
         if (command.Name is not null)
         {
-            layer.Name = command.Name;
+            if (layers.Values.Any(candidate =>
+                !ReferenceEquals(candidate, layer)
+                && StringComparer.OrdinalIgnoreCase.Equals(
+                    candidate.Name,
+                    command.Name)))
+            {
+                throw new CadIoException("CAD_LAYER_EXISTS");
+            }
+            RenameLayer(document, layer, command.Name);
         }
         if (command.Color is not null)
         {
@@ -150,6 +159,41 @@ internal static class CommandMapper
                 layer.Flags,
                 LayerFlags.Locked,
                 command.Locked.Value);
+        }
+    }
+
+    private static void RenameLayer(
+        CadDocument document,
+        Layer layer,
+        string name)
+    {
+        if (StringComparer.Ordinal.Equals(layer.Name, name))
+        {
+            return;
+        }
+        if (!StringComparer.OrdinalIgnoreCase.Equals(layer.Name, name))
+        {
+            layer.Name = name;
+            return;
+        }
+
+        string previousName = layer.Name;
+        if (!ReferenceEquals(
+            document.Layers.Remove(previousName),
+            layer))
+        {
+            throw new CadIoException("CAD_LAYER_RENAME_FAILED");
+        }
+        try
+        {
+            layer.Name = name;
+            document.Layers.Add(layer);
+        }
+        catch (Exception exception)
+        {
+            throw new CadIoException(
+                "CAD_LAYER_RENAME_FAILED",
+                exception);
         }
     }
 

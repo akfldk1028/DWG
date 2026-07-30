@@ -175,6 +175,91 @@ test("rejects unknown fields non-finite points duplicates copy mismatches and co
   }
 });
 
+test("accepts only canonical unsigned 64-bit uppercase hex handles", async () => {
+  for (const handle of ["0", "FFFFFFFFFFFFFFFF"]) {
+    const runner = new RecordingRunner(successResponse({
+      copiedHandleMap: {}
+    }));
+    const client = createAcadSharpCadIoClient({
+      projectPath: "C:\\repo\\CadIo.Host.csproj",
+      processRunner: runner
+    });
+
+    await client.writeCopy(writeRequest([transaction([{
+      kind: "entity.delete",
+      handles: [handle]
+    }])]));
+
+    assert.equal(runner.calls.length, 1);
+  }
+
+  for (const handle of [
+    "0000000000000001",
+    "10000000000000000",
+    "abcdef",
+    "+1",
+    " 1",
+    "1 "
+  ]) {
+    const runner = new RecordingRunner(successResponse());
+    const client = createAcadSharpCadIoClient({
+      projectPath: "C:\\repo\\CadIo.Host.csproj",
+      processRunner: runner
+    });
+
+    await assert.rejects(
+      () => client.writeCopy(writeRequest([transaction([{
+        kind: "entity.delete",
+        handles: [handle]
+      }])])),
+      (error: unknown) => cadIoCode(error) === "CAD_REQUEST_INVALID"
+    );
+    assert.equal(runner.calls.length, 0);
+  }
+});
+
+test("accepts only canonical bounded temporary copy indexes", async () => {
+  for (const index of ["0", "2147483647"]) {
+    const id = `copy:${transactionId}:${copyCommandId}:${index}`;
+    const runner = new RecordingRunner(successResponse({
+      copiedHandleMap: { [id]: "ABC" }
+    }));
+    const client = createAcadSharpCadIoClient({
+      projectPath: "C:\\repo\\CadIo.Host.csproj",
+      processRunner: runner
+    });
+
+    await client.writeCopy(writeRequest([transaction([{
+      kind: "entity.copy",
+      sourceHandles: ["10"],
+      temporaryIds: [id],
+      delta: [0, 0, 0]
+    }])]));
+
+    assert.equal(runner.calls.length, 1);
+  }
+
+  for (const index of ["01", "+1", " 1", "1 ", "2147483648"]) {
+    const id = `copy:${transactionId}:${copyCommandId}:${index}`;
+    const runner = new RecordingRunner(successResponse());
+    const client = createAcadSharpCadIoClient({
+      projectPath: "C:\\repo\\CadIo.Host.csproj",
+      processRunner: runner
+    });
+
+    await assert.rejects(
+      () => client.writeCopy(writeRequest([transaction([{
+        kind: "entity.copy",
+        sourceHandles: ["10"],
+        temporaryIds: [id],
+        delta: [0, 0, 0]
+      }])])),
+      (error: unknown) => cadIoCode(error) === "CAD_REQUEST_INVALID"
+    );
+    assert.equal(runner.calls.length, 0);
+  }
+});
+
 test("rejects request JSON above one MiB before process launch", async () => {
   const runner = new RecordingRunner(successResponse());
   const client = createAcadSharpCadIoClient({

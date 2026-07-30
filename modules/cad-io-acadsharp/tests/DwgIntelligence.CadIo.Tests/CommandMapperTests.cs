@@ -15,8 +15,11 @@ public sealed class CommandMapperTests
     private const string Transaction1 = "11111111-1111-4111-8111-111111111111";
     private const string Transaction2 = "22222222-2222-4222-8222-222222222222";
     private const string CopyCommand = "33333333-3333-4333-8333-333333333333";
+    private const string CopyCommand2 = "44444444-4444-4444-8444-444444444444";
     private const string CopyId =
         $"copy:{Transaction1}:{CopyCommand}:0";
+    private const string CopyId2 =
+        $"copy:{Transaction2}:{CopyCommand2}:1";
 
     [Fact]
     public void WritesAndReopensTwoOrderedTransactionsWithoutChangingSource()
@@ -32,10 +35,21 @@ public sealed class CommandMapperTests
         Assert.Equal(sourceHash, Sha256(fixture.SourcePath));
         Assert.Equal("dxf", result.Format);
         Assert.Equal("AC1032", result.Version);
-        Assert.Equal(4, result.EntityCount);
-        string copiedHandle = Assert.Single(result.CopiedHandleMap).Value;
-        Assert.Matches("^[0-9A-F]+$", copiedHandle);
-        Assert.NotEqual("11", copiedHandle);
+        Assert.Equal(5, result.EntityCount);
+        Assert.Equal(2, result.CopiedHandleMap.Count);
+        Assert.Equal(
+            new[] { CopyId, CopyId2 },
+            result.CopiedHandleMap.Keys.Order().ToArray());
+        string[] copiedHandles =
+            result.CopiedHandleMap.Values.ToArray();
+        Assert.All(
+            copiedHandles,
+            handle => Assert.Matches(
+                "^(?:0|[1-9A-F][0-9A-F]{0,15})$",
+                handle));
+        Assert.Equal(2, copiedHandles.Distinct().Count());
+        Assert.DoesNotContain("10", copiedHandles);
+        Assert.DoesNotContain("11", copiedHandles);
 
         CadDocument output = DxfReader.Read(fixture.OutputPath);
         Assert.Equal(ACadVersion.AC1032, output.Header.Version);
@@ -60,10 +74,223 @@ public sealed class CommandMapperTests
         ]);
         Assert.Null(output.GetCadObject(0x11));
 
-        LwPolyline copy = Assert.IsType<LwPolyline>(
-            output.GetCadObject(Convert.ToUInt64(copiedHandle, 16)));
-        Assert.Equal(10d, copy.Vertices[0].Location.X);
-        Assert.Equal(20d, copy.Vertices[0].Location.Y);
+        LwPolyline polylineCopy = Assert.IsType<LwPolyline>(
+            output.GetCadObject(Convert.ToUInt64(
+                result.CopiedHandleMap[CopyId],
+                16)));
+        Assert.Equal(10d, polylineCopy.Vertices[0].Location.X);
+        Assert.Equal(20d, polylineCopy.Vertices[0].Location.Y);
+        Line lineCopy = Assert.IsType<Line>(
+            output.GetCadObject(Convert.ToUInt64(
+                result.CopiedHandleMap[CopyId2],
+                16)));
+        Assert.Equal([3d, 9d, 0d], [
+            lineCopy.StartPoint.X,
+            lineCopy.StartPoint.Y,
+            lineCopy.StartPoint.Z
+        ]);
+    }
+
+    [Fact]
+    public void RejectsCaseInsensitiveLayerRenameCollisionWithoutOutput()
+    {
+        using var fixture = TemporaryFixture.Create();
+        string sourceHash = Sha256(fixture.SourcePath);
+        string json = RequestJson(
+            fixture.SourcePath,
+            fixture.OutputPath,
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "layer.create",
+                        layerId = "layer:created:review",
+                        name = "Review",
+                        color = 4
+                    },
+                    new
+                    {
+                        kind = "text.replace",
+                        handle = "30",
+                        value = "MUST ROLL BACK"
+                    },
+                    new
+                    {
+                        kind = "layer.update",
+                        layerId = "layer:imported:QS1URVhU",
+                        name = "review"
+                    }
+                ])
+            ]);
+
+        CadIoException error = Assert.Throws<CadIoException>(
+            () => CadFileWriter.Write(CadIoRequest.Parse(json)));
+
+        Assert.Equal("CAD_LAYER_EXISTS", error.Code);
+        Assert.False(File.Exists(fixture.OutputPath));
+        Assert.Equal(sourceHash, Sha256(fixture.SourcePath));
+        CadDocument source = DxfReader.Read(fixture.SourcePath);
+        Assert.Equal(
+            "ROOM 101",
+            Assert.IsType<TextEntity>(source.GetCadObject(0x30)).Value);
+    }
+
+    [Fact]
+    public void AllowsCaseOnlyRenameOfTheSameLayer()
+    {
+        using var fixture = TemporaryFixture.Create();
+        string json = RequestJson(
+            fixture.SourcePath,
+            fixture.OutputPath,
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "layer.update",
+                        layerId = "layer:imported:QS1URVhU",
+                        name = "a-text"
+                    }
+                ])
+            ]);
+
+        CadFileWriter.Write(CadIoRequest.Parse(json));
+
+        CadDocument output = DxfReader.Read(fixture.OutputPath);
+        Assert.Contains(output.Layers, layer => layer.Name == "a-text");
+    }
+
+    [Fact]
+    public void ValidUlongHandleMissingFromDrawingReturnsControlledError()
+    {
+        using var fixture = TemporaryFixture.Create();
+        string json = RequestJson(
+            fixture.SourcePath,
+            fixture.OutputPath,
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "entity.delete",
+                        handles = new[] { "FFFFFFFFFFFFFFFF" }
+                    }
+                ])
+            ]);
+
+        CadIoException error = Assert.Throws<CadIoException>(
+            () => CadFileWriter.Write(CadIoRequest.Parse(json)));
+
+        Assert.Equal("CAD_ENTITY_NOT_FOUND", error.Code);
+        Assert.False(File.Exists(fixture.OutputPath));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("FFFFFFFFFFFFFFFF")]
+    public void StrictParserAcceptsCanonicalUlongHandles(string handle)
+    {
+        CadIoRequest request = CadIoRequest.Parse(RequestJson(
+            "C:\\a.dxf",
+            "C:\\b.dxf",
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "entity.delete",
+                        handles = new[] { handle }
+                    }
+                ])
+            ]));
+
+        EntityDeleteCommand command = Assert.IsType<EntityDeleteCommand>(
+            Assert.Single(Assert.Single(request.Lineage).Commands));
+        Assert.Equal(handle, Assert.Single(command.Handles));
+    }
+
+    [Theory]
+    [InlineData("0000000000000001")]
+    [InlineData("10000000000000000")]
+    [InlineData("abcdef")]
+    [InlineData("+1")]
+    [InlineData(" 1")]
+    [InlineData("1 ")]
+    public void StrictParserRejectsNonCanonicalOrOverflowHandles(
+        string handle)
+    {
+        string json = RequestJson(
+            "C:\\a.dxf",
+            "C:\\b.dxf",
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "entity.delete",
+                        handles = new[] { handle }
+                    }
+                ])
+            ]);
+
+        CadIoException error = Assert.Throws<CadIoException>(
+            () => CadIoRequest.Parse(json));
+
+        Assert.Equal("CAD_REQUEST_INVALID", error.Code);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("2147483647")]
+    public void StrictParserAcceptsCanonicalTemporaryIdIndexes(
+        string index)
+    {
+        string id = $"copy:{Transaction1}:{CopyCommand}:{index}";
+        CadIoRequest request = CadIoRequest.Parse(RequestJson(
+            "C:\\a.dxf",
+            "C:\\b.dxf",
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "entity.copy",
+                        sourceHandles = new[] { "10" },
+                        temporaryIds = new[] { id },
+                        delta = new[] { 0d, 0d, 0d }
+                    }
+                ])
+            ]));
+
+        EntityCopyCommand command = Assert.IsType<EntityCopyCommand>(
+            Assert.Single(Assert.Single(request.Lineage).Commands));
+        Assert.Equal(id, Assert.Single(command.TemporaryIds));
+    }
+
+    [Theory]
+    [InlineData("01")]
+    [InlineData("+1")]
+    [InlineData(" 1")]
+    [InlineData("1 ")]
+    [InlineData("2147483648")]
+    public void StrictParserRejectsNonCanonicalTemporaryIdIndexes(
+        string index)
+    {
+        string id = $"copy:{Transaction1}:{CopyCommand}:{index}";
+        string json = RequestJson(
+            "C:\\a.dxf",
+            "C:\\b.dxf",
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "entity.copy",
+                        sourceHandles = new[] { "10" },
+                        temporaryIds = new[] { id },
+                        delta = new[] { 0d, 0d, 0d }
+                    }
+                ])
+            ]);
+
+        CadIoException error = Assert.Throws<CadIoException>(
+            () => CadIoRequest.Parse(json));
+
+        Assert.Equal("CAD_REQUEST_INVALID", error.Code);
     }
 
     [Fact]
@@ -386,6 +613,13 @@ public sealed class CommandMapperTests
                     }
                 ]),
                 Transaction(Transaction2, 1, 2, [
+                    new
+                    {
+                        kind = "entity.copy",
+                        sourceHandles = new[] { "10" },
+                        temporaryIds = new[] { CopyId2 },
+                        delta = new[] { -2d, 3d, 0d }
+                    },
                     new
                     {
                         kind = "layer.update",
