@@ -45,7 +45,7 @@ public sealed class CommandMapperTests
         Assert.All(
             copiedHandles,
             handle => Assert.Matches(
-                "^(?:0|[1-9A-F][0-9A-F]{0,15})$",
+                "^[1-9A-F][0-9A-F]{0,15}$",
                 handle));
         Assert.Equal(2, copiedHandles.Distinct().Count());
         Assert.DoesNotContain("10", copiedHandles);
@@ -80,15 +80,12 @@ public sealed class CommandMapperTests
                 16)));
         Assert.Equal(10d, polylineCopy.Vertices[0].Location.X);
         Assert.Equal(20d, polylineCopy.Vertices[0].Location.Y);
-        Line lineCopy = Assert.IsType<Line>(
+        LwPolyline polylineCopy2 = Assert.IsType<LwPolyline>(
             output.GetCadObject(Convert.ToUInt64(
                 result.CopiedHandleMap[CopyId2],
                 16)));
-        Assert.Equal([3d, 9d, 0d], [
-            lineCopy.StartPoint.X,
-            lineCopy.StartPoint.Y,
-            lineCopy.StartPoint.Z
-        ]);
+        Assert.Equal(-2d, polylineCopy2.Vertices[0].Location.X);
+        Assert.Equal(3d, polylineCopy2.Vertices[0].Location.Y);
     }
 
     [Fact]
@@ -184,7 +181,7 @@ public sealed class CommandMapperTests
     }
 
     [Theory]
-    [InlineData("0")]
+    [InlineData("1")]
     [InlineData("FFFFFFFFFFFFFFFF")]
     public void StrictParserAcceptsCanonicalUlongHandles(string handle)
     {
@@ -207,6 +204,7 @@ public sealed class CommandMapperTests
     }
 
     [Theory]
+    [InlineData("0")]
     [InlineData("0000000000000001")]
     [InlineData("10000000000000000")]
     [InlineData("abcdef")]
@@ -233,6 +231,75 @@ public sealed class CommandMapperTests
             () => CadIoRequest.Parse(json));
 
         Assert.Equal("CAD_REQUEST_INVALID", error.Code);
+    }
+
+    [Fact]
+    public void StrictParserRejectsZeroCopySourceHandle()
+    {
+        string json = RequestJson(
+            "C:\\a.dxf",
+            "C:\\b.dxf",
+            [
+                Transaction(Transaction1, 0, 1, [
+                    new
+                    {
+                        kind = "entity.copy",
+                        sourceHandles = new[] { "0" },
+                        temporaryIds = new[] { CopyId },
+                        delta = new[] { 0d, 0d, 0d }
+                    }
+                ])
+            ]);
+
+        CadIoException error = Assert.Throws<CadIoException>(
+            () => CadIoRequest.Parse(json));
+
+        Assert.Equal("CAD_REQUEST_INVALID", error.Code);
+    }
+
+    [Fact]
+    public void MapperRejectsAnUnassignedCopiedEntityHandle()
+    {
+        using var fixture = TemporaryFixture.Create();
+        CadDocument document = DxfReader.Read(fixture.SourcePath);
+        Entity source = Assert.IsType<LwPolyline>(
+            document.GetCadObject(0x11));
+        BlockRecord owner = Assert.IsType<BlockRecord>(source.Owner);
+        EventHandler<CollectionChangedEventArgs> resetCopyHandle =
+            (_, args) =>
+            {
+                if (!ReferenceEquals(args.Item, source))
+                {
+                    typeof(CadObject)
+                        .GetProperty(nameof(CadObject.Handle))!
+                        .SetValue(args.Item, 0UL);
+                }
+            };
+        owner.Entities.OnAdd += resetCopyHandle;
+        try
+        {
+            CadIoException error = Assert.Throws<CadIoException>(
+                () => CommandMapper.Apply(
+                    document,
+                    [
+                        new CadIoWriteTransaction(
+                            Transaction1,
+                            0,
+                            1,
+                            [
+                                new EntityCopyCommand(
+                                    ["11"],
+                                    [CopyId],
+                                    new CadPoint3(0, 0, 0))
+                            ])
+                    ]));
+
+            Assert.Equal("CAD_COPY_MAPPING_INVALID", error.Code);
+        }
+        finally
+        {
+            owner.Entities.OnAdd -= resetCopyHandle;
+        }
     }
 
     [Theory]
@@ -554,7 +621,10 @@ public sealed class CommandMapperTests
                             .Select(index => (object)new
                             {
                                 kind = "entity.delete",
-                                handles = new[] { index.ToString("X") }
+                                handles = new[]
+                                {
+                                    (index + 1).ToString("X")
+                                }
                             })
                             .ToArray())
                 ]),
@@ -616,7 +686,7 @@ public sealed class CommandMapperTests
                     new
                     {
                         kind = "entity.copy",
-                        sourceHandles = new[] { "10" },
+                        sourceHandles = new[] { "11" },
                         temporaryIds = new[] { CopyId2 },
                         delta = new[] { -2d, 3d, 0d }
                     },

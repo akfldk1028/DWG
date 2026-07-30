@@ -24,7 +24,7 @@ public sealed record CadIoRequest(
         $"^{UuidPatternText}$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex HandlePattern = new(
-        "^(?:0|[1-9A-F][0-9A-F]{0,15})$",
+        "^[1-9A-F][0-9A-F]{0,15}$",
         RegexOptions.CultureInvariant);
     private static readonly Regex TemporaryIdPattern = new(
         $"^copy:(?<transaction>{UuidPatternText}):(?<command>{UuidPatternText}):(?<index>0|[1-9][0-9]*)$",
@@ -403,7 +403,8 @@ public sealed record CadIoRequest(
                 handle,
                 NumberStyles.HexNumber,
                 CultureInfo.InvariantCulture,
-                out _))
+                out ulong parsed)
+            || parsed == 0)
         {
             throw new CadIoException("CAD_REQUEST_INVALID");
         }

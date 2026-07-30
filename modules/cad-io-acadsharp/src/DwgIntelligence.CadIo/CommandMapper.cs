@@ -232,11 +232,14 @@ internal static class CommandMapper
             Entity copy = (Entity)source.Clone();
             copy.ApplyTranslation(Point(command.Delta));
             owner.Entities.Add(copy);
+            if (copy.Handle == 0)
+            {
+                throw new CadIoException("CAD_COPY_MAPPING_INVALID");
+            }
             string handle = copy.Handle.ToString("X");
             string temporaryId = command.TemporaryIds[index];
             if (
-                handle.Length == 0
-                || copiedHandles.ContainsKey(temporaryId)
+                copiedHandles.ContainsKey(temporaryId)
                 || copiedHandles.Values.Contains(
                     handle,
                     StringComparer.Ordinal))

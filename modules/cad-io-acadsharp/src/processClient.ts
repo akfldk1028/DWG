@@ -13,7 +13,7 @@ const MAX_WARNINGS = 1_000;
 const MAX_WARNING_CHARS = 240;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const HANDLE_PATTERN = /^(?:0|[1-9A-F][0-9A-F]{0,15})$/u;
+const HANDLE_PATTERN = /^[1-9A-F][0-9A-F]{0,15}$/u;
 const TEMPORARY_ID_PATTERN =
   /^copy:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(0|[1-9][0-9]*)$/iu;
 const VERSION_PATTERN = /^AC[0-9]{4}$/u;

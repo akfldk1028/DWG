@@ -175,8 +175,8 @@ test("rejects unknown fields non-finite points duplicates copy mismatches and co
   }
 });
 
-test("accepts only canonical unsigned 64-bit uppercase hex handles", async () => {
-  for (const handle of ["0", "FFFFFFFFFFFFFFFF"]) {
+test("accepts only canonical nonzero unsigned 64-bit uppercase hex handles", async () => {
+  for (const handle of ["1", "FFFFFFFFFFFFFFFF"]) {
     const runner = new RecordingRunner(successResponse({
       copiedHandleMap: {}
     }));
@@ -194,6 +194,7 @@ test("accepts only canonical unsigned 64-bit uppercase hex handles", async () =>
   }
 
   for (const handle of [
+    "0",
     "0000000000000001",
     "10000000000000000",
     "abcdef",
@@ -216,6 +217,25 @@ test("accepts only canonical unsigned 64-bit uppercase hex handles", async () =>
     );
     assert.equal(runner.calls.length, 0);
   }
+});
+
+test("rejects a zero copy source handle before process launch", async () => {
+  const runner = new RecordingRunner(successResponse());
+  const client = createAcadSharpCadIoClient({
+    projectPath: "C:\\repo\\CadIo.Host.csproj",
+    processRunner: runner
+  });
+
+  await assert.rejects(
+    () => client.writeCopy(writeRequest([transaction([{
+      kind: "entity.copy",
+      sourceHandles: ["0"],
+      temporaryIds: [temporaryId],
+      delta: [0, 0, 0]
+    }])])),
+    (error: unknown) => cadIoCode(error) === "CAD_REQUEST_INVALID"
+  );
+  assert.equal(runner.calls.length, 0);
 });
 
 test("accepts only canonical bounded temporary copy indexes", async () => {
@@ -351,6 +371,9 @@ test("rejects strict response violations duplicate keys and invalid copy mapping
     `{"status":"ok","format":"dxf","format":"dxf","version":"AC1032","entityCount":5,"copiedHandleMap":{},"warnings":[]}`,
     successResponse({
       copiedHandleMap: { [temporaryId]: "abc" }
+    }),
+    successResponse({
+      copiedHandleMap: { [temporaryId]: "0" }
     }),
     successResponse({
       copiedHandleMap: { [temporaryId]: "ABC", other: "ABC" }
