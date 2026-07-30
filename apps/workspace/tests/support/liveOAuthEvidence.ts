@@ -1,3 +1,5 @@
+import { isProviderSessionId as isContractProviderSessionId } from "@dwg/contracts";
+
 export interface LiveOAuthEvidenceInput {
   provider: "codex" | "claude";
   authenticated: boolean;
@@ -11,6 +13,78 @@ export interface SafeLiveOAuthSummary {
   provider: "Codex" | "Claude";
   authenticated: boolean;
   resumed: boolean;
+}
+
+export const LIVE_OAUTH_SENSITIVE_SELECTORS = [
+  ".conversation",
+  ".composer",
+  ".agent-context",
+  ".session-list"
+] as const;
+
+export const LIVE_OAUTH_PROMPTS = {
+  initial:
+    "List one TEXT or MTEXT object from the indexed drawing and cite its [handle:...].",
+  resume:
+    "Continue the same session and repeat the first cited CAD handle."
+} as const;
+
+export function createLiveOAuthFailureSafetyInitScript(): string {
+  const selectors = JSON.stringify(LIVE_OAUTH_SENSITIVE_SELECTORS);
+  return `(() => {
+    const selectors = ${selectors};
+    const hideSensitiveRegions = () => {
+      for (const selector of selectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (element.getAttribute("aria-hidden") !== "true") {
+            element.setAttribute("aria-hidden", "true");
+          }
+        }
+      }
+    };
+    hideSensitiveRegions();
+    new MutationObserver(hideSensitiveRegions).observe(document, {
+      attributes: true,
+      attributeFilter: ["aria-hidden"],
+      childList: true,
+      subtree: true
+    });
+  })();`;
+}
+
+export interface LiveOAuthInitScriptPage {
+  addInitScript(options: { content: string }): Promise<unknown>;
+}
+
+export async function installLiveOAuthFailureSafety(
+  page: LiveOAuthInitScriptPage
+): Promise<void> {
+  await page.addInitScript({
+    content: createLiveOAuthFailureSafetyInitScript()
+  });
+}
+
+export function hasCadHandleEvidence(value: unknown): boolean {
+  return typeof value === "string" && /\[handle:[0-9A-F]+\]/i.test(value);
+}
+
+export function isProviderSessionId(value: unknown): value is string {
+  return isContractProviderSessionId(value);
+}
+
+export function isSameProviderSession(
+  firstSessionId: unknown,
+  resumedSessionId: unknown
+): boolean {
+  return (
+    isProviderSessionId(firstSessionId) &&
+    isProviderSessionId(resumedSessionId) &&
+    resumedSessionId === firstSessionId
+  );
+}
+
+export function hasNoConsoleErrors(errorCount: number): boolean {
+  return errorCount === 0;
 }
 
 export function createSafeLiveOAuthSummary(

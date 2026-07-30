@@ -1,6 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   createSafeLiveOAuthSummary,
+  hasCadHandleEvidence,
+  hasNoConsoleErrors,
+  installLiveOAuthFailureSafety,
+  isProviderSessionId,
+  isSameProviderSession,
+  LIVE_OAUTH_PROMPTS,
+  LIVE_OAUTH_SENSITIVE_SELECTORS,
   renderSafeLiveOAuthEvidence
 } from "../support/liveOAuthEvidence.ts";
 import { oauthArtifactPath } from "../support/repositoryOutputPaths.ts";
@@ -28,11 +35,13 @@ for (const provider of selectedProviders) {
     page,
     request
   }) => {
+    await installLiveOAuthFailureSafety(page);
+
     const healthResponse = await request.get("/api/health");
-    expect(healthResponse.ok(), await healthResponse.text()).toBe(true);
+    expect(healthResponse.ok(), "Gateway health check failed").toBe(true);
 
     const drawingResponse = await request.get("/api/drawing");
-    expect(drawingResponse.ok(), await drawingResponse.text()).toBe(true);
+    expect(drawingResponse.ok(), "Drawing request failed").toBe(true);
 
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
@@ -41,27 +50,32 @@ for (const provider of selectedProviders) {
     page.on("pageerror", (error) => consoleErrors.push(error.message));
 
     await page.goto("/");
-    const providerButton = page.getByRole("button", {
-      name: provider.buttonName,
-      exact: true
-    });
+    await expectSensitiveRegionsToBeHidden(page);
+    const providerButton = page
+      .locator(".provider-switch button")
+      .filter({ hasText: provider.buttonName });
     await expect(providerButton).toBeEnabled({ timeout: 30_000 });
     await providerButton.click();
 
-    const firstPrompt =
-      "List one TEXT or MTEXT object from the indexed drawing and cite its [handle:...].";
+    const firstPrompt = LIVE_OAUTH_PROMPTS.initial;
     const first = await submitAndReadSession(page, firstPrompt);
 
     await page.reload();
+    await expectSensitiveRegionsToBeHidden(page);
     await expect(providerButton).toBeEnabled({ timeout: 30_000 });
     await providerButton.click();
 
-    const resumedPrompt =
-      "Continue the same session and repeat the first cited CAD handle.";
+    const resumedPrompt = LIVE_OAUTH_PROMPTS.resume;
     const resumed = await submitAndReadSession(page, resumedPrompt);
 
-    expect(resumed.sessionId).toBe(first.sessionId);
-    expect(consoleErrors).toEqual([]);
+    expect(
+      isSameProviderSession(first.sessionId, resumed.sessionId),
+      "Provider session did not resume"
+    ).toBe(true);
+    expect(
+      hasNoConsoleErrors(consoleErrors.length),
+      "Browser emitted console errors"
+    ).toBe(true);
 
     const safeSummary = createSafeLiveOAuthSummary({
       provider: provider.id,
@@ -87,20 +101,45 @@ for (const provider of selectedProviders) {
 }
 
 async function submitAndReadSession(page: Page, message: string) {
-  const composer = page.getByRole("textbox", { name: "AI 질문" });
+  const composer = page.locator(".composer input").first();
   await composer.fill(message);
-  await page.getByRole("button", { name: "전송" }).click();
-
-  const response = page.getByTestId("live-response");
-  await expect(response).toContainText(/\[handle:[0-9A-F]+\]/i, {
-    timeout: 240_000
+  await page.locator(".composer").evaluate((form: HTMLFormElement) => {
+    form.requestSubmit();
   });
+
+  const response = page.locator('[data-testid="live-response"]');
+  await expect.poll(
+    async () => hasCadHandleEvidence(await response.textContent()),
+    {
+      message: "Provider response has no CAD handle evidence",
+      timeout: 240_000
+    }
+  ).toBe(true);
   const sessionId = await response.locator("code").textContent();
-  expect(sessionId).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  );
+  expect(
+    isProviderSessionId(sessionId),
+    "Provider returned an invalid session identifier"
+  ).toBe(true);
   return {
     sessionId: sessionId!,
     response: (await response.textContent()) ?? ""
   };
+}
+
+async function expectSensitiveRegionsToBeHidden(page: Page) {
+  const selector = LIVE_OAUTH_SENSITIVE_SELECTORS.join(", ");
+  await expect.poll(
+    () => page.locator(selector).evaluateAll(
+      (elements, expectedCount) =>
+        elements.length === expectedCount &&
+        elements.every(
+          (element) => element.getAttribute("aria-hidden") === "true"
+        ),
+      LIVE_OAUTH_SENSITIVE_SELECTORS.length
+    ),
+    {
+      message: "Sensitive live OAuth regions were not hidden from ARIA",
+      timeout: 30_000
+    }
+  ).toBe(true);
 }
