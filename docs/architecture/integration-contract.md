@@ -33,6 +33,13 @@ Compatibility rule:
 - removing/renaming fields or changing validator behavior requires a version
   change and coordinated consumer updates.
 
+`CadScheduleQuery` requires `drawingId`, `yTolerance`, and the bounded
+`matches` returned by the preceding `query.text` capability. The schedule
+capability revalidates those matches against the current drawing index and
+extracts rows only from grounded matching handles. The former two-field query
+shape is rejected; the built-in workflow and capability consumer are updated
+together in this change.
+
 ### 2. Loopback HTTP gateway
 
 Use loopback `/api` when the other repository is a UI, desktop shell, or
