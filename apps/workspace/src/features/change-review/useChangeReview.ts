@@ -47,6 +47,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
   const activeController = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const busy = useRef(false);
+  const mutationInFlight = useRef(false);
   const batchRef = useRef<CadEditBatch | null>(null);
 
   const begin = useCallback(() => {
@@ -63,6 +64,19 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
     busy.current = false;
     return true;
   }, []);
+
+  const beginMutation = useCallback(() => {
+    mutationInFlight.current = true;
+    return begin();
+  }, [begin]);
+
+  const completeMutation = useCallback((operation: { controller: AbortController; generation: number }) => {
+    if (!complete(operation)) return false;
+    mutationInFlight.current = false;
+    return true;
+  }, [complete]);
+
+  const isMutationInFlight = useCallback(() => mutationInFlight.current, []);
 
   const preview = useCallback(async (batch: CadEditBatch) => {
     batchRef.current = batch;
@@ -92,6 +106,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
     generation.current += 1;
     activeController.current?.abort();
     activeController.current = null;
+    mutationInFlight.current = false;
   }, []);
 
   const approve = useCallback(async () => {
@@ -100,7 +115,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
       !state.preview ||
       (state.phase !== "ready" && state.retryAction !== "apply")
     ) return;
-    const operation = begin();
+    const operation = beginMutation();
     setState((current) => ({ ...current, phase: "applying", error: null, retryAction: null }));
     try {
       const response = await applyEdit(
@@ -111,10 +126,10 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
         state.preview.changeCount,
         operation.controller.signal
       );
-      if (!complete(operation)) return;
+      if (!completeMutation(operation)) return;
       setState((current) => ({ ...current, phase: "applied", revision: response.revision, error: null, retryAction: null }));
     } catch (reason) {
-      if (operation.controller.signal.aborted || !complete(operation)) return;
+      if (!completeMutation(operation) || operation.controller.signal.aborted) return;
       const stale = (
         reason instanceof EditClientError &&
         reason.code === "EDIT_PREVIEW_STALE" &&
@@ -130,7 +145,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
         retryAction: stale ? "preview" : "apply"
       }));
     }
-  }, [begin, complete, state.phase, state.preview]);
+  }, [beginMutation, completeMutation, state.phase, state.preview]);
 
   const reject = useCallback(() => {
     if (busy.current || state.phase !== "ready") return;
@@ -139,7 +154,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
 
   const transition = useCallback(async (kind: "undo" | "redo") => {
     if (busy.current || !state.preview || state.revision === null) return;
-    const operation = begin();
+    const operation = beginMutation();
     setState((current) => ({ ...current, phase: kind === "undo" ? "undoing" : "redoing", error: null, retryAction: null }));
     try {
       const response = await (kind === "undo"
@@ -157,7 +172,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
           state.preview.changeCount,
           operation.controller.signal
         ));
-      if (!complete(operation)) return;
+      if (!completeMutation(operation)) return;
       setState((current) => ({
         ...current,
         phase: kind === "undo" ? "undone" : "redone",
@@ -166,7 +181,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
         retryAction: null
       }));
     } catch (reason) {
-      if (operation.controller.signal.aborted || !complete(operation)) return;
+      if (!completeMutation(operation) || operation.controller.signal.aborted) return;
       setState((current) => ({
         ...current,
         phase: "error",
@@ -174,7 +189,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
         retryAction: kind
       }));
     }
-  }, [begin, complete, state.preview, state.revision]);
+  }, [beginMutation, completeMutation, state.preview, state.revision]);
 
   const rePreview = useCallback(() => {
     if (!batchRef.current) return;
@@ -198,6 +213,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
     ...state,
     busy: ["previewing", "applying", "undoing", "redoing"].includes(state.phase),
     mutationBusy: ["applying", "undoing", "redoing"].includes(state.phase),
+    isMutationInFlight,
     approve,
     reject,
     retry,

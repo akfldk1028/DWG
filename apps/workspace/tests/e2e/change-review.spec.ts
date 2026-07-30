@@ -103,11 +103,12 @@ test("reviews bounded typed changes, rejects without applying, and re-previews s
   ]);
 });
 
-test("blocks new proposals without aborting a delayed committed mutation", async ({ page }) => {
+test("blocks an immediate integration proposal without aborting a delayed committed mutation", async ({ page }) => {
   let previewCalls = 0;
   let releaseApply!: () => void;
   const applyReleased = new Promise<void>((resolve) => { releaseApply = resolve; });
   let batch: CadEditBatch | null = null;
+  let reviewedBatch: CadEditBatch | null = null;
   await mockInspection(page);
   await page.route("**/api/edit/preview", (route) => {
     previewCalls += 1;
@@ -118,23 +119,39 @@ test("blocks new proposals without aborting a delayed committed mutation", async
     await applyReleased;
     return route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(applyResponse(1, batch!))
+      body: JSON.stringify(applyResponse(1, reviewedBatch!))
     });
   });
+  await page.route("**/api/edit/undo", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(applyResponse(2, reviewedBatch!))
+  }));
   await page.goto("/");
   await selectGroundedEntity(page);
   await page.getByRole("tab", { name: "Changes" }).click();
   await page.getByLabel("Move X").fill("4");
   await page.getByRole("button", { name: "Preview move" }).click();
   await expect(page.getByRole("status")).toContainText("Ready for approval");
+  reviewedBatch = batch;
 
+  await page.evaluate((proposal) => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const response = originalFetch(input, init);
+      if (String(input).includes("/api/edit/apply")) {
+        window.dispatchEvent(new CustomEvent("dwg:cad-edit-proposal/v1", { detail: proposal }));
+      }
+      return response;
+    };
+  }, reviewedBatch);
   await page.getByRole("button", { name: "Approve changes" }).click();
-  await expect(page.getByRole("button", { name: "Preview move" })).toBeDisabled();
-  await publishProposal(page, batch!);
   await page.waitForTimeout(100);
   expect(previewCalls).toBe(1);
   releaseApply();
   await expect(page.getByRole("status")).toContainText("Applied at revision 1");
+  await expect(page.getByRole("button", { name: "Undo changes" })).toBeEnabled();
+  await page.getByRole("button", { name: "Undo changes" }).click();
+  await expect(page.getByRole("status")).toContainText("Undone at revision 2");
 });
 
 test("retries an initial preview failure from the retained product proposal", async ({ page }) => {
