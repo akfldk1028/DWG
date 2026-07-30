@@ -276,6 +276,85 @@ test("rejects sparse report arrays and non-index enumerable properties", async (
   );
 });
 
+test("rejects array prototype overrides before inherited method access", async () => {
+  let getterCalls = 0;
+  const prototype = Object.create(Array.prototype) as unknown[];
+  Object.defineProperty(prototype, "map", {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      return Array.prototype.map;
+    }
+  });
+  const unsafe = input();
+  Object.setPrototypeOf(unsafe.findings!.warnings, prototype);
+
+  await assert.rejects(
+    exportCadReport(unsafe, "json"),
+    /EXPORT_REPORT_INPUT_PROTOTYPE/u
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test("rejects proxy array prototypes without invoking proxy traps", async () => {
+  let trapCalls = 0;
+  const prototype = new Proxy(Array.prototype, {
+    get() {
+      trapCalls += 1;
+      return undefined;
+    },
+    getOwnPropertyDescriptor() {
+      trapCalls += 1;
+      return undefined;
+    },
+    getPrototypeOf() {
+      trapCalls += 1;
+      return Array.prototype;
+    },
+    ownKeys() {
+      trapCalls += 1;
+      return [];
+    }
+  });
+  const unsafe = input();
+  Object.setPrototypeOf(unsafe.findings!.warnings, prototype);
+
+  await assert.rejects(
+    exportCadReport(unsafe, "json"),
+    /EXPORT_REPORT_INPUT_PROTOTYPE/u
+  );
+  assert.equal(trapCalls, 0);
+});
+
+test("rejects null and custom array prototypes", async () => {
+  for (const prototype of [null, Object.create(Array.prototype)]) {
+    const unsafe = input();
+    Object.setPrototypeOf(unsafe.findings!.warnings, prototype);
+    await assert.rejects(
+      exportCadReport(unsafe, "json"),
+      /EXPORT_REPORT_INPUT_PROTOTYPE/u
+    );
+  }
+});
+
+test("rejects own array method overrides as enumerable properties without invoking them", async () => {
+  let methodCalls = 0;
+  for (const method of ["map", "sort"] as const) {
+    const unsafe = input();
+    Object.assign(unsafe.findings!.warnings, {
+      [method]() {
+        methodCalls += 1;
+        return [];
+      }
+    });
+    await assert.rejects(
+      exportCadReport(unsafe, "json"),
+      /EXPORT_REPORT_INPUT_ARRAY_PROPERTY/u
+    );
+  }
+  assert.equal(methodCalls, 0);
+});
+
 test("rejects object and array accessors without invoking getters", async () => {
   let getterCalls = 0;
   const objectAccessor = input() as CadReportInput & { extra?: unknown };

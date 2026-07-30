@@ -17,11 +17,14 @@ cycles while permitting shared data aliases, counted once per occurrence. Every
 serializer uses an exact UTF-8 byte-accounting writer. SVG/PDF render only known
 line geometry; all other geometry is explicitly reported as unsupported.
 
-The preflight accepts only dense arrays with index data properties and plain
-objects with enumerable own data properties. Array length is capped before index
-inspection; object fields are counted incrementally with `for...in`. Proxies are
-rejected through Node's proxy detector before any user trap, and non-enumerable or
-symbol metadata is outside the serialized input contract and is never inspected.
+The preflight accepts only dense arrays with index data properties and the exact
+standard `Array.prototype`, plus plain objects with enumerable own data
+properties. Array prototypes and lengths are validated before index or property
+inspection; object fields are counted incrementally with `for...in`. Report
+serialization uses indexed array traversal or captured intrinsics instead of
+caller-overridable array methods. Proxies are rejected through Node's proxy
+detector before any user trap, and non-enumerable or symbol metadata is outside
+the serialized input contract and is never inspected.
 
 Run focused tests with:
 

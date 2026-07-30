@@ -14,7 +14,8 @@ export function createPdfReport(input: CadReportInput): string {
   ];
   const contentWriter = new BoundedTextWriter();
   contentWriter.append("BT\n/F1 9 Tf\n48 792 Td");
-  for (const [index, line] of textLines.entries()) {
+  for (let index = 0; index < textLines.length; index += 1) {
+    const line = textLines[index]!;
     if (index > 0) contentWriter.append("\n0 -12 Td");
     contentWriter.append(`\n(${escapePdfText(line)}) Tj`);
   }
@@ -29,17 +30,19 @@ export function createPdfReport(input: CadReportInput): string {
     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
     "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>"
   ];
-  simpleObjects.forEach((object, index) => {
-    offsets.push(writer.byteLength);
+  for (let index = 0; index < simpleObjects.length; index += 1) {
+    const object = simpleObjects[index]!;
+    offsets[offsets.length] = writer.byteLength;
     writer.append(`${index + 1} 0 obj\n${object}\nendobj\n`);
-  });
-  offsets.push(writer.byteLength);
+  }
+  offsets[offsets.length] = writer.byteLength;
   writer.append(`5 0 obj\n<< /Length ${Buffer.byteLength(content, "utf8")} >>\nstream\n`);
   writer.append(content);
   writer.append("\nendstream\nendobj\n");
   const xrefOffset = writer.byteLength;
   writer.append("xref\n0 6\n0000000000 65535 f \n");
-  for (const offset of offsets.slice(1)) {
+  for (let index = 1; index < offsets.length; index += 1) {
+    const offset = offsets[index]!;
     writer.append(`${offset.toString().padStart(10, "0")} 00000 n \n`);
   }
   writer.append(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
@@ -47,13 +50,16 @@ export function createPdfReport(input: CadReportInput): string {
 }
 
 function unsupportedLines(input: CadReportInput): string[] {
-  return [...input.document.index.entities]
-    .filter((entity) => entity.geometry.kind !== "line")
-    .map((entity) => {
-      const geometry = entity.geometry;
-      const reason = geometry.kind === "unavailable" || geometry.kind === "bbox" ? geometry.reason : geometry.kind;
-      return `Unsupported geometry: ${reason} (${entity.id})`;
-    });
+  const lines: string[] = [];
+  const entities = input.document.index.entities;
+  for (let index = 0; index < entities.length; index += 1) {
+    const entity = entities[index]!;
+    if (entity.geometry.kind === "line") continue;
+    const geometry = entity.geometry;
+    const reason = geometry.kind === "unavailable" || geometry.kind === "bbox" ? geometry.reason : geometry.kind;
+    lines[lines.length] = `Unsupported geometry: ${reason} (${entity.id})`;
+  }
+  return lines;
 }
 
 function escapePdfText(value: string): string {

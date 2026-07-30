@@ -5,28 +5,39 @@ import { BoundedTextWriter } from "./textWriter.js";
 export function createCsvReport(input: CadReportInput): string {
   const normalized = canonicalReport(input) as unknown as CadReportInput;
   const rows: string[][] = [["section", "id", "type", "layer", "text", "detail"]];
-  for (const entity of normalized.document.index.entities) {
-    rows.push(["entity", entity.id, entity.type, entity.layer, entity.text ?? "", geometryDetail(entity.geometry)]);
+  const entities = normalized.document.index.entities;
+  for (let index = 0; index < entities.length; index += 1) {
+    const entity = entities[index]!;
+    rows[rows.length] = ["entity", entity.id, entity.type, entity.layer, entity.text ?? "", geometryDetail(entity.geometry)];
   }
-  for (const finding of normalized.findings?.findings ?? []) {
-    rows.push(["finding", finding.id, finding.type, finding.layer, finding.text ?? "", finding.reason]);
+  const findings = normalized.findings?.findings ?? [];
+  for (let index = 0; index < findings.length; index += 1) {
+    const finding = findings[index]!;
+    rows[rows.length] = ["finding", finding.id, finding.type, finding.layer, finding.text ?? "", finding.reason];
   }
-  for (const warning of normalized.findings?.warnings ?? []) rows.push(["warning", "", "", "", warning, ""]);
-  for (const transactionId of normalized.changeSet?.transactionIds ?? []) {
-    rows.push(["transaction", transactionId, "", "", "", ""]);
+  const warnings = normalized.findings?.warnings ?? [];
+  for (let index = 0; index < warnings.length; index += 1) {
+    rows[rows.length] = ["warning", "", "", "", warnings[index]!, ""];
   }
-  for (const change of normalized.changeSet?.changes ?? []) {
-    rows.push(["change", change.commandId, change.kind, "", "", change.targetId]);
+  const transactionIds = normalized.changeSet?.transactionIds ?? [];
+  for (let index = 0; index < transactionIds.length; index += 1) {
+    rows[rows.length] = ["transaction", transactionIds[index]!, "", "", "", ""];
+  }
+  const changes = normalized.changeSet?.changes ?? [];
+  for (let index = 0; index < changes.length; index += 1) {
+    const change = changes[index]!;
+    rows[rows.length] = ["change", change.commandId, change.kind, "", "", change.targetId];
   }
   const writer = new BoundedTextWriter();
   writer.append("\uFEFF");
-  rows.forEach((row, rowIndex) => {
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex]!;
     if (rowIndex > 0) writer.append("\r\n");
-    row.forEach((cell, cellIndex) => {
+    for (let cellIndex = 0; cellIndex < row.length; cellIndex += 1) {
       if (cellIndex > 0) writer.append(",");
-      writer.append(csvCell(cell));
-    });
-  });
+      writer.append(csvCell(row[cellIndex]!));
+    }
+  }
   writer.append("\r\n");
   return writer.finish();
 }

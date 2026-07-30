@@ -125,18 +125,29 @@ function sha256(bytes: Uint8Array): string {
 
 function canonicalize(value: unknown, path: readonly string[]): unknown {
   if (Array.isArray(value)) {
-    const items = value.map((item) => canonicalize(item, [...path, "[]"]));
-    const collection = path.at(-1);
-    return collection !== undefined && unorderedCollections.has(collection)
-      ? items.sort((left, right) => compareText(collectionKey(collection, left), collectionKey(collection, right)))
-      : items;
+    assertStandardArrayPrototype(value);
+    const items: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+      items[items.length] = canonicalize(value[index], [...path, "[]"]);
+    }
+    const collection = path.length > 0 ? path[path.length - 1] : undefined;
+    if (collection !== undefined && unorderedCollections.has(collection)) {
+      arraySort(
+        items,
+        (left, right) => compareText(collectionKey(collection, left), collectionKey(collection, right))
+      );
+    }
+    return items;
   }
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => compareText(left, right))
-      .map(([key, item]) => [key, canonicalize(item, [...path, key])])
-  );
+  const entries = Object.entries(value as Record<string, unknown>);
+  arraySort(entries, ([left], [right]) => compareText(left, right));
+  const resultEntries: Array<[string, unknown]> = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const [key, item] = entries[index]!;
+    resultEntries[resultEntries.length] = [key, canonicalize(item, [...path, key])];
+  }
+  return Object.fromEntries(resultEntries);
 }
 
 function collectionKey(collection: string, value: unknown): string {
@@ -144,9 +155,13 @@ function collectionKey(collection: string, value: unknown): string {
     ? value as Record<string, unknown>
     : null;
   const fields = collectionSortFields[collection] ?? [];
-  const explicit = object === null
-    ? scalarKey(value)
-    : fields.map((field) => scalarKey(object[field])).join("\u0000");
+  let explicit = object === null ? scalarKey(value) : "";
+  if (object !== null) {
+    for (let index = 0; index < fields.length; index += 1) {
+      if (index > 0) explicit += "\u0000";
+      explicit += scalarKey(object[fields[index]!]);
+    }
+  }
   return `${explicit}\u0000${stableSortKey(value)}`;
 }
 
@@ -173,20 +188,23 @@ function writeStableJson(writer: BoundedTextWriter, value: unknown): void {
   } else if (typeof value === "boolean") {
     writer.append(value ? "true" : "false");
   } else if (Array.isArray(value)) {
+    assertStandardArrayPrototype(value);
     writer.append("[");
-    value.forEach((item, index) => {
+    for (let index = 0; index < value.length; index += 1) {
       if (index > 0) writer.append(",");
-      writeStableJson(writer, item);
-    });
+      writeStableJson(writer, value[index]);
+    }
     writer.append("]");
   } else if (value && typeof value === "object") {
     writer.append("{");
-    Object.entries(value as Record<string, unknown>).forEach(([key, item], index) => {
+    const entries = Object.entries(value as Record<string, unknown>);
+    for (let index = 0; index < entries.length; index += 1) {
+      const [key, item] = entries[index]!;
       if (index > 0) writer.append(",");
       writeJsonString(writer, key);
       writer.append(":");
       writeStableJson(writer, item);
-    });
+    }
     writer.append("}");
   } else {
     writer.append("null");
@@ -224,7 +242,8 @@ function preflightReportInput(input: CadReportInput): void {
   let estimatedBytes = 0;
 
   while (stack.length > 0) {
-    const current = stack.pop()!;
+    const current = stack[stack.length - 1]!;
+    stack.length -= 1;
     if (current.kind === "exit") {
       active.delete(current.value);
       continue;
@@ -242,10 +261,12 @@ function preflightReportInput(input: CadReportInput): void {
       estimatedBytes += bytes;
     } else if (value && typeof value === "object") {
       if (nodeTypes.isProxy(value)) throw new Error("EXPORT_REPORT_INPUT_PROXY");
+      const isArray = Array.isArray(value);
+      if (isArray) assertStandardArrayPrototype(value);
       if (active.has(value)) throw new Error("EXPORT_REPORT_INPUT_CYCLE");
       active.add(value);
-      stack.push({ kind: "exit", value });
-      if (Array.isArray(value)) {
+      stack[stack.length] = { kind: "exit", value };
+      if (isArray) {
         if (!Number.isSafeInteger(value.length) || value.length > MAX_REPORT_INPUT_COLLECTION_ITEMS) {
           throw new Error("EXPORT_REPORT_INPUT_COLLECTION_LIMIT");
         }
@@ -261,7 +282,11 @@ function preflightReportInput(input: CadReportInput): void {
           if (!("value" in descriptor)) throw new Error("EXPORT_REPORT_INPUT_ACCESSOR");
           if (!descriptor.enumerable) throw new Error("EXPORT_REPORT_INPUT_ARRAY_PROPERTY");
           estimatedBytes += Buffer.byteLength(key, "utf8");
-          stack.push({ kind: "enter", value: descriptor.value, depth: current.depth + 1 });
+          stack[stack.length] = {
+            kind: "enter",
+            value: descriptor.value,
+            depth: current.depth + 1
+          };
         }
       } else {
         const prototype = Object.getPrototypeOf(value);
@@ -283,7 +308,11 @@ function preflightReportInput(input: CadReportInput): void {
           const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
           if (!("value" in descriptor)) throw new Error("EXPORT_REPORT_INPUT_ACCESSOR");
           estimatedBytes += Buffer.byteLength(key, "utf8");
-          stack.push({ kind: "enter", value: descriptor.value, depth: current.depth + 1 });
+          stack[stack.length] = {
+            kind: "enter",
+            value: descriptor.value,
+            depth: current.depth + 1
+          };
         }
       }
     } else {
@@ -296,11 +325,18 @@ function preflightReportInput(input: CadReportInput): void {
 }
 
 function rejectArrayProperties(value: unknown[]): void {
-  for (const key in value) {
-    if (!Object.hasOwn(value, key)) continue;
+  const keys = Object.keys(value);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]!;
     if (!isArrayIndexKey(key, value.length)) {
       throw new Error("EXPORT_REPORT_INPUT_ARRAY_PROPERTY");
     }
+  }
+}
+
+function assertStandardArrayPrototype(value: unknown[]): void {
+  if (Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new Error("EXPORT_REPORT_INPUT_PROTOTYPE");
   }
 }
 
@@ -351,6 +387,11 @@ const collectionSortFields: Record<string, readonly string[]> = {
   issues: ["entityId"],
   evidence: ["id", "handle", "type", "layer"]
 };
+
+const arraySort = Function.prototype.call.bind(Array.prototype.sort) as <T>(
+  value: T[],
+  compare?: (left: T, right: T) => number
+) => T[];
 
 export function compareText(left: string, right: string): number {
   return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));

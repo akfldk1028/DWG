@@ -15,11 +15,16 @@ export class BoundedTextWriter {
     if (this.#byteLength + nextBytes > MAX_REPORT_BYTES) {
       throw new Error("EXPORT_REPORT_BYTE_LIMIT");
     }
-    this.#chunks.push(value);
+    this.#chunks[this.#chunks.length] = value;
     this.#byteLength += nextBytes;
   }
 
   finish(): string {
-    return this.#chunks.join("");
+    return arrayJoin(this.#chunks, "");
   }
 }
+
+const arrayJoin = Function.prototype.call.bind(Array.prototype.join) as (
+  value: readonly string[],
+  separator?: string
+) => string;

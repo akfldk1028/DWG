@@ -13,7 +13,9 @@ export function createSvgReport(input: CadReportInput): string {
   writeXmlEscaped(writer, normalized.document.documentId);
   writer.append(` revision ${normalized.document.revision}</text>`);
   let textY = 48;
-  for (const entity of normalized.document.index.entities) {
+  const entities = normalized.document.index.entities;
+  for (let index = 0; index < entities.length; index += 1) {
+    const entity = entities[index]!;
     if (entity.geometry.kind === "line") {
       writer.append(`\n<line x1="${entity.geometry.start[0]}" y1="${entity.geometry.start[1]}" x2="${entity.geometry.end[0]}" y2="${entity.geometry.end[1]}" stroke="black"/>`);
       continue;
