@@ -112,9 +112,6 @@ export function createCadEditHistory(
       throw new CadEditError("EDIT_REVISION_CONFLICT", "Edit preview does not advance the document revision exactly once.");
     }
 
-    for (const transaction of redoStack) transaction.status = "superseded";
-    redoStack.length = 0;
-
     const committed: InternalCommittedTransaction = {
       status: "applied",
       batch: structuredClone(stored.batch),
@@ -123,42 +120,56 @@ export function createCadEditHistory(
       resolvedCommands: structuredClone(stored.preview.resolvedCommands),
       changes: structuredClone(stored.preview.changes)
     };
-    transactions.set(committed.batch.transactionId, committed);
-    active.push(committed);
-    appendVisibleEntry({
+    const visibleEntry = structuredClone({
       transactionId: committed.batch.transactionId,
       batch: committed.batch,
       beforeRevision: before.revision,
       afterRevision: after.revision,
       changeCount: committed.changes.length
-    });
-    current = cloneDocumentSnapshot(after);
+    } satisfies CadHistoryEntry);
+    const nextCurrent = cloneDocumentSnapshot(after);
+    const result = cloneDocumentSnapshot(nextCurrent);
+
+    for (const transaction of redoStack) transaction.status = "superseded";
+    redoStack.length = 0;
+    transactions.set(committed.batch.transactionId, committed);
+    active.push(committed);
+    appendVisibleEntry(visibleEntry);
+    current = nextCurrent;
     previews.delete(candidate);
-    return getCurrent();
+    return result;
   }
 
   function undo(expectedRevision: number): CadDocumentSnapshot {
     requireCurrentRevision(expectedRevision);
-    const transaction = active.pop();
+    const transaction = active.at(-1);
     if (!transaction) {
       throw new CadEditError("EDIT_UNDO_UNAVAILABLE", "There is no applied edit transaction to undo.");
     }
+    const restored = restoreWithNextRevision(transaction.before);
+    const result = cloneDocumentSnapshot(restored);
+
+    active.pop();
     transaction.status = "undone";
     redoStack.push(transaction);
-    current = restoreWithNextRevision(transaction.before);
-    return getCurrent();
+    current = restored;
+    return result;
   }
 
   function redo(expectedRevision: number): CadDocumentSnapshot {
     requireCurrentRevision(expectedRevision);
-    const transaction = redoStack.pop();
+    const transaction = redoStack.at(-1);
     if (!transaction) {
       throw new CadEditError("EDIT_REDO_UNAVAILABLE", "There is no undone edit transaction to redo.");
     }
+    const restored = restoreWithNextRevision(transaction.after);
+    const result = cloneDocumentSnapshot(restored);
+
+    redoStack.pop();
     transaction.status = "applied";
     active.push(transaction);
-    current = restoreWithNextRevision(transaction.after);
-    return getCurrent();
+    current = restored;
+    return result;
   }
 
   function entries(): readonly CadHistoryEntry[] {
@@ -210,7 +221,7 @@ export function createCadEditHistory(
   }
 
   function appendVisibleEntry(entry: CadHistoryEntry): void {
-    visibleEntries.push(structuredClone(entry));
+    visibleEntries.push(entry);
     if (visibleEntries.length > limit) visibleEntries.splice(0, visibleEntries.length - limit);
   }
 

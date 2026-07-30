@@ -84,6 +84,21 @@ function applyText(
   return history.apply(history.preview(batch(current.revision, text, transactionId, commandId)));
 }
 
+function observableHistory(
+  history: ReturnType<typeof createCadEditHistory>,
+  observedTransactionIds: readonly string[]
+) {
+  const current = history.current();
+  return {
+    current,
+    entries: history.entries(),
+    transactions: observedTransactionIds.map((transactionId) =>
+      history.getCommittedTransaction(transactionId)
+    ),
+    saveState: history.getSaveState(current.documentId, current.revision)
+  };
+}
+
 test("preview is repeatable and never mutates the current snapshot", () => {
   const initial = snapshot();
   const history = createCadEditHistory(initial);
@@ -131,6 +146,70 @@ test("undo and redo restore content while assigning monotonic revisions", () => 
     () => history.undo(2),
     (error) => error instanceof CadEditError && error.code === "EDIT_REVISION_CONFLICT"
   );
+});
+
+test("undo revision overflow leaves the complete history unchanged", () => {
+  const history = createCadEditHistory(snapshot(Number.MAX_SAFE_INTEGER - 1));
+  applyText(history, "at revision limit", transactionIds[0], "10000000-0000-4000-8000-000000000001");
+  const before = observableHistory(history, [transactionIds[0]]);
+
+  assert.throws(
+    () => history.undo(Number.MAX_SAFE_INTEGER),
+    (error) => error instanceof CadEditError && error.code === "EDIT_REVISION_LIMIT"
+  );
+
+  assert.deepEqual(observableHistory(history, [transactionIds[0]]), before);
+  assert.throws(
+    () => history.undo(Number.MAX_SAFE_INTEGER),
+    (error) => error instanceof CadEditError && error.code === "EDIT_REVISION_LIMIT"
+  );
+  assert.throws(
+    () => history.redo(Number.MAX_SAFE_INTEGER),
+    (error) => error instanceof CadEditError && error.code === "EDIT_REDO_UNAVAILABLE"
+  );
+  assert.deepEqual(observableHistory(history, [transactionIds[0]]), before);
+});
+
+test("redo revision overflow leaves the complete history unchanged", () => {
+  const history = createCadEditHistory(snapshot(Number.MAX_SAFE_INTEGER - 2));
+  applyText(history, "ready for redo", transactionIds[0], "10000000-0000-4000-8000-000000000001");
+  history.undo(Number.MAX_SAFE_INTEGER - 1);
+  const before = observableHistory(history, [transactionIds[0]]);
+
+  assert.throws(
+    () => history.redo(Number.MAX_SAFE_INTEGER),
+    (error) => error instanceof CadEditError && error.code === "EDIT_REVISION_LIMIT"
+  );
+
+  assert.deepEqual(observableHistory(history, [transactionIds[0]]), before);
+  assert.throws(
+    () => history.redo(Number.MAX_SAFE_INTEGER),
+    (error) => error instanceof CadEditError && error.code === "EDIT_REVISION_LIMIT"
+  );
+  assert.throws(
+    () => history.undo(Number.MAX_SAFE_INTEGER),
+    (error) => error instanceof CadEditError && error.code === "EDIT_UNDO_UNAVAILABLE"
+  );
+  assert.deepEqual(observableHistory(history, [transactionIds[0]]), before);
+});
+
+test("apply preflights duplicate transactions before invalidating redo", () => {
+  const history = createCadEditHistory(snapshot());
+  applyText(history, "first", transactionIds[0], "10000000-0000-4000-8000-000000000001");
+  history.undo(1);
+  const duplicate = history.preview(
+    batch(2, "replacement", transactionIds[0], "10000000-0000-4000-8000-000000000002")
+  );
+  const before = observableHistory(history, [transactionIds[0]]);
+
+  assert.throws(
+    () => history.apply(duplicate),
+    (error) => error instanceof CadEditError && error.code === "EDIT_DUPLICATE_TRANSACTION"
+  );
+  assert.deepEqual(observableHistory(history, [transactionIds[0]]), before);
+
+  const redone = history.redo(2);
+  assert.deepEqual([redone.revision, textOf(redone)], [3, "first"]);
 });
 
 test("a new apply after undo supersedes redo and stale previews cannot be committed", () => {
