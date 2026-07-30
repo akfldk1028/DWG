@@ -6,6 +6,8 @@ export type CadCapabilityName =
   | "query.layers"
   | "query.entities"
   | "query.text"
+  | "query.schedule"
+  | "query.compare"
   | "edit.preview"
   | "edit.apply"
   | "edit.undo"

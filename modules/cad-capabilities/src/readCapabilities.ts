@@ -1,9 +1,12 @@
 import {
   MAX_CAD_SEARCH_QUERY_CHARS,
+  parseCadDrawingComparisonQuery,
+  parseCadScheduleQuery,
   type CadEntityIndex,
   type CadEntityIndexItem,
   type CadEntityMatch
 } from "@dwg/contracts";
+import { compareCadDrawings, extractCadSchedule } from "@dwg/cad-query";
 
 import type {
   CadCapabilityModule,
@@ -17,7 +20,9 @@ const readCapabilityNames = [
   "document.describe",
   "query.layers",
   "query.entities",
-  "query.text"
+  "query.text",
+  "query.schedule",
+  "query.compare"
 ] as const satisfies readonly CadCapabilityName[];
 
 export function createReadCapabilityModule(
@@ -26,6 +31,7 @@ export function createReadCapabilityModule(
   return {
     names: readCapabilityNames,
     async execute(name, input, signal) {
+      requireNotAborted(signal);
       switch (name) {
         case "document.open":
           return openDrawing(input, deps, signal);
@@ -37,6 +43,10 @@ export function createReadCapabilityModule(
           return queryEntities(input, deps);
         case "query.text":
           return findText(input, deps);
+        case "query.schedule":
+          return extractSchedule(input, deps);
+        case "query.compare":
+          return compareDrawings(input, deps);
       }
     }
   };
@@ -143,13 +153,37 @@ function findText(input: unknown, deps: ReadCapabilityDependencies) {
   };
 }
 
+function extractSchedule(input: unknown, deps: ReadCapabilityDependencies) {
+  const request = parseCadScheduleQuery(input);
+  return extractCadSchedule(requireDrawing(request.drawingId, deps), {
+    yTolerance: request.yTolerance
+  });
+}
+
+function compareDrawings(input: unknown, deps: ReadCapabilityDependencies) {
+  const request = parseCadDrawingComparisonQuery(input);
+  return compareCadDrawings(
+    requireDrawing(request.beforeDrawingId, deps),
+    requireDrawing(request.afterDrawingId, deps)
+  );
+}
+
 function requireIndex(input: unknown, deps: ReadCapabilityDependencies): CadEntityIndex {
-  const drawingId = asString(input, "drawingId");
+  return requireDrawing(asString(input, "drawingId"), deps);
+}
+
+function requireDrawing(drawingId: string, deps: ReadCapabilityDependencies): CadEntityIndex {
   const index = deps.get(drawingId);
   if (!index) {
     throw new Error(`Drawing not opened: ${drawingId}`);
   }
   return index;
+}
+
+function requireNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new Error("CAD read operation was cancelled.");
+  }
 }
 
 function toMatch(entity: CadEntityIndexItem, reason: string): CadEntityMatch {

@@ -110,3 +110,68 @@ test("composer rejects duplicate and unknown capability names", async () => {
     /Unknown CAD capability: query\.text/
   );
 });
+
+test("read capability module exposes bounded grounded schedule and comparison queries", async () => {
+  const before: CadEntityIndex = {
+    schemaVersion: "cad-index/v0.1",
+    drawingId: "before",
+    source: { kind: "dxf", displayName: "before.dxf", parser: "fixture" },
+    summary: { entityCount: 1, layerCount: 1, unsupportedCount: 0, modelSpaceCount: 1, paperSpaceCount: 0 },
+    layers: [{ name: "A-TEXT", entityCount: 1, visible: true, frozen: false }],
+    entities: [{
+      id: "h:10", handle: "10", type: "TEXT", layer: "A-TEXT", space: "model", layout: "Model",
+      bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "BEFORE", blockName: null,
+      attributes: {}, geometry: {}, warnings: []
+    }],
+    unsupported: []
+  };
+  const after: CadEntityIndex = {
+    ...before,
+    drawingId: "after",
+    entities: [{ ...before.entities[0]!, text: "AFTER" }]
+  };
+  const capabilities = createReadCapabilityModule({
+    async open() { return before; },
+    get(drawingId) { return drawingId === "before" ? before : drawingId === "after" ? after : null; }
+  });
+
+  assert.deepEqual(await capabilities.execute("query.schedule", {
+    drawingId: "before", yTolerance: 0.5
+  }), {
+    rows: [{
+      sourceHandles: ["10"], cells: ["BEFORE"], layer: "A-TEXT",
+      bbox: { min: [0, 0, 0], max: [1, 1, 0] }
+    }]
+  });
+  assert.deepEqual(await capabilities.execute("query.compare", {
+    beforeDrawingId: "before", afterDrawingId: "after"
+  }), {
+    added: [], removed: [], changed: [{
+      before: {
+        id: "h:10", handle: "10", type: "TEXT", layer: "A-TEXT",
+        bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "BEFORE",
+        reason: "matched drawing evidence", confidence: 1
+      },
+      after: {
+        id: "h:10", handle: "10", type: "TEXT", layer: "A-TEXT",
+        bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "AFTER",
+        reason: "matched drawing evidence", confidence: 1
+      },
+      fields: ["text"]
+    }]
+  });
+});
+
+test("read capability module rejects a pre-aborted grounded query", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const capabilities = createReadCapabilityModule({
+    async open() { throw new Error("not called"); },
+    get() { throw new Error("not called"); }
+  });
+
+  await assert.rejects(
+    () => capabilities.execute("query.schedule", { drawingId: "fixture", yTolerance: 1 }, controller.signal),
+    /CAD read operation was cancelled/
+  );
+});

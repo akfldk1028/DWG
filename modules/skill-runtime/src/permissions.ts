@@ -7,6 +7,8 @@ const CAPABILITY_PERMISSIONS: Readonly<Record<CadCapabilityName, SkillPermission
   "query.layers": "read",
   "query.entities": "read",
   "query.text": "read",
+  "query.schedule": "read",
+  "query.compare": "read",
   "edit.preview": "propose-edit",
   "edit.apply": null,
   "edit.undo": null,

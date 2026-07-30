@@ -3,3 +3,4 @@ export * from "./edit.js";
 export * from "./inspection.js";
 export * from "./provider.js";
 export * from "./skill.js";
+export * from "./query.js";
