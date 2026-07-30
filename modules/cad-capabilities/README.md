@@ -16,15 +16,23 @@ Save As writes a server-UUID temporary sibling, closes the writer, independently
 reopens the temporary drawing, and verifies version, units, hashes, entity
 counts, cumulative changes, copied handles, and unaffected entity evidence.
 Before writer launch, the destination is probed for writable no-replace
-hard-link support. Publication then uses a synchronous composite operation that
-revalidates the temporary file identity and chunked SHA-256 before creating the
-final hard link, validates the linked identity and bytes, and never falls back
-to an overwriting rename. After temporary cleanup, a second synchronous commit
-validation checks source, destination-directory, and final identities and
-hashes; the passed verification is stored immediately afterward without an
-asynchronous yield. Source drawings are never writer destinations or
-overwritten; failed or cancelled temporary and published files are removed or
-quarantined, and incomplete cleanup is reported explicitly.
+hard-link support. The temporary SHA-256 is computed once with bounded
+asynchronous chunks. Publication then uses a synchronous composite operation
+that revalidates `dev`, inode, size, nanosecond modification/change times, and
+link count before creating the final hard link. The linked aliases must resolve
+to the same inode and expected link count; publication never falls back to an
+overwriting rename and performs no synchronous full-file hash. After temporary
+cleanup, a second synchronous commit validation checks source,
+destination-directory, and final metadata identity; the passed verification is
+stored immediately afterward without an asynchronous yield.
+
+The verified inode handle remains open through commit. Failed or cancelled
+temporary and published aliases are removed or quarantined. If destination
+movement makes an original alias unreachable, the open handle is truncated to
+zero and flushed before close, `CAD_SAVE_CLEANUP_FAILED` is returned, and no
+passed verification is retained. This guarantees either disposed aliases or
+neutralized residual bytes with an explicit cleanup failure. Source drawings
+are never writer destinations or overwritten.
 
 This transaction boundary protects against in-process and JavaScript event-loop
 interleavings. It assumes the destination grant names an OS-writable directory
@@ -32,8 +40,10 @@ owned by the current user. A separate OS process with sufficient filesystem
 privileges, including another process running as that user, can still race
 between native filesystem calls. The composite detects mutations observed
 before commit but does not claim an indivisible multi-file filesystem
-transaction. External mutation after a successful return is outside the save
-transaction.
+transaction. Metadata detection assumes the filesystem reports inode, link
+count, `mtime`, and `ctime` changes faithfully and that an unprivileged racing
+process cannot restore `ctime`. External mutation after a successful return is
+outside the save transaction.
 
 `createEditCapabilityComposition` retains at most 20 active previews per
 document. Active previews expire after 10 minutes. Terminal lifecycle evidence

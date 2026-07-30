@@ -81,32 +81,33 @@ export interface CadSaveFileIdentity {
   dev: string;
   ino: string;
   size: string;
+  mtimeNs: string;
+  ctimeNs: string;
+  nlink: string;
   kind: "file" | "directory" | "other";
   symbolicLink: boolean;
 }
 
 export interface CadSaveReadHandle {
-  identity(): Promise<CadSaveFileIdentity>;
-  sha256(): Promise<string>;
-  close(): Promise<void>;
+  identity(): CadSaveFileIdentity;
+  sha256(signal?: AbortSignal): Promise<string>;
+  sanitize(): CadSaveFileIdentity;
+  close(): void;
 }
 
 export interface CadSavePublicationInput {
   temporaryPath: string;
   finalPath: string;
   expectedTemporaryIdentity: CadSaveFileIdentity;
-  expectedSha256: string;
 }
 
 export interface CadSaveCommitValidationInput {
   sourcePath: string;
   expectedSourceIdentity: CadSaveFileIdentity;
-  expectedSourceSha256: string;
   directoryPath: string;
   expectedDirectoryIdentity: CadSaveFileIdentity;
   finalPath: string;
   expectedFinalIdentity: CadSaveFileIdentity;
-  expectedFinalSha256: string;
 }
 
 export interface CadSaveFileSystem {

@@ -4,7 +4,6 @@ import {
   mkdirSync,
   renameSync,
   rmSync,
-  symlinkSync,
   writeFileSync
 } from "node:fs";
 import {
@@ -15,6 +14,7 @@ import {
   realpath,
   rm,
   symlink,
+  truncate,
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -89,6 +89,30 @@ test("destination grants canonicalize a directory junction without retaining ali
 
   assert.equal(consumed.canonicalDirectory, await realpath(destination));
   assert.notEqual(consumed.canonicalDirectory, alias);
+});
+
+test("large sparse output hashing yields to the event loop and stays bounded", async (t) => {
+  const root = await temporaryDirectory(t);
+  const path = join(root, "large-sparse.dxf");
+  await writeFile(path, "");
+  await truncate(path, 128 * 1024 * 1024);
+  const fileSystem = createNodeCadSaveFileSystem();
+  const handle = await fileSystem.openRead(path);
+  let timerFired = false;
+  const startedAt = Date.now();
+  setTimeout(() => {
+    timerFired = true;
+  }, 0);
+
+  const pendingHash = handle.sha256();
+  const synchronousCallMs = Date.now() - startedAt;
+  const hash = await pendingHash;
+  handle.close();
+
+  assert.equal(timerFired, true);
+  assert.ok(synchronousCallMs < 10);
+  assert.match(hash, /^[0-9A-F]{64}$/u);
+  assert.ok(Date.now() - startedAt < 5_000);
 });
 
 test("successful save uses resolver source and active two-transaction lineage then atomically finalizes", async (t) => {
@@ -189,7 +213,7 @@ test("commit validation retracts a replaced final and stores no passed verificat
   assert.equal(harness.coordinator.getVerification(verificationId), null);
 });
 
-test("commit validation detects a renamed and junction-recreated destination after temporary close", async (t) => {
+test("moved destination residue is neutralized and reported as cleanup failure", async (t) => {
   const base = createNodeCadSaveFileSystem();
   let replaced = false;
   let verificationId = "";
@@ -204,7 +228,7 @@ test("commit validation detects a renamed and junction-recreated destination aft
         const directory = dirname(path);
         movedDirectory = `${directory}-moved`;
         renameSync(directory, movedDirectory);
-        symlinkSync(movedDirectory, directory, process.platform === "win32" ? "junction" : "dir");
+        mkdirSync(directory);
       }
     }
   };
@@ -212,17 +236,20 @@ test("commit validation detects a renamed and junction-recreated destination aft
 
   await assert.rejects(
     harness.coordinator.saveCopy(harness.input),
-    hasCode("CAD_SAVE_DESTINATION_INVALID")
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
   );
   assert.equal(await exists(harness.finalPath), false);
-  assert.equal(await exists(join(movedDirectory, "verified-copy.dxf")), false);
+  const movedFinal = join(movedDirectory, "verified-copy.dxf");
+  assert.equal((await readFile(movedFinal)).byteLength, 0);
   assert.equal(harness.coordinator.getVerification(verificationId), null);
+  await rm(movedDirectory, { force: false, recursive: true });
 });
 
 test("commit validation retracts final when source mutates after publication", async (t) => {
   const base = createNodeCadSaveFileSystem();
   let mutated = false;
   let sourcePath = "";
+  let replacement = "";
   let verificationId = "";
   const fileSystem: CadSaveFileSystem = {
     ...base,
@@ -231,12 +258,13 @@ test("commit validation retracts final when source mutates after publication", a
       if (!mutated && path.includes(".click-around.tmp.")) {
         mutated = true;
         verificationId = verificationIdFromTemporaryPath(path);
-        writeFileSync(sourcePath, "post-link source mutation");
+        writeFileSync(sourcePath, replacement);
       }
     }
   };
   const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
   sourcePath = harness.sourcePath;
+  replacement = "X".repeat(Buffer.byteLength(harness.sourceText));
 
   await assert.rejects(
     harness.coordinator.saveCopy(harness.input),

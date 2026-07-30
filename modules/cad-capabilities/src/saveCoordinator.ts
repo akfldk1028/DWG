@@ -2,10 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   fstatSync,
+  fsyncSync,
+  ftruncateSync,
   linkSync,
   lstatSync,
   openSync,
-  readSync,
+  read,
   rmSync
 } from "node:fs";
 import {
@@ -172,11 +174,11 @@ export function createSaveCoordinator(
         );
         throwIfAborted(signal);
         temporaryHandle = await fileSystem.openRead(temporaryPath);
-        const temporaryIdentity = await temporaryHandle.identity();
+        const temporaryIdentity = temporaryHandle.identity();
         if (!sameFileIdentity(temporaryIdentity, temporaryPathIdentity)) {
           throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
         }
-        const outputSha256 = await temporaryHandle.sha256();
+        const outputSha256 = await temporaryHandle.sha256(signal);
         throwIfAborted(signal);
 
         let reopened;
@@ -198,10 +200,6 @@ export function createSaveCoordinator(
           expectedTemporaryIds: temporaryIds(lineage)
         });
 
-        if (await fileSystem.sha256(canonicalSource) !== sourceHashBefore) {
-          throw new CadSaveError("CAD_SAVE_SOURCE_MUTATED");
-        }
-        throwIfAborted(signal);
         await revalidateBeforePublication({
           fileSystem,
           canonicalSource,
@@ -213,7 +211,6 @@ export function createSaveCoordinator(
           temporaryPath,
           temporaryHandle,
           temporaryIdentity,
-          outputSha256,
           signal
         });
         throwIfAborted(signal);
@@ -222,8 +219,7 @@ export function createSaveCoordinator(
           finalIdentity = fileSystem.publishVerifiedNoReplace({
             temporaryPath,
             finalPath,
-            expectedTemporaryIdentity: temporaryIdentity,
-            expectedSha256: outputSha256
+            expectedTemporaryIdentity: temporaryIdentity
           });
         } catch (error) {
           if (error instanceof CadSaveError) throw error;
@@ -232,55 +228,100 @@ export function createSaveCoordinator(
         published = true;
         throwIfAborted(signal);
 
-        try {
-          await temporaryHandle.close();
-          temporaryHandleClosed = true;
-        } catch {
-          throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
-        }
-
         const temporaryCleanup = await cleanupPath(fileSystem, temporaryPath);
-        if (temporaryCleanup === "quarantined") {
+        if (temporaryCleanup.disposition === "quarantined") {
           throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
         }
         throwIfAborted(signal);
+        const committedFileIdentity = temporaryHandle.identity();
+        if (
+          !sameFileObjectAndSize(
+            committedFileIdentity,
+            finalIdentity
+          )
+        ) {
+          throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+        }
         const storedVerification = structuredClone(verification);
         const returnedVerification = structuredClone(verification);
         fileSystem.validateCommit({
           sourcePath: canonicalSource,
           expectedSourceIdentity: sourceIdentity,
-          expectedSourceSha256: sourceHashBefore,
           directoryPath: canonicalDirectory,
           expectedDirectoryIdentity: directoryIdentity,
           finalPath,
-          expectedFinalIdentity: finalIdentity,
-          expectedFinalSha256: outputSha256
+          expectedFinalIdentity: committedFileIdentity
         });
         throwIfAborted(signal);
         verifications.set(verification.id, storedVerification);
+        try {
+          temporaryHandle.close();
+          temporaryHandleClosed = true;
+        } catch {
+          verifications.delete(verification.id);
+          throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
+        }
         return returnedVerification;
       } catch (error) {
+        verifications.delete(saveRequestId);
         let cleanupFailed = false;
-        if (temporaryHandle && !temporaryHandleClosed) {
+        let sanitizedIdentity: CadSaveFileIdentity | null = null;
+        if (published && temporaryHandle && !temporaryHandleClosed) {
           try {
-            await temporaryHandle.close();
-            temporaryHandleClosed = true;
+            sanitizedIdentity = temporaryHandle.sanitize();
           } catch {
             cleanupFailed = true;
           }
         }
         if (published) {
+          let provenQuarantinedAliases = 0n;
           try {
-            await cleanupPath(fileSystem, finalPath);
+            const result = await cleanupPath(fileSystem, finalPath);
+            provenQuarantinedAliases += await provenQuarantineCount(
+              fileSystem,
+              result,
+              sanitizedIdentity
+            );
             published = false;
           } catch {
             cleanupFailed = true;
           }
+          try {
+            const result = await cleanupPath(fileSystem, temporaryPath);
+            provenQuarantinedAliases += await provenQuarantineCount(
+              fileSystem,
+              result,
+              sanitizedIdentity
+            );
+          } catch {
+            cleanupFailed = true;
+          }
+          if (temporaryHandle && !temporaryHandleClosed) {
+            try {
+              if (
+                BigInt(temporaryHandle.identity().nlink)
+                !== provenQuarantinedAliases
+              ) {
+                cleanupFailed = true;
+              }
+            } catch {
+              cleanupFailed = true;
+            }
+          }
+        } else {
+          try {
+            await cleanupPath(fileSystem, temporaryPath);
+          } catch {
+            cleanupFailed = true;
+          }
         }
-        try {
-          await cleanupPath(fileSystem, temporaryPath);
-        } catch {
-          cleanupFailed = true;
+        if (temporaryHandle && !temporaryHandleClosed) {
+          try {
+            temporaryHandle.close();
+            temporaryHandleClosed = true;
+          } catch {
+            cleanupFailed = true;
+          }
         }
         if (cleanupFailed) {
           throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
@@ -308,21 +349,35 @@ export function createNodeCadSaveFileSystem(): CadSaveFileSystem {
       return fileIdentity(await lstat(path, { bigint: true }));
     },
     async openRead(path) {
-      const handle = await open(path, "r");
+      const descriptor = openSync(path, "r+");
+      let closed = false;
+      const assertOpen = (): void => {
+        if (closed) throw new Error("file handle closed");
+      };
       return {
-        async identity() {
-          return fileIdentity(fstatSync(handle.fd, { bigint: true }));
+        identity() {
+          assertOpen();
+          return fileIdentity(fstatSync(descriptor, { bigint: true }));
         },
-        async sha256() {
-          return hashDescriptorSync(handle.fd);
+        async sha256(signal) {
+          assertOpen();
+          return hashDescriptorAsync(descriptor, signal);
         },
-        async close() {
-          await handle.close();
+        sanitize() {
+          assertOpen();
+          ftruncateSync(descriptor, 0);
+          fsyncSync(descriptor);
+          return fileIdentity(fstatSync(descriptor, { bigint: true }));
+        },
+        close() {
+          assertOpen();
+          closeSync(descriptor);
+          closed = true;
         }
       };
     },
     async sha256(path) {
-      return hashPathSync(path);
+      return hashPathAsync(path);
     },
     async exists(path) {
       try {
@@ -402,41 +457,65 @@ function publishVerifiedNoReplace(
   let cleanupFailed = false;
 
   try {
-    temporaryDescriptor = openSync(input.temporaryPath, "r");
-    assertVerifiedFileDescriptor(
+    temporaryDescriptor = openSync(input.temporaryPath, "r+");
+    assertExpectedIdentityAtPath(
       temporaryDescriptor,
       input.temporaryPath,
-      input.expectedTemporaryIdentity,
-      input.expectedSha256
+      input.expectedTemporaryIdentity
     );
     stage = "link";
     linkSync(input.temporaryPath, input.finalPath);
     linked = true;
     stage = "post-link";
     finalDescriptor = openSync(input.finalPath, "r");
-    assertVerifiedFileDescriptor(
-      finalDescriptor,
-      input.finalPath,
-      input.expectedTemporaryIdentity,
-      input.expectedSha256
-    );
     const temporaryIdentity = fileIdentity(
+      fstatSync(temporaryDescriptor, { bigint: true })
+    );
+    const temporaryPathIdentity = fileIdentity(
       lstatSync(input.temporaryPath, { bigint: true })
     );
-    if (!sameFileIdentity(temporaryIdentity, input.expectedTemporaryIdentity)) {
+    const finalIdentity = fileIdentity(
+      fstatSync(finalDescriptor, { bigint: true })
+    );
+    const finalPathIdentity = fileIdentity(
+      lstatSync(input.finalPath, { bigint: true })
+    );
+    if (
+      !sameFileObjectAndSize(
+        temporaryIdentity,
+        input.expectedTemporaryIdentity
+      )
+      || BigInt(temporaryIdentity.nlink)
+        !== BigInt(input.expectedTemporaryIdentity.nlink) + 1n
+      || !sameFileIdentity(temporaryIdentity, temporaryPathIdentity)
+      || !sameFileIdentity(temporaryIdentity, finalIdentity)
+      || !sameFileIdentity(temporaryIdentity, finalPathIdentity)
+    ) {
       throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
     }
-    result = fileIdentity(fstatSync(finalDescriptor, { bigint: true }));
+    result = finalIdentity;
   } catch (error) {
     failure = normalizePublicationFailure(stage, error);
   }
 
+  if (failure && linked && temporaryDescriptor !== -1) {
+    if (!sanitizeDescriptor(temporaryDescriptor)) cleanupFailed = true;
+  }
   for (const descriptor of [finalDescriptor, temporaryDescriptor]) {
     if (descriptor === -1) continue;
+    if (
+      cleanupFailed
+      && linked
+      && descriptor === temporaryDescriptor
+      && !sanitizeDescriptor(descriptor)
+    ) {
+      cleanupFailed = true;
+    }
     try {
       closeSync(descriptor);
     } catch {
       cleanupFailed = true;
+      if (linked && !sanitizeDescriptor(descriptor)) cleanupFailed = true;
     }
   }
   if ((failure || cleanupFailed) && linked) {
@@ -471,10 +550,9 @@ function validateCommit(input: Parameters<
   }
 
   try {
-    assertVerifiedPath(
+    assertExpectedPath(
       input.sourcePath,
-      input.expectedSourceIdentity,
-      input.expectedSourceSha256
+      input.expectedSourceIdentity
     );
   } catch (error) {
     if (
@@ -487,10 +565,9 @@ function validateCommit(input: Parameters<
   }
 
   try {
-    assertVerifiedPath(
+    assertExpectedPath(
       input.finalPath,
-      input.expectedFinalIdentity,
-      input.expectedFinalSha256
+      input.expectedFinalIdentity
     );
   } catch (error) {
     if (
@@ -674,7 +751,6 @@ async function revalidateBeforePublication(input: {
   temporaryPath: string;
   temporaryHandle: Awaited<ReturnType<CadSaveFileSystem["openRead"]>>;
   temporaryIdentity: CadSaveFileIdentity;
-  outputSha256: string;
   signal?: AbortSignal;
 }): Promise<void> {
   throwIfAborted(input.signal);
@@ -696,7 +772,7 @@ async function revalidateBeforePublication(input: {
     throw new CadSaveError("CAD_SAVE_DESTINATION_INVALID");
   }
 
-  const handleIdentity = await input.temporaryHandle.identity();
+  const handleIdentity = input.temporaryHandle.identity();
   throwIfAborted(input.signal);
   let pathIdentity: CadSaveFileIdentity;
   try {
@@ -719,13 +795,6 @@ async function revalidateBeforePublication(input: {
   if (pathKey(dirname(canonicalTemporary)) !== pathKey(input.canonicalDirectory)) {
     throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
   }
-  if (
-    await input.fileSystem.sha256(input.temporaryPath) !== input.outputSha256
-  ) {
-    throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
-  }
-  throwIfAborted(input.signal);
-
   let currentSourceIdentity: CadSaveFileIdentity;
   try {
     currentSourceIdentity = await input.fileSystem.statIdentity(
@@ -747,17 +816,20 @@ async function revalidateBeforePublication(input: {
 async function cleanupPath(
   fileSystem: CadSaveFileSystem,
   path: string
-): Promise<"absent" | "removed" | "quarantined"> {
+): Promise<{
+  disposition: "absent" | "removed" | "quarantined";
+  quarantinePath?: string;
+}> {
   let exists: boolean;
   try {
     exists = await fileSystem.exists(path);
   } catch {
     throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
   }
-  if (!exists) return "absent";
+  if (!exists) return { disposition: "absent" };
   try {
     await fileSystem.remove(path);
-    return "removed";
+    return { disposition: "removed" };
   } catch {
     const quarantine = join(
       dirname(path),
@@ -765,10 +837,30 @@ async function cleanupPath(
     );
     try {
       await fileSystem.move(path, quarantine);
-      return "quarantined";
+      return { disposition: "quarantined", quarantinePath: quarantine };
     } catch {
       throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
     }
+  }
+}
+
+async function provenQuarantineCount(
+  fileSystem: CadSaveFileSystem,
+  cleanup: Awaited<ReturnType<typeof cleanupPath>>,
+  expectedIdentity: CadSaveFileIdentity | null
+): Promise<bigint> {
+  if (
+    cleanup.disposition !== "quarantined"
+    || !cleanup.quarantinePath
+    || !expectedIdentity
+  ) {
+    return 0n;
+  }
+  try {
+    const identity = await fileSystem.lstatIdentity(cleanup.quarantinePath);
+    return sameObjectIdentity(identity, expectedIdentity) ? 1n : 0n;
+  } catch {
+    throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
   }
 }
 
@@ -784,6 +876,9 @@ function fileIdentity(metadata: {
   dev: bigint;
   ino: bigint;
   size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+  nlink: bigint;
   isFile(): boolean;
   isDirectory(): boolean;
   isSymbolicLink(): boolean;
@@ -792,6 +887,9 @@ function fileIdentity(metadata: {
     dev: metadata.dev.toString(),
     ino: metadata.ino.toString(),
     size: metadata.size.toString(),
+    mtimeNs: metadata.mtimeNs.toString(),
+    ctimeNs: metadata.ctimeNs.toString(),
+    nlink: metadata.nlink.toString(),
     kind: metadata.isFile()
       ? "file"
       : metadata.isDirectory()
@@ -817,23 +915,33 @@ function sameFileIdentity(
   left: CadSaveFileIdentity,
   right: CadSaveFileIdentity
 ): boolean {
+  return (
+    sameFileObjectAndSize(left, right)
+    && left.mtimeNs === right.mtimeNs
+    && left.ctimeNs === right.ctimeNs
+    && left.nlink === right.nlink
+  );
+}
+
+function sameFileObjectAndSize(
+  left: CadSaveFileIdentity,
+  right: CadSaveFileIdentity
+): boolean {
   return sameObjectIdentity(left, right) && left.size === right.size;
 }
 
-function assertVerifiedPath(
+function assertExpectedPath(
   path: string,
-  expectedIdentity: CadSaveFileIdentity,
-  expectedSha256: string
+  expectedIdentity: CadSaveFileIdentity
 ): void {
   let descriptor = -1;
   let failure: unknown;
   try {
     descriptor = openSync(path, "r");
-    assertVerifiedFileDescriptor(
+    assertExpectedIdentityAtPath(
       descriptor,
       path,
-      expectedIdentity,
-      expectedSha256
+      expectedIdentity
     );
   } catch (error) {
     failure = error;
@@ -848,11 +956,10 @@ function assertVerifiedPath(
   if (failure) throw failure;
 }
 
-function assertVerifiedFileDescriptor(
+function assertExpectedIdentityAtPath(
   descriptor: number,
   path: string,
-  expectedIdentity: CadSaveFileIdentity,
-  expectedSha256: string
+  expectedIdentity: CadSaveFileIdentity
 ): void {
   const handleIdentity = fileIdentity(
     fstatSync(descriptor, { bigint: true })
@@ -865,61 +972,74 @@ function assertVerifiedFileDescriptor(
     || pathIdentity.symbolicLink
     || !sameFileIdentity(handleIdentity, expectedIdentity)
     || !sameFileIdentity(pathIdentity, expectedIdentity)
-    || hashDescriptorSync(descriptor) !== upperHash(expectedSha256)
-  ) {
-    throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
-  }
-  const finalHandleIdentity = fileIdentity(
-    fstatSync(descriptor, { bigint: true })
-  );
-  const finalPathIdentity = fileIdentity(lstatSync(path, { bigint: true }));
-  if (
-    !sameFileIdentity(finalHandleIdentity, expectedIdentity)
-    || !sameFileIdentity(finalPathIdentity, expectedIdentity)
   ) {
     throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
   }
 }
 
-function hashDescriptorSync(descriptor: number): string {
+async function hashDescriptorAsync(
+  descriptor: number,
+  signal?: AbortSignal
+): Promise<string> {
   const hash = createHash("sha256");
   const buffer = Buffer.allocUnsafe(64 * 1024);
   let position = 0;
   while (true) {
-    const bytesRead = readSync(
+    throwIfAborted(signal);
+    const bytesRead = await readDescriptor(
       descriptor,
       buffer,
-      0,
-      buffer.byteLength,
       position
     );
     if (bytesRead === 0) break;
     hash.update(buffer.subarray(0, bytesRead));
     position += bytesRead;
   }
+  throwIfAborted(signal);
   return hash.digest("hex").toUpperCase();
 }
 
-function hashPathSync(path: string): string {
-  let descriptor = -1;
-  let hash: string | null = null;
-  let failure: unknown;
+async function hashPathAsync(path: string): Promise<string> {
+  const handle = await open(path, "r");
   try {
-    descriptor = openSync(path, "r");
-    hash = hashDescriptorSync(descriptor);
-  } catch (error) {
-    failure = error;
-  }
-  if (descriptor !== -1) {
-    try {
-      closeSync(descriptor);
-    } catch {
-      throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
+    const hash = createHash("sha256");
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let position = 0;
+    while (true) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        buffer.byteLength,
+        position
+      );
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+      position += bytesRead;
     }
+    return hash.digest("hex").toUpperCase();
+  } finally {
+    await handle.close();
   }
-  if (failure) throw failure;
-  if (!hash) throw new Error("hash failed");
-  return hash;
+}
+
+async function readDescriptor(
+  descriptor: number,
+  buffer: Buffer,
+  position: number
+): Promise<number> {
+  return new Promise((resolveRead, rejectRead) => {
+    read(
+      descriptor,
+      buffer,
+      0,
+      buffer.byteLength,
+      position,
+      (error, bytesRead) => {
+        if (error) rejectRead(error);
+        else resolveRead(bytesRead);
+      }
+    );
+  });
 }
 
 function normalizePublicationFailure(
@@ -933,6 +1053,16 @@ function normalizePublicationFailure(
       : new CadSaveError("CAD_SAVE_FINALIZE_FAILED");
   }
   return new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+}
+
+function sanitizeDescriptor(descriptor: number): boolean {
+  try {
+    ftruncateSync(descriptor, 0);
+    fsyncSync(descriptor);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function removeSyncIfPresent(path: string): boolean {
