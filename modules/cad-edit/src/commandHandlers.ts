@@ -13,7 +13,7 @@ type CadDocumentEntity = CadDocumentSnapshot["index"]["entities"][number];
 
 interface CommandApplication {
   changes: CadChange[];
-  resolved: CadResolvedCommand;
+  resolved: CadResolvedCommand[];
 }
 
 const editableEntityTypes = new Set(["LINE", "CIRCLE", "ARC", "LWPOLYLINE"]);
@@ -110,33 +110,41 @@ function replaceText(snapshot: CadDocumentSnapshot, proposal: CadCommandProposal
   const before = structuredClone(entity);
   entity.text = operation.text;
   const change = entityChange(proposal.commandId, "text.replace", entity.id, before, entity);
-  return resolved(proposal, change, entityChangeState(before), entityChangeState(entity));
+  return resolved(
+    proposal,
+    change,
+    entityChangeState(before),
+    entityChangeState(entity),
+    before.warnings
+  );
 }
 
 function moveEntities(snapshot: CadDocumentSnapshot, proposal: CadCommandProposal): CommandApplication {
   const operation = proposal.operation;
   if (operation.kind !== "entity.move") throw new Error("Unexpected CAD edit command.");
   const changes: CadChange[] = [];
-  let firstBefore: CadDocumentEntity | null = null;
-  let firstAfter: CadDocumentEntity | null = null;
+  const resolvedCommands: CadResolvedCommand[] = [];
   for (const handle of operation.handles) {
     const entity = entityForHandle(snapshot, handle);
     assertEditableEntity(entity);
     const before = structuredClone(entity);
     translateEntity(entity, operation.delta);
     changes.push(entityChange(proposal.commandId, "entity.move", entity.id, before, entity));
-    firstBefore ??= before;
-    firstAfter ??= entity;
+    resolvedCommands.push(resolvedCommand(
+      proposal,
+      entityChangeState(before),
+      entityChangeState(entity),
+      before.warnings
+    ));
   }
-  return resolved(proposal, changes, entityChangeState(firstBefore!), entityChangeState(firstAfter!));
+  return { changes, resolved: resolvedCommands };
 }
 
 function copyEntities(snapshot: CadDocumentSnapshot, proposal: CadCommandProposal, transactionId: string): CommandApplication {
   const operation = proposal.operation;
   if (operation.kind !== "entity.copy") throw new Error("Unexpected CAD edit command.");
   const changes: CadChange[] = [];
-  let firstBefore: CadDocumentEntity | null = null;
-  let firstAfter: CadDocumentEntity | null = null;
+  const resolvedCommands: CadResolvedCommand[] = [];
   for (const [entityIndex, handle] of operation.handles.entries()) {
     const source = entityForHandle(snapshot, handle);
     assertEditableEntity(source);
@@ -147,17 +155,21 @@ function copyEntities(snapshot: CadDocumentSnapshot, proposal: CadCommandProposa
     snapshot.index.entities.push(copy);
     incrementEntityCounts(snapshot, copy, 1);
     changes.push(entityChange(proposal.commandId, "entity.copy", copy.id, null, copy));
-    firstBefore ??= source;
-    firstAfter ??= copy;
+    resolvedCommands.push(resolvedCommand(
+      proposal,
+      entityChangeState(source),
+      entityChangeState(copy),
+      source.warnings
+    ));
   }
-  return resolved(proposal, changes, entityChangeState(firstBefore!), entityChangeState(firstAfter!));
+  return { changes, resolved: resolvedCommands };
 }
 
 function deleteEntities(snapshot: CadDocumentSnapshot, proposal: CadCommandProposal): CommandApplication {
   const operation = proposal.operation;
   if (operation.kind !== "entity.delete") throw new Error("Unexpected CAD edit command.");
   const changes: CadChange[] = [];
-  let firstBefore: CadDocumentEntity | null = null;
+  const resolvedCommands: CadResolvedCommand[] = [];
   for (const handle of operation.handles) {
     const entity = entityForHandle(snapshot, handle);
     assertEditableEntity(entity);
@@ -166,20 +178,40 @@ function deleteEntities(snapshot: CadDocumentSnapshot, proposal: CadCommandPropo
     snapshot.index.entities.splice(index, 1);
     incrementEntityCounts(snapshot, entity, -1);
     changes.push(entityChange(proposal.commandId, "entity.delete", entity.id, before, null));
-    firstBefore ??= before;
+    resolvedCommands.push(resolvedCommand(
+      proposal,
+      entityChangeState(before),
+      null,
+      before.warnings
+    ));
   }
-  return resolved(proposal, changes, entityChangeState(firstBefore!), null);
+  return { changes, resolved: resolvedCommands };
 }
 
 function resolved(
   proposal: CadCommandProposal,
   changes: CadChange | CadChange[],
   before: CadResolvedCommand["before"],
-  result: CadResolvedCommand["result"]
+  result: CadResolvedCommand["result"],
+  warnings: string[] = []
 ): CommandApplication {
   return {
     changes: Array.isArray(changes) ? changes : [changes],
-    resolved: { proposal, before, result, warnings: [] }
+    resolved: [resolvedCommand(proposal, before, result, warnings)]
+  };
+}
+
+function resolvedCommand(
+  proposal: CadCommandProposal,
+  before: CadResolvedCommand["before"],
+  result: CadResolvedCommand["result"],
+  warnings: string[] = []
+): CadResolvedCommand {
+  return {
+    proposal,
+    before,
+    result,
+    warnings: [...new Set(warnings)].sort()
   };
 }
 

@@ -34,16 +34,19 @@ export function previewEditBatch(snapshot: CadDocumentSnapshot, input: CadEditBa
   for (const proposal of batch.commands) {
     const application = applyCommand(preview, proposal, batch.transactionId);
     changes.push(...application.changes);
-    resolvedCommands.push(application.resolved);
+    resolvedCommands.push(...application.resolved);
   }
   preview.revision = nextRevision;
+  const warnings = [...new Set(
+    resolvedCommands.flatMap((resolved) => resolved.warnings)
+  )].sort();
   return {
     transactionId: batch.transactionId,
     baseRevision: snapshot.revision,
     nextRevision,
     changes,
     resolvedCommands,
-    warnings: [],
+    warnings,
     snapshot: preview
   };
 }
@@ -59,6 +62,7 @@ function validateBatch(snapshot: CadDocumentSnapshot, batch: CadEditBatch): void
     throw new CadEditError("EDIT_REVISION_CONFLICT", "Snapshot revision is not a safe non-negative integer.");
   }
 
+  validatePlannedCopyIds(snapshot, batch);
   const targets = new Set<string>();
   const commandIds = new Set<string>();
   for (const proposal of batch.commands) {
@@ -69,13 +73,29 @@ function validateBatch(snapshot: CadDocumentSnapshot, batch: CadEditBatch): void
       throw new CadEditError("EDIT_DUPLICATE_TARGET", `Duplicate command ID: ${proposal.commandId}`);
     }
     commandIds.add(proposal.commandId);
-    for (const target of commandTargets(proposal)) {
+    const proposalTargets = commandTargets(proposal);
+    for (const target of proposalTargets) {
       if (targets.has(target)) {
         throw new CadEditError("EDIT_DUPLICATE_TARGET", `Duplicate edit target: ${target}`);
       }
       targets.add(target);
     }
+    validatePreconditionScope(proposal, proposalTargets);
     for (const precondition of proposal.preconditions) validatePrecondition(snapshot, precondition);
+  }
+}
+
+function validatePlannedCopyIds(snapshot: CadDocumentSnapshot, batch: CadEditBatch): void {
+  const entityIds = new Set(snapshot.index.entities.map((entity) => entity.id));
+  for (const proposal of batch.commands) {
+    if (proposal.operation.kind !== "entity.copy") continue;
+    for (const entityIndex of proposal.operation.handles.keys()) {
+      const copyId = `copy:${batch.transactionId}:${proposal.commandId}:${entityIndex}`;
+      if (entityIds.has(copyId)) {
+        throw new CadEditError("EDIT_COPY_ID_COLLISION", `Copy entity ID collision: ${copyId}`);
+      }
+      entityIds.add(copyId);
+    }
   }
 }
 
@@ -90,6 +110,44 @@ function commandTargets(proposal: CadCommandProposal): string[] {
     case "entity.copy":
     case "entity.delete":
       return proposal.operation.handles;
+  }
+}
+
+function validatePreconditionScope(
+  proposal: CadCommandProposal,
+  proposalTargets: string[]
+): void {
+  const allowedTargets = new Set(proposalTargets);
+  for (const precondition of proposal.preconditions) {
+    if (!allowedTargets.has(precondition.target)) {
+      throw new CadEditError(
+        "EDIT_PRECONDITION_SCOPE",
+        `Precondition target is outside the command scope: ${precondition.target}`
+      );
+    }
+  }
+
+  const coveredTargets = new Set(proposal.preconditions.map((precondition) => precondition.target));
+  if (proposalTargets.some((target) => !coveredTargets.has(target))) {
+    throw new CadEditError(
+      "EDIT_PRECONDITION_COVERAGE",
+      "Every command target requires at least one precondition."
+    );
+  }
+
+  if (proposal.operation.kind === "layer.create") {
+    const layerId = proposal.operation.layerId;
+    const hasCreateGuard = proposal.preconditions.some((precondition) =>
+      precondition.target === layerId &&
+      precondition.field === "exists" &&
+      precondition.equals === false
+    );
+    if (!hasCreateGuard) {
+      throw new CadEditError(
+        "EDIT_PRECONDITION_COVERAGE",
+        "layer.create requires exists:false for its layer ID."
+      );
+    }
   }
 }
 

@@ -8,7 +8,7 @@ import type {
   CadEditPrecondition
 } from "@dwg/contracts";
 import type { CadDocumentSnapshot } from "@dwg/cad-document";
-import { previewEditBatch } from "../src/index.js";
+import { CadEditError, previewEditBatch } from "../src/index.js";
 
 const transactionId = "8df2be6a-1c60-4c8a-b7a1-0a5feef4b39c";
 const commandIds = [
@@ -104,7 +104,11 @@ function entity(
 function proposal(
   operation: CadEditCommand,
   commandIndex = 0,
-  preconditions: CadEditPrecondition[] = [{ target: targetOf(operation), field: "exists", equals: true }]
+  preconditions: CadEditPrecondition[] = operationTargets(operation).map((target) => ({
+    target,
+    field: "exists",
+    equals: true
+  }))
 ): CadCommandProposal {
   return {
     commandId: commandIds[commandIndex]!,
@@ -115,10 +119,10 @@ function proposal(
   };
 }
 
-function targetOf(operation: CadEditCommand): string {
-  if (operation.kind === "layer.create" || operation.kind === "layer.update") return operation.layerId;
-  if (operation.kind === "text.replace") return operation.handle;
-  return operation.handles[0]!;
+function operationTargets(operation: CadEditCommand): string[] {
+  if (operation.kind === "layer.create" || operation.kind === "layer.update") return [operation.layerId];
+  if (operation.kind === "text.replace") return [operation.handle];
+  return operation.handles;
 }
 
 function batch(commands: CadCommandProposal[], overrides: Partial<CadEditBatch> = {}): CadEditBatch {
@@ -211,6 +215,37 @@ test("moves each supported geometry and its bounding box by the exact delta", ()
   assert.deepEqual(entityByHandle(preview.snapshot, "10")?.bbox, { min: [11, 0, 8], max: [11, 0, 8] });
 });
 
+test("emits one complete resolved command for each moved target", () => {
+  const preview = previewEditBatch(snapshot(), batch([
+    proposal({ kind: "entity.move", handles: ["10", "11"], delta: [1, 2, 3] })
+  ]));
+
+  assert.deepEqual(preview.resolvedCommands.map((resolved) => ({
+    commandId: resolved.proposal.commandId,
+    beforeId: resolved.before?.id,
+    resultId: resolved.result?.id
+  })), [
+    { commandId: commandIds[0], beforeId: "h:10", resultId: "h:10" },
+    { commandId: commandIds[0], beforeId: "h:11", resultId: "h:11" }
+  ]);
+});
+
+test("surfaces only target warnings with deterministic per-target and preview de-duplication", () => {
+  const initial = snapshot();
+  entityByHandle(initial, "10")!.warnings = ["z-warning", "shared-warning", "z-warning"];
+  entityByHandle(initial, "11")!.warnings = ["a-warning", "shared-warning"];
+  entityByHandle(initial, "15")!.warnings = ["unrelated-warning"];
+  const preview = previewEditBatch(initial, batch([
+    proposal({ kind: "entity.move", handles: ["10", "11"], delta: [1, 0, 0] })
+  ]));
+
+  assert.deepEqual(preview.resolvedCommands.map((resolved) => resolved.warnings), [
+    ["shared-warning", "z-warning"],
+    ["a-warning", "shared-warning"]
+  ]);
+  assert.deepEqual(preview.warnings, ["a-warning", "shared-warning", "z-warning"]);
+});
+
 test("copies only supported entities with a null handle and deterministic temporary ID", () => {
   const preview = previewEditBatch(snapshot(), batch([
     proposal({ kind: "entity.copy", handles: ["10"], delta: [2, 3, 4] }, 2)
@@ -229,6 +264,62 @@ test("copies only supported entities with a null handle and deterministic tempor
   });
 });
 
+test("emits one complete resolved command for each copied target", () => {
+  const preview = previewEditBatch(snapshot(), batch([
+    proposal({ kind: "entity.copy", handles: ["10", "11"], delta: [1, 0, 0] }, 2)
+  ]));
+
+  assert.deepEqual(preview.resolvedCommands.map((resolved) => ({
+    beforeId: resolved.before?.id,
+    resultId: resolved.result?.id,
+    resultHandle: resolved.result !== null && "handle" in resolved.result
+      ? resolved.result.handle
+      : "not-an-entity"
+  })), [
+    {
+      beforeId: "h:10",
+      resultId: `copy:${transactionId}:${commandIds[2]}:0`,
+      resultHandle: null
+    },
+    {
+      beforeId: "h:11",
+      resultId: `copy:${transactionId}:${commandIds[2]}:1`,
+      resultHandle: null
+    }
+  ]);
+});
+
+test("rejects a deterministic copy ID that collides with an existing entity ID", () => {
+  const initial = snapshot();
+  const copyId = `copy:${transactionId}:${commandIds[2]}:0`;
+  initial.index.entities[5]!.id = copyId;
+  const before = structuredClone(initial);
+
+  assert.throws(
+    () => previewEditBatch(initial, batch([
+      proposal({ kind: "entity.copy", handles: ["10"], delta: [2, 3, 4] }, 2)
+    ])),
+    (error) => error instanceof CadEditError && error.code === "EDIT_COPY_ID_COLLISION"
+  );
+  assert.deepEqual(initial, before);
+});
+
+test("rejects a copy ID that collides with an earlier planned copy in the same preview", () => {
+  const initial = snapshot();
+  const before = structuredClone(initial);
+  const first = proposal({ kind: "entity.copy", handles: ["10"], delta: [1, 0, 0] }, 2);
+  const second = {
+    ...proposal({ kind: "entity.copy", handles: ["11"], delta: [0, 1, 0] }, 3),
+    commandId: first.commandId
+  };
+
+  assert.throws(
+    () => previewEditBatch(initial, batch([first, second])),
+    (error) => error instanceof CadEditError && error.code === "EDIT_COPY_ID_COLLISION"
+  );
+  assert.deepEqual(initial, before);
+});
+
 test("deletes each supported geometry with a null after-state", () => {
   const preview = previewEditBatch(snapshot(), batch([
     proposal({ kind: "entity.delete", handles: ["10", "11", "12", "13"] })
@@ -238,6 +329,52 @@ test("deletes each supported geometry with a null after-state", () => {
   assert.deepEqual(preview.changes.map((change) => [change.targetId, change.after]), [
     ["h:10", null], ["h:11", null], ["h:12", null], ["h:13", null]
   ]);
+});
+
+test("emits one complete resolved command for each deleted target", () => {
+  const preview = previewEditBatch(snapshot(), batch([
+    proposal({ kind: "entity.delete", handles: ["10", "11"] })
+  ]));
+
+  assert.deepEqual(preview.resolvedCommands.map((resolved) => ({
+    beforeId: resolved.before?.id,
+    result: resolved.result
+  })), [
+    { beforeId: "h:10", result: null },
+    { beforeId: "h:11", result: null }
+  ]);
+});
+
+test("surfaces source warning evidence for text, copy, and delete commands", () => {
+  const textSnapshot = snapshot();
+  entityByHandle(textSnapshot, "14")!.warnings = ["text-warning", "text-warning"];
+  const textPreview = previewEditBatch(textSnapshot, batch([
+    proposal({ kind: "text.replace", handle: "14", text: "new text" })
+  ]));
+
+  const copySnapshot = snapshot();
+  entityByHandle(copySnapshot, "10")!.warnings = ["copy-warning"];
+  const copyPreview = previewEditBatch(copySnapshot, batch([
+    proposal({ kind: "entity.copy", handles: ["10"], delta: [1, 0, 0] }, 2)
+  ]));
+
+  const deleteSnapshot = snapshot();
+  entityByHandle(deleteSnapshot, "11")!.warnings = ["delete-warning"];
+  const deletePreview = previewEditBatch(deleteSnapshot, batch([
+    proposal({ kind: "entity.delete", handles: ["11"] })
+  ]));
+
+  assert.deepEqual(
+    [textPreview, copyPreview, deletePreview].map((preview) => ({
+      resolved: preview.resolvedCommands[0]?.warnings,
+      preview: preview.warnings
+    })),
+    [
+      { resolved: ["text-warning"], preview: ["text-warning"] },
+      { resolved: ["copy-warning"], preview: ["copy-warning"] },
+      { resolved: ["delete-warning"], preview: ["delete-warning"] }
+    ]
+  );
 });
 
 test("rejects duplicate batch targets before mutation", () => {
@@ -273,6 +410,57 @@ test("rejects document, revision, and precondition conflicts before mutation", (
   assert.throws(() => previewEditBatch(initial, batch([
     proposal({ kind: "entity.delete", handles: ["10"] }, 0, [{ target: "10", field: "type", equals: "CIRCLE" }])
   ])), /precondition/i);
+  assert.deepEqual(initial, before);
+});
+
+test("rejects a precondition that guards an unrelated entity", () => {
+  const initial = snapshot();
+  const before = structuredClone(initial);
+
+  assert.throws(
+    () => previewEditBatch(initial, batch([
+      proposal(
+        { kind: "entity.delete", handles: ["10"] },
+        0,
+        [{ target: "11", field: "type", equals: "CIRCLE" }]
+      )
+    ])),
+    (error) => error instanceof CadEditError && error.code === "EDIT_PRECONDITION_SCOPE"
+  );
+  assert.deepEqual(initial, before);
+});
+
+test("rejects a multi-target command without precondition coverage for every target", () => {
+  const initial = snapshot();
+  const before = structuredClone(initial);
+
+  assert.throws(
+    () => previewEditBatch(initial, batch([
+      proposal(
+        { kind: "entity.move", handles: ["10", "11"], delta: [1, 0, 0] },
+        0,
+        [{ target: "10", field: "exists", equals: true }]
+      )
+    ])),
+    (error) => error instanceof CadEditError && error.code === "EDIT_PRECONDITION_COVERAGE"
+  );
+  assert.deepEqual(initial, before);
+});
+
+test("requires layer creation to be guarded by exists false on its layer ID", () => {
+  const initial = snapshot();
+  const before = structuredClone(initial);
+
+  assert.throws(
+    () => previewEditBatch(initial, batch([
+      proposal(
+        { kind: "layer.create", layerId: "layer:created:new", name: "New", color: 7 },
+        0,
+        [{ target: "layer:created:new", field: "exists", equals: true }]
+      )
+    ])),
+    (error) => error instanceof CadEditError && error.code === "EDIT_PRECONDITION_COVERAGE"
+  );
   assert.deepEqual(initial, before);
 });
 
