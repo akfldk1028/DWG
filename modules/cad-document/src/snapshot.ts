@@ -61,8 +61,8 @@ export function createDocumentSnapshot(
     documentId: editableIndex.drawingId,
     revision: 0,
     sourceSha256: sourceSha256.toUpperCase(),
-    drawingVersion: null,
-    units: null,
+    drawingVersion: editableIndex.drawing?.fileVersion ?? null,
+    units: editableIndex.drawing?.units ?? null,
     index: editableIndex,
     layers: editableIndex.layers.map((layer) => ({
       id: `layer:imported:${base64UrlUtf8(layer.name)}`,

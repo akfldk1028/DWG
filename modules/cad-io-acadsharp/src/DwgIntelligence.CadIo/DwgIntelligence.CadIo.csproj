@@ -7,4 +7,7 @@
   <ItemGroup>
     <PackageReference Include="ACadSharp" Version="3.6.35" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="DwgIntelligence.DwgParser.Tests" />
+  </ItemGroup>
 </Project>

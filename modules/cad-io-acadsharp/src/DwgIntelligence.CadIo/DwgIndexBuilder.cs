@@ -68,7 +68,7 @@ public static class DwgIndexBuilder
             unsupportedItems);
     }
 
-    private static CadLayerItem CreateLayerItem(
+    internal static CadLayerItem CreateLayerItem(
         Layer layer,
         IReadOnlyCollection<CadEntityItem> entities,
         IDictionary<(string Type, string Reason), int> unsupported)

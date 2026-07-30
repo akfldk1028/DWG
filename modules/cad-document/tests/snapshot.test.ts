@@ -90,6 +90,24 @@ test("normalizes omitted v0.2 layer evidence to null without changing explicit f
   ]);
 });
 
+test("propagates supplied v0.2 drawing metadata to snapshot fields", () => {
+  const index = structuredClone(legacyIndex()) as CadEntityIndex;
+  index.schemaVersion = "cad-index/v0.2";
+  index.drawing = {
+    fileVersion: "AC1032",
+    units: "Millimeters"
+  };
+  index.entities = index.entities.map((entity) => ({
+    ...entity,
+    geometry: { kind: "bbox", reason: "test" }
+  }));
+
+  const snapshot = createDocumentSnapshot(index, sourceSha256);
+
+  assert.equal(snapshot.drawingVersion, "AC1032");
+  assert.equal(snapshot.units, "Millimeters");
+});
+
 test("rejects source hashes that are not SHA-256 digests", () => {
   assert.throws(
     () => createDocumentSnapshot(legacyIndex(), "not-a-sha256"),
