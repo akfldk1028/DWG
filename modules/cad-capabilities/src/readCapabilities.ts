@@ -32,22 +32,32 @@ export function createReadCapabilityModule(
     names: readCapabilityNames,
     async execute(name, input, signal) {
       requireNotAborted(signal);
+      let result: unknown;
       switch (name) {
         case "document.open":
-          return openDrawing(input, deps, signal);
+          result = await openDrawing(input, deps, signal);
+          break;
         case "document.describe":
-          return describeDrawing(input, deps);
+          result = describeDrawing(input, deps);
+          break;
         case "query.layers":
-          return { layers: requireIndex(input, deps).layers };
+          result = { layers: requireIndex(input, deps).layers };
+          break;
         case "query.entities":
-          return queryEntities(input, deps);
+          result = queryEntities(input, deps);
+          break;
         case "query.text":
-          return findText(input, deps);
+          result = findText(input, deps);
+          break;
         case "query.schedule":
-          return extractSchedule(input, deps);
+          result = extractSchedule(input, deps, signal);
+          break;
         case "query.compare":
-          return compareDrawings(input, deps);
+          result = compareDrawings(input, deps, signal);
+          break;
       }
+      requireNotAborted(signal);
+      return result;
     }
   };
 }
@@ -153,19 +163,30 @@ function findText(input: unknown, deps: ReadCapabilityDependencies) {
   };
 }
 
-function extractSchedule(input: unknown, deps: ReadCapabilityDependencies) {
+function extractSchedule(
+  input: unknown,
+  deps: ReadCapabilityDependencies,
+  signal?: AbortSignal
+) {
   const request = parseCadScheduleQuery(input);
-  return extractCadSchedule(requireDrawing(request.drawingId, deps), {
+  const index = requireDrawing(request.drawingId, deps);
+  requireNotAborted(signal);
+  return extractCadSchedule(index, {
     yTolerance: request.yTolerance
   });
 }
 
-function compareDrawings(input: unknown, deps: ReadCapabilityDependencies) {
+function compareDrawings(
+  input: unknown,
+  deps: ReadCapabilityDependencies,
+  signal?: AbortSignal
+) {
   const request = parseCadDrawingComparisonQuery(input);
-  return compareCadDrawings(
-    requireDrawing(request.beforeDrawingId, deps),
-    requireDrawing(request.afterDrawingId, deps)
-  );
+  const before = requireDrawing(request.beforeDrawingId, deps);
+  requireNotAborted(signal);
+  const after = requireDrawing(request.afterDrawingId, deps);
+  requireNotAborted(signal);
+  return compareCadDrawings(before, after, { signal });
 }
 
 function requireIndex(input: unknown, deps: ReadCapabilityDependencies): CadEntityIndex {

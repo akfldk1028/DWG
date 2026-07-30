@@ -91,3 +91,81 @@ test("compareCadDrawings distinguishes null bounding boxes and orders additions 
   assert.deepEqual(comparison.removed.map((match) => match.id), ["a-removed", "z-removed"]);
   assert.deepEqual(comparison.changed.map((change) => change.fields), [["bbox"]]);
 });
+
+test("compareCadDrawings normalizes forward-compatible bbox evidence", () => {
+  const bbox = {
+    min: [0, 0, 0] as [number, number, number],
+    max: [1, 1, 0] as [number, number, number],
+    extension: { source: "future" }
+  };
+  const comparison = compareCadDrawings(
+    index("before", [entity("stable", "10", "TEXT", "A-TEXT", bbox, "before")]),
+    index("after", [entity("stable", "10", "TEXT", "A-TEXT", bbox, "after")])
+  );
+
+  assert.deepEqual(comparison.changed[0]!.before.bbox, {
+    min: [0, 0, 0],
+    max: [1, 1, 0]
+  });
+  assert.deepEqual(Object.keys(comparison.changed[0]!.after.bbox!), ["min", "max"]);
+});
+
+test("compareCadDrawings accounts for repeated occurrences of the same entity object", () => {
+  const repeated = entity("same", "10");
+  const comparison = compareCadDrawings(
+    index("before", [repeated, repeated]),
+    index("after", [])
+  );
+
+  assert.equal(comparison.removed.length, 2);
+  assert.deepEqual(comparison.removed.map((match) => match.id), ["same", "same"]);
+});
+
+test("compareCadDrawings rejects max plus one entities before comparison allocations", () => {
+  const repeated = entity("same", "10");
+  assert.throws(
+    () => compareCadDrawings(
+      index("before", Array(4_001).fill(repeated)),
+      index("after", [])
+    ),
+    /input exceeds 4000 entities per drawing/
+  );
+});
+
+test("compareCadDrawings rejects max plus one combined work occurrences", () => {
+  const repeated = entity("same", "10");
+  assert.throws(
+    () => compareCadDrawings(
+      index("before", Array(2_001).fill(repeated)),
+      index("after", Array(2_000).fill(repeated))
+    ),
+    /work budget exceeds 4000 entity occurrences/
+  );
+});
+
+test("compareCadDrawings pairs duplicate handles and IDs by stable occurrence order", () => {
+  const comparison = compareCadDrawings(
+    index("before", [
+      entity("same-id", "10", "TEXT", "A-TEXT", undefined, "before-1"),
+      entity("same-id", "10", "TEXT", "A-TEXT", undefined, "before-2"),
+      entity("fallback-id", "20", "TEXT", "A-TEXT", undefined, "before-3"),
+      entity("fallback-id", "21", "TEXT", "A-TEXT", undefined, "before-4")
+    ]),
+    index("after", [
+      entity("same-id", "10", "TEXT", "A-TEXT", undefined, "after-1"),
+      entity("same-id", "10", "TEXT", "A-TEXT", undefined, "after-2"),
+      entity("fallback-id", "30", "TEXT", "A-TEXT", undefined, "after-3"),
+      entity("fallback-id", "31", "TEXT", "A-TEXT", undefined, "after-4")
+    ])
+  );
+
+  assert.deepEqual(comparison.changed.map((change) => [
+    change.before.text,
+    change.after.text
+  ]), [
+    ["before-1", "after-1"],
+    ["before-2", "after-2"],
+    ["before-3", "after-3"],
+    ["before-4", "after-4"]
+  ]);
+});

@@ -70,7 +70,7 @@ export function extractCadSchedule(
       layer: band.layer,
       bbox: cells.slice(1).reduce(
         (bbox, cell) => unionBoxes(bbox, cell.entity.bbox!),
-        structuredClone(cells[0]!.entity.bbox!)
+        normalizeBox(cells[0]!.entity.bbox!)
       )
     };
   });
@@ -79,6 +79,13 @@ export function extractCadSchedule(
     throw new Error("CAD schedule output violates its public contract.");
   }
   return schedule;
+}
+
+function normalizeBox(box: CadPointBox): CadPointBox {
+  return {
+    min: [box.min[0], box.min[1], box.min[2]],
+    max: [box.max[0], box.max[1], box.max[2]]
+  };
 }
 
 function isPositionedText(entity: CadEntityIndexItem): entity is CadEntityIndexItem & {

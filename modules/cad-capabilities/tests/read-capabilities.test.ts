@@ -175,3 +175,60 @@ test("read capability module rejects a pre-aborted grounded query", async () => 
     /CAD read operation was cancelled/
   );
 });
+
+test("read capability module rejects when a grounded query aborts during lookup", async () => {
+  const controller = new AbortController();
+  const index: CadEntityIndex = {
+    schemaVersion: "cad-index/v0.1",
+    drawingId: "fixture",
+    source: { kind: "dxf", displayName: "fixture.dxf", parser: "fixture" },
+    summary: { entityCount: 0, layerCount: 0, unsupportedCount: 0, modelSpaceCount: 0, paperSpaceCount: 0 },
+    layers: [], entities: [], unsupported: []
+  };
+  const capabilities = createReadCapabilityModule({
+    async open() { throw new Error("not called"); },
+    get() {
+      controller.abort();
+      return index;
+    }
+  });
+
+  await assert.rejects(
+    () => capabilities.execute(
+      "query.schedule",
+      { drawingId: "fixture", yTolerance: 1 },
+      controller.signal
+    ),
+    /CAD read operation was cancelled/
+  );
+});
+
+test("comparison capability stops before the second lookup after cancellation", async () => {
+  const controller = new AbortController();
+  let lookups = 0;
+  const index: CadEntityIndex = {
+    schemaVersion: "cad-index/v0.1",
+    drawingId: "fixture",
+    source: { kind: "dxf", displayName: "fixture.dxf", parser: "fixture" },
+    summary: { entityCount: 0, layerCount: 0, unsupportedCount: 0, modelSpaceCount: 0, paperSpaceCount: 0 },
+    layers: [], entities: [], unsupported: []
+  };
+  const capabilities = createReadCapabilityModule({
+    async open() { throw new Error("not called"); },
+    get() {
+      lookups += 1;
+      controller.abort();
+      return index;
+    }
+  });
+
+  await assert.rejects(
+    () => capabilities.execute(
+      "query.compare",
+      { beforeDrawingId: "before", afterDrawingId: "after" },
+      controller.signal
+    ),
+    /CAD read operation was cancelled/
+  );
+  assert.equal(lookups, 1);
+});

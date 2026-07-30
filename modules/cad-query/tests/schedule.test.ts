@@ -103,3 +103,21 @@ test("extractCadSchedule keeps distinct layer evidence out of the same Y band", 
     ["B-TEXT", ["B1"]]
   ]);
 });
+
+test("extractCadSchedule normalizes forward-compatible bbox evidence", () => {
+  const bbox = {
+    min: [0, 0, 0] as [number, number, number],
+    max: [1, 1, 0] as [number, number, number],
+    extension: { source: "future" }
+  };
+
+  const schedule = extractCadSchedule(index([
+    entity("h:10", "TEXT", "ROOM", bbox, "10")
+  ]));
+
+  assert.deepEqual(schedule.rows[0]!.bbox, {
+    min: [0, 0, 0],
+    max: [1, 1, 0]
+  });
+  assert.deepEqual(Object.keys(schedule.rows[0]!.bbox!), ["min", "max"]);
+});
