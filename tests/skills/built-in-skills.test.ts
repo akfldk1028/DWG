@@ -79,6 +79,17 @@ test("built-in manifests advertise only stable runner-visible failures", async (
   }
 });
 
+test("rejects an inspect case whose opened path disagrees with its fixture", async () => {
+  await assert.rejects(
+    () => assertFixtureBoundInput(
+      "inspect-drawing",
+      resolve("tests/fixtures/dxf/minimal-architectural.dxf"),
+      { path: "tests/fixtures/dwg/export_sample.dwg", layer: "A-WALL" }
+    ),
+    /CASE_FIXTURE_INPUT_MISMATCH/
+  );
+});
+
 test("executes every declared built-in case against its official fixture", async (t) => {
   const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
   const fixtures = await loadOfficialFixtures();
@@ -97,6 +108,11 @@ test("executes every declared built-in case against its official fixture", async
         const input = await readCaseJson(skill.root, declaredCase.input);
         const expected = await readCaseJson(skill.root, declaredCase.output);
         assertSanitized({ declaredCase, input, expected });
+        await assertFixtureBoundInput(
+          skill.manifest.id,
+          fixturePath,
+          input
+        );
 
         const result = await executeCase(
           skill,
@@ -127,6 +143,38 @@ test("executes every declared built-in case against its official fixture", async
     }
   }
 });
+
+async function assertFixtureBoundInput(
+  skillId: string,
+  fixturePath: string,
+  input: unknown
+): Promise<void> {
+  const args = input as Record<string, unknown>;
+  if (skillId === "inspect-drawing") {
+    if (
+      typeof args.path !== "string" ||
+      resolve(args.path) !== fixturePath
+    ) {
+      throw new Error("CASE_FIXTURE_INPUT_MISMATCH");
+    }
+    return;
+  }
+
+  const fixture = await buildCadIndexForPath(fixturePath);
+  if (skillId === "extract-schedule") {
+    if (args.drawingId !== fixture.drawingId) {
+      throw new Error("CASE_FIXTURE_INPUT_MISMATCH");
+    }
+    return;
+  }
+
+  if (
+    args.beforeDrawingId !== `${fixture.drawingId}:before` ||
+    args.afterDrawingId !== `${fixture.drawingId}:after`
+  ) {
+    throw new Error("CASE_FIXTURE_INPUT_MISMATCH");
+  }
+}
 
 async function executeCase(
   skill: InstalledCadSkill,
