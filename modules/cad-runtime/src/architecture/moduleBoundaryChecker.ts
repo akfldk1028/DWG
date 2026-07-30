@@ -25,14 +25,18 @@ export function findModuleBoundaryViolations(
       moduleImport.importer,
       moduleImport.specifier
     );
-    if (!importedModule) return [];
-
     const rule = findViolatedRule(
       moduleImport.importer,
       moduleImport.specifier,
-      importedModule
+      importedModule ?? moduleImport.specifier
     );
-    return rule ? [{ ...moduleImport, importedModule, rule }] : [];
+    return rule
+      ? [{
+          ...moduleImport,
+          importedModule: importedModule ?? moduleImport.specifier,
+          rule
+        }]
+      : [];
   });
 }
 
@@ -66,6 +70,9 @@ function findViolatedRule(
   if (specifier.startsWith("@dwg/contracts/")) {
     return "cross-module-import-uses-public-entrypoint";
   }
+  if (/^@dwg\/[^/]+\/src(?:\/|$)/.test(specifier)) {
+    return "cross-module-import-uses-public-entrypoint";
+  }
   if (
     !importer.startsWith("packages/contracts/") &&
     importedModule.startsWith("packages/contracts/src/") &&
@@ -91,6 +98,15 @@ function findViolatedRule(
     importedModule.startsWith("modules/cad-runtime/")
   ) {
     return "workspace-does-not-import-runtime";
+  }
+  const importerModule = getTopLevelModule(importer);
+  const importedTopLevelModule = getTopLevelModule(importedModule);
+  if (
+    importerModule &&
+    importedTopLevelModule &&
+    importerModule !== importedTopLevelModule
+  ) {
+    return "cross-module-import-uses-public-entrypoint";
   }
   if (
     importer.startsWith("apps/workspace/src/shared/") &&
@@ -124,6 +140,11 @@ function resolveModule(importer: string, specifier: string) {
 
 function getFrontendFeature(path: string) {
   const match = /^apps\/workspace\/src\/features\/([^/]+)\//.exec(path);
+  return match?.[1] ?? null;
+}
+
+function getTopLevelModule(path: string) {
+  const match = /^modules\/([^/]+)\/src(?:\/|$)/.exec(path);
   return match?.[1] ?? null;
 }
 

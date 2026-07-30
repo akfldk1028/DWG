@@ -33,6 +33,14 @@ test("rejects imports that bypass public and feature boundaries", () => {
     {
       importer: "apps/workspace/src/app/App.tsx",
       specifier: "@dwg/contracts/src/cad"
+    },
+    {
+      importer: "modules/cad-query/src/query.ts",
+      specifier: "@dwg/cad-document/src/model"
+    },
+    {
+      importer: "modules/cad-query/src/query.ts",
+      specifier: "../../cad-edit/src/transaction"
     }
   ]);
 
@@ -44,9 +52,26 @@ test("rejects imports that bypass public and feature boundaries", () => {
       "workspace-does-not-import-runtime",
       "workspace-shared-does-not-import-features",
       "workspace-features-do-not-cross-import",
+      "cross-module-import-uses-public-entrypoint",
+      "cross-module-import-uses-public-entrypoint",
       "cross-module-import-uses-public-entrypoint"
     ]
   );
+});
+
+test("allows reusable CAD modules to use public package entrypoints", () => {
+  const violations = findModuleBoundaryViolations([
+    {
+      importer: "modules/cad-query/src/query.ts",
+      specifier: "@dwg/cad-document"
+    },
+    {
+      importer: "modules/cad-query/src/query.ts",
+      specifier: "@dwg/cad-edit"
+    }
+  ]);
+
+  assert.deepEqual(violations, []);
 });
 
 test("extracts static dynamic imports", () => {
@@ -79,7 +104,7 @@ test("current workspace respects enforced module boundaries", async () => {
 test("repository exposes explicit application and module roots", async () => {
   const root = JSON.parse(await readFile("package.json", "utf8"));
   const lock = JSON.parse(await readFile("package-lock.json", "utf8"));
-  assert.deepEqual(root.workspaces, ["apps/*", "packages/*"]);
+  assert.deepEqual(root.workspaces, ["apps/*", "packages/*", "modules/*"]);
   assert.equal(
     Object.keys(lock.packages).some(
       (packagePath) => /^frontend(?:\/|$)/.test(packagePath)

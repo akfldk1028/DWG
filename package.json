@@ -4,14 +4,15 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "modules/*"
   ],
   "type": "module",
   "scripts": {
     "build:parser": "dotnet build modules/dwg-parser/src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj --nologo",
     "build:frontend": "npm --workspace @click-around/workspace run build",
     "pretest": "npm run build:parser",
-    "test": "node --import tsx --test \"modules/cad-runtime/**/*.test.ts\" \"apps/workspace/tests/unit/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
+    "test": "node --import tsx --test \"packages/**/*.test.ts\" \"modules/**/*.test.ts\" \"apps/workspace/tests/unit/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
     "test:fixtures": "node --test scripts/verify-fixture-hashes.test.mjs",
     "test:dotnet": "dotnet test modules/dwg-parser/tests/DwgIntelligence.DwgParser.Tests/DwgIntelligence.DwgParser.Tests.csproj --nologo",
     "test:e2e": "npm --workspace @click-around/workspace run test:e2e --",
