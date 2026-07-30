@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs";
+import {
+  lstat,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -99,6 +115,7 @@ test("successful save uses resolver source and active two-transaction lineage th
   assert.equal(await readFile(harness.finalPath, "utf8"), new TextDecoder().decode(OUTPUT_BYTES));
   assert.equal(await readFile(harness.sourcePath, "utf8"), harness.sourceText);
   assert.deepEqual(await temporaryOutputs(harness.destination), []);
+  assert.deepEqual(await readdir(harness.destination), ["verified-copy.dxf"]);
   assert.ok(harness.events.indexOf("writer:closed") < harness.events.indexOf("parser:opened"));
   assert.ok(harness.events.indexOf("parser:closed") < harness.events.indexOf("final:visible"));
   assert.deepEqual(harness.coordinator.getVerification(verification.id), verification);
@@ -111,9 +128,9 @@ test("atomic publication preserves a racing existing destination without overwri
   const base = createNodeCadSaveFileSystem();
   const fileSystem: CadSaveFileSystem = {
     ...base,
-    async link(temporaryPath, finalPath) {
-      await writeFile(finalPath, "racing owner");
-      return base.link(temporaryPath, finalPath);
+    publishVerifiedNoReplace(input) {
+      writeFileSync(input.finalPath, "racing owner");
+      return base.publishVerifiedNoReplace(input);
     }
   };
   const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
@@ -130,10 +147,10 @@ test("publication rejects a replaced temporary file and removes the linked final
   const base = createNodeCadSaveFileSystem();
   const fileSystem: CadSaveFileSystem = {
     ...base,
-    async link(temporaryPath, finalPath) {
-      await rm(temporaryPath, { force: true });
-      await writeFile(temporaryPath, "unverified replacement");
-      return base.link(temporaryPath, finalPath);
+    publishVerifiedNoReplace(input) {
+      rmSync(input.temporaryPath, { force: true });
+      writeFileSync(input.temporaryPath, "unverified replacement");
+      return base.publishVerifiedNoReplace(input);
     }
   };
   const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
@@ -145,17 +162,50 @@ test("publication rejects a replaced temporary file and removes the linked final
   assert.equal(await exists(harness.finalPath), false);
 });
 
-test("publication revalidates the canonical destination directory identity", async (t) => {
+test("commit validation retracts a replaced final and stores no passed verification", async (t) => {
   const base = createNodeCadSaveFileSystem();
-  let directoryChecks = 0;
+  let replaced = false;
+  let verificationId = "";
   const fileSystem: CadSaveFileSystem = {
     ...base,
-    async statIdentity(path) {
-      const identity = await base.statIdentity(path);
-      if (identity.kind === "directory" && ++directoryChecks === 2) {
-        return { ...identity, ino: `${identity.ino}-replaced` };
+    async remove(path) {
+      await base.remove(path);
+      if (!replaced && path.includes(".click-around.tmp.")) {
+        replaced = true;
+        verificationId = verificationIdFromTemporaryPath(path);
+        const finalPath = join(dirname(path), "verified-copy.dxf");
+        rmSync(finalPath);
+        writeFileSync(finalPath, "post-link replacement");
       }
-      return identity;
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_VERIFICATION_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+  assert.equal(harness.coordinator.getVerification(verificationId), null);
+});
+
+test("commit validation detects a renamed and junction-recreated destination after temporary close", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let replaced = false;
+  let verificationId = "";
+  let movedDirectory = "";
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async remove(path) {
+      await base.remove(path);
+      if (!replaced && path.includes(".click-around.tmp.")) {
+        replaced = true;
+        verificationId = verificationIdFromTemporaryPath(path);
+        const directory = dirname(path);
+        movedDirectory = `${directory}-moved`;
+        renameSync(directory, movedDirectory);
+        symlinkSync(movedDirectory, directory, process.platform === "win32" ? "junction" : "dir");
+      }
     }
   };
   const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
@@ -165,6 +215,35 @@ test("publication revalidates the canonical destination directory identity", asy
     hasCode("CAD_SAVE_DESTINATION_INVALID")
   );
   assert.equal(await exists(harness.finalPath), false);
+  assert.equal(await exists(join(movedDirectory, "verified-copy.dxf")), false);
+  assert.equal(harness.coordinator.getVerification(verificationId), null);
+});
+
+test("commit validation retracts final when source mutates after publication", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let mutated = false;
+  let sourcePath = "";
+  let verificationId = "";
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async remove(path) {
+      await base.remove(path);
+      if (!mutated && path.includes(".click-around.tmp.")) {
+        mutated = true;
+        verificationId = verificationIdFromTemporaryPath(path);
+        writeFileSync(sourcePath, "post-link source mutation");
+      }
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+  sourcePath = harness.sourcePath;
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_SOURCE_MUTATED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+  assert.equal(harness.coordinator.getVerification(verificationId), null);
 });
 
 test("late cancellation during the pre-publication source hash never exposes final output", async (t) => {
@@ -201,9 +280,10 @@ test("cancellation immediately after atomic link removes final and never stores 
   const controller = new AbortController();
   const fileSystem: CadSaveFileSystem = {
     ...base,
-    async link(temporaryPath, finalPath) {
-      await base.link(temporaryPath, finalPath);
+    publishVerifiedNoReplace(input) {
+      const publication = base.publishVerifiedNoReplace(input);
       controller.abort();
+      return publication;
     }
   };
   const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
@@ -215,20 +295,21 @@ test("cancellation immediately after atomic link removes final and never stores 
   assert.equal(await exists(harness.finalPath), false);
 });
 
-test("unsupported hard-link publication fails closed without rename fallback", async (t) => {
+test("unsupported hard-link destination fails before writer launch", async (t) => {
   const base = createNodeCadSaveFileSystem();
   const fileSystem: CadSaveFileSystem = {
     ...base,
-    async link() {
-      throw Object.assign(new Error("hard links unavailable"), { code: "EPERM" });
+    preflightNoReplace() {
+      throw new CadSaveError("CAD_SAVE_DESTINATION_UNSUPPORTED");
     }
   };
   const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
 
   await assert.rejects(
     harness.coordinator.saveCopy(harness.input),
-    hasCode("CAD_SAVE_FINALIZE_FAILED")
+    hasCode("CAD_SAVE_DESTINATION_UNSUPPORTED")
   );
+  assert.equal(harness.requests.length, 0);
   assert.equal(await exists(harness.finalPath), false);
 });
 
@@ -855,6 +936,14 @@ function currentRevision(store: CadCommittedTransactionStore): number {
 
 function temporaryId(transactionId: string, commandId: string): string {
   return `copy:${transactionId}:${commandId}:0`;
+}
+
+function verificationIdFromTemporaryPath(path: string): string {
+  const match = basename(path).match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/iu
+  );
+  assert.ok(match);
+  return match[0]!;
 }
 
 function verificationFixture() {

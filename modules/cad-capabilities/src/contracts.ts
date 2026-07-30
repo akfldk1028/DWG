@@ -91,6 +91,24 @@ export interface CadSaveReadHandle {
   close(): Promise<void>;
 }
 
+export interface CadSavePublicationInput {
+  temporaryPath: string;
+  finalPath: string;
+  expectedTemporaryIdentity: CadSaveFileIdentity;
+  expectedSha256: string;
+}
+
+export interface CadSaveCommitValidationInput {
+  sourcePath: string;
+  expectedSourceIdentity: CadSaveFileIdentity;
+  expectedSourceSha256: string;
+  directoryPath: string;
+  expectedDirectoryIdentity: CadSaveFileIdentity;
+  finalPath: string;
+  expectedFinalIdentity: CadSaveFileIdentity;
+  expectedFinalSha256: string;
+}
+
 export interface CadSaveFileSystem {
   canonicalize(path: string): Promise<string>;
   statIdentity(path: string): Promise<CadSaveFileIdentity>;
@@ -98,7 +116,11 @@ export interface CadSaveFileSystem {
   openRead(path: string): Promise<CadSaveReadHandle>;
   sha256(path: string): Promise<string>;
   exists(path: string): Promise<boolean>;
-  link(existingPath: string, newPath: string): Promise<void>;
+  preflightNoReplace(directory: string): void;
+  publishVerifiedNoReplace(
+    input: CadSavePublicationInput
+  ): CadSaveFileIdentity;
+  validateCommit(input: CadSaveCommitValidationInput): void;
   remove(path: string): Promise<void>;
   move(sourcePath: string, destinationPath: string): Promise<void>;
 }
@@ -144,6 +166,7 @@ export type CadSaveErrorCode =
   | "CAD_SAVE_SOURCE_MISMATCH"
   | "CAD_SAVE_SOURCE_MUTATED"
   | "CAD_SAVE_DESTINATION_INVALID"
+  | "CAD_SAVE_DESTINATION_UNSUPPORTED"
   | "CAD_SAVE_SOURCE_OUTPUT_EQUAL"
   | "CAD_SAVE_OUTPUT_EXISTS"
   | "CAD_SAVE_WRITE_FAILED"
