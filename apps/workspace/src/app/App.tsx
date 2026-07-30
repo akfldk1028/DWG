@@ -54,6 +54,7 @@ export function App() {
     setPreferredSidebarWidth: workspace.setSidebarWidth
   });
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
+  const [sidebarQuery, setSidebarQuery] = useState("");
 
   const layerVisibility = useLayerVisibility(
     index?.layers.map((layer) => layer.name) ?? []
@@ -147,12 +148,14 @@ export function App() {
             index={index}
             onClose={() => setSidebarOpen(false)}
             onNewSession={chat.reset}
+            onQueryChange={setSidebarQuery}
             onSelectSession={chat.selectSession}
+            onSelectTab={workspace.setSidebarTab}
             onToggleLayer={layerVisibility.toggleLayer}
-            onToggleSection={workspace.toggleSection}
             overlay={!desktop}
-            sections={workspace.preferences.sidebarSections}
+            query={sidebarQuery}
             sessions={chat.sessions}
+            tab={workspace.preferences.sidebarTab}
           />
         )}
         {!desktop && sidebarOpen && <button aria-label="탐색 닫기" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
