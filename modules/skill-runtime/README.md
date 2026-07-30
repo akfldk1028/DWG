@@ -17,9 +17,27 @@ Incompatible capability contracts remain visible with the stable
 `CAPABILITY_CONTRACT_MISMATCH` reason and are not executable by a later runtime
 stage.
 
+## Declarative workflows
+
+`runCadSkillWorkflow` executes at most 32 ordered data-only steps through the
+public `@dwg/cad-capabilities` runtime. A step may reference the initial input
+with `$input` or `$input.field`, and only an earlier passed step with
+`$steps.<step-id>.output` or `$steps.<step-id>.output.field`. Property segments
+are own safe JSON object keys; array, prototype, constructor, and forward
+references are rejected. Resolved values are deeply copied before a capability
+receives them.
+
+Read capabilities require `read`; `edit.preview` requires `propose-edit`; apply,
+undo, and redo are never workflow-executable. A capability must be listed in the
+compatible skill manifest and its required permission must be both declared and
+granted. The same supplied `AbortSignal` is forwarded to every capability call.
+Runs return only bounded error codes, validate the final output against the
+manifest output JSON Schema, and never exceed one MiB of UTF-8 JSON.
+
 From the repository root, run focused tests with:
 
 ```powershell
 node --import tsx --test modules/skill-runtime/tests/discovery.test.ts
+node --import tsx --test modules/skill-runtime/tests/workflow-runner.test.ts
 npx tsc -p modules/skill-runtime/tsconfig.json --noEmit
 ```
