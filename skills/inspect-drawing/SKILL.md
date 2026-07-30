@@ -14,6 +14,6 @@ Purpose: return deterministic drawing evidence for one requested layer. Read onl
 
 Model geometry inference is forbidden. Do not guess missing geometry, entity identity, or unsupported-object behavior.
 
-Failure codes: `DRAWING_OPEN_FAILED`, `DRAWING_NOT_FOUND`, `CAPABILITY_EXECUTION_FAILED`, `OUTPUT_SCHEMA_INVALID`.
+Failure codes: `INPUT_SCHEMA_INVALID`, `CAPABILITY_EXECUTION_FAILED`, `OUTPUT_SCHEMA_INVALID`.
 
 Limits: `NO_MODEL_GEOMETRY_INFERENCE`; `UNSUPPORTED_OBJECTS_REPORTED`; results are limited to the indexed drawing and the requested layer.

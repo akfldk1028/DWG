@@ -7,7 +7,7 @@
   "capabilities": ["document.open", "document.describe", "query.layers", "query.entities"],
   "formats": ["dwg", "dxf"],
   "entityTypes": ["LINE", "LWPOLYLINE", "INSERT", "TEXT"],
-  "failureCodes": ["DRAWING_OPEN_FAILED", "DRAWING_NOT_FOUND", "CAPABILITY_EXECUTION_FAILED", "OUTPUT_SCHEMA_INVALID"],
+  "failureCodes": ["INPUT_SCHEMA_INVALID", "CAPABILITY_EXECUTION_FAILED", "OUTPUT_SCHEMA_INVALID"],
   "limitationCodes": ["NO_MODEL_GEOMETRY_INFERENCE", "UNSUPPORTED_OBJECTS_REPORTED"],
   "inputSchema": {
     "type": "object",
