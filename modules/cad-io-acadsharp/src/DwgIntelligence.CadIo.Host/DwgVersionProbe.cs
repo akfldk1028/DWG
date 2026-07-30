@@ -9,8 +9,8 @@ public static class DwgVersionProbe
 {
     private const int MaxWarnings = 16;
     private const int MaxWarningCharacters = 120;
-    private const int CleanupAttempts = 4;
-    private const int CleanupRetryMilliseconds = 25;
+    internal const string OwnerMarkerName =
+        ".dwg-version-probe-owner";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -56,9 +56,13 @@ public static class DwgVersionProbe
             Path.GetTempPath(),
             $"dwg-version-probe-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
+        string ownerToken = Convert.ToHexString(
+            RandomNumberGenerator.GetBytes(32));
+        var candidateHandles = new List<FileStream>();
         var results = new List<DwgVersionProbeResult>();
         try
         {
+            WriteMarker(tempRoot, OwnerMarkerName, ownerToken);
             foreach (
                 string candidate in DwgVersionPolicy.CandidateVersions)
             {
@@ -67,7 +71,8 @@ public static class DwgVersionProbe
                     sourceSha256,
                     sourceInvariant,
                     candidate,
-                    tempRoot));
+                    tempRoot,
+                    candidateHandles));
             }
             if (Sha256File(source) != sourceSha256)
             {
@@ -76,7 +81,10 @@ public static class DwgVersionProbe
         }
         finally
         {
-            CleanupCandidateRoot(tempRoot);
+            CleanupCandidateRoot(
+                tempRoot,
+                ownerToken,
+                candidateHandles);
         }
 
         var report = new DwgVersionProbeReport(
@@ -110,43 +118,137 @@ public static class DwgVersionProbe
         }
     }
 
-    private static void CleanupCandidateRoot(string path)
+    internal static void CleanupCandidateRoot(
+        string originalPath,
+        string ownerToken,
+        ICollection<FileStream> candidateHandles)
     {
-        Exception? lastFailure = null;
-        for (int attempt = 0; attempt < CleanupAttempts; attempt += 1)
+        NeutralizeAndClose(candidateHandles);
+        string quarantinePath = Path.Combine(
+            Path.GetDirectoryName(originalPath)
+                ?? Path.GetTempPath(),
+            $"dwg-version-probe-quarantine-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.Move(originalPath, quarantinePath);
+        }
+        catch (Exception exception)
+        {
+            throw CleanupFailed(exception);
+        }
+
+        if (!MarkerMatches(quarantinePath, ownerToken))
+        {
+            TryRestoreUnrelatedReplacement(
+                quarantinePath,
+                originalPath);
+            throw CleanupFailed();
+        }
+
+        try
+        {
+            Directory.Delete(quarantinePath, recursive: true);
+        }
+        catch (Exception exception)
+        {
+            throw CleanupFailed(exception);
+        }
+    }
+
+    private static void WriteMarker(
+        string root,
+        string name,
+        string token)
+    {
+        File.WriteAllText(
+            Path.Combine(root, name),
+            token,
+            new UTF8Encoding(false));
+    }
+
+    private static bool MarkerMatches(
+        string root,
+        string expectedToken)
+    {
+        string path = Path.Combine(root, OwnerMarkerName);
+        try
+        {
+            if (
+                File.GetAttributes(path)
+                    .HasFlag(FileAttributes.ReparsePoint))
+            {
+                return false;
+            }
+            byte[] actual = File.ReadAllBytes(path);
+            byte[] expected = Encoding.UTF8.GetBytes(expectedToken);
+            return actual.Length == expected.Length
+                && CryptographicOperations.FixedTimeEquals(
+                    actual,
+                    expected);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void TryRestoreUnrelatedReplacement(
+        string quarantinePath,
+        string originalPath)
+    {
+        try
+        {
+            if (
+                !Directory.Exists(originalPath)
+                && !File.Exists(originalPath))
+            {
+                Directory.Move(quarantinePath, originalPath);
+            }
+        }
+        catch
+        {
+            // The unowned replacement remains untouched in quarantine.
+        }
+    }
+
+    private static void NeutralizeAndClose(
+        ICollection<FileStream> candidateHandles)
+    {
+        foreach (FileStream handle in candidateHandles)
         {
             try
             {
-                Directory.Delete(path, recursive: true);
-                return;
+                handle.Position = 0;
+                handle.SetLength(0);
+                handle.Flush(flushToDisk: true);
             }
-            catch (DirectoryNotFoundException)
+            catch
             {
-                return;
+                // Continue neutralizing every owned candidate handle.
             }
-            catch (Exception exception)
-                when (
-                    exception is IOException
-                    or UnauthorizedAccessException)
+            finally
             {
-                lastFailure = exception;
-                if (attempt + 1 < CleanupAttempts)
+                try
                 {
-                    Thread.Sleep(
-                        CleanupRetryMilliseconds * (attempt + 1));
+                    handle.Dispose();
+                }
+                catch
+                {
+                    // Continue closing every owned candidate handle.
                 }
             }
-            catch (Exception exception)
-            {
-                throw new CadIoException(
-                    "DWG_PROBE_CLEANUP_FAILED",
-                    exception);
-            }
         }
-        throw new CadIoException(
-            "DWG_PROBE_CLEANUP_FAILED",
-            lastFailure
-                ?? new IOException("Candidate cleanup failed."));
+        candidateHandles.Clear();
+    }
+
+    private static CadIoException CleanupFailed(
+        Exception? exception = null)
+    {
+        return exception is null
+            ? new CadIoException("DWG_PROBE_CLEANUP_FAILED")
+            : new CadIoException(
+                "DWG_PROBE_CLEANUP_FAILED",
+                exception);
     }
 
     private static void TryDeleteFile(string? path)
@@ -173,7 +275,8 @@ public static class DwgVersionProbe
         string sourceSha256,
         string sourceInvariant,
         string candidate,
-        string tempRoot)
+        string tempRoot,
+        ICollection<FileStream> candidateHandles)
     {
         var warnings = new List<string>();
         string observedInvariant = "";
@@ -212,6 +315,12 @@ public static class DwgVersionProbe
             warnings.Add(
                 $"candidate-failed:{exception.GetType().Name}");
         }
+        finally
+        {
+            CaptureCandidateHandle(
+                candidatePath,
+                candidateHandles);
+        }
         return new DwgVersionProbeResult(
             candidate,
             sourceSha256,
@@ -219,6 +328,32 @@ public static class DwgVersionProbe
             observedInvariant,
             verified,
             BoundWarnings(warnings));
+    }
+
+    private static void CaptureCandidateHandle(
+        string path,
+        ICollection<FileStream> candidateHandles)
+    {
+        try
+        {
+            candidateHandles.Add(new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.ReadWrite | FileShare.Delete));
+        }
+        catch (FileNotFoundException)
+        {
+            // A writer failure may leave no candidate inode.
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // A writer failure may leave no candidate inode.
+        }
+        catch (Exception exception)
+        {
+            throw CleanupFailed(exception);
+        }
     }
 
     private static IReadOnlyList<string> BoundWarnings(

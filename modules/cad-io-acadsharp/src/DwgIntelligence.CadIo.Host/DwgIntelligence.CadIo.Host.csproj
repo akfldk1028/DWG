@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../DwgIntelligence.CadIo/DwgIntelligence.CadIo.csproj" />
+    <InternalsVisibleTo Include="DwgIntelligence.CadIo.Tests" />
   </ItemGroup>
 </Project>

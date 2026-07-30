@@ -118,6 +118,23 @@ public sealed class DwgRoundTripTests
     }
 
     [Fact]
+    public void ProbeOwnershipAndReportPathsAreNotFixtureEntries()
+    {
+        string manifest = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "tests",
+            "fixtures",
+            "manifest.json"));
+
+        Assert.DoesNotContain(
+            DwgVersionProbe.OwnerMarkerName,
+            manifest);
+        Assert.DoesNotContain(
+            "dwg-version-probe-",
+            manifest);
+    }
+
+    [Fact]
     public void VerifiedFixtureVersionsWriteReopenAndPreserveInvariant()
     {
         string root = RepositoryRoot();
@@ -368,7 +385,7 @@ public sealed class DwgRoundTripTests
                             candidate,
                             FileMode.Open,
                             FileAccess.Read,
-                            FileShare.None);
+                            FileShare.ReadWrite);
                     }
                     catch (IOException)
                     {
@@ -420,6 +437,11 @@ public sealed class DwgRoundTripTests
                 testRoot,
                 ".report.json.*.tmp"));
             Assert.True(Directory.Exists(candidateRoot));
+            Assert.All(
+                Directory.EnumerateFiles(candidateRoot, "*.dwg"),
+                candidate => Assert.Equal(
+                    0,
+                    new FileInfo(candidate).Length));
 
             lockedCandidate.Dispose();
             lockedCandidate = null;
@@ -436,6 +458,110 @@ public sealed class DwgRoundTripTests
                 && Directory.Exists(candidateRoot))
             {
                 Directory.Delete(candidateRoot, recursive: true);
+            }
+            Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProbeCleanupRejectsAPathSwappedForgedReplacement()
+    {
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-path-swap-{Guid.NewGuid():N}");
+        string processTemp = Path.Combine(
+            testRoot,
+            "process-temp");
+        string originalRoot = Path.Combine(
+            processTemp,
+            $"dwg-version-probe-{Guid.NewGuid():N}");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        string movedRoot = Path.Combine(
+            processTemp,
+            $"owned.moved.{Guid.NewGuid():N}");
+        string ownerToken = "A".Repeat(64);
+        Directory.CreateDirectory(originalRoot);
+        File.WriteAllText(
+            Path.Combine(
+                originalRoot,
+                DwgVersionProbe.OwnerMarkerName),
+            ownerToken);
+        foreach (
+            string candidate in DwgVersionPolicy.CandidateVersions)
+        {
+            File.WriteAllText(
+                Path.Combine(originalRoot, $"{candidate}.dwg"),
+                $"OWNED:{candidate}");
+        }
+        Directory.Move(originalRoot, movedRoot);
+        var candidateHandles = Directory
+            .EnumerateFiles(movedRoot, "*.dwg")
+            .Select(path => new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.ReadWrite | FileShare.Delete))
+            .ToList();
+        FileStream? lockedCandidate = null;
+        try
+        {
+            lockedCandidate = new FileStream(
+                Path.Combine(movedRoot, "AC1032.dwg"),
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite);
+            Directory.CreateDirectory(originalRoot);
+            File.WriteAllText(
+                Path.Combine(
+                    originalRoot,
+                    DwgVersionProbe.OwnerMarkerName),
+                "FORGED");
+            File.WriteAllText(
+                Path.Combine(originalRoot, "unrelated.txt"),
+                "UNRELATED");
+
+            CadIoException error = Assert.Throws<CadIoException>(
+                () => DwgVersionProbe.CleanupCandidateRoot(
+                    originalRoot,
+                    ownerToken,
+                    candidateHandles));
+
+            Assert.Equal(
+                "DWG_PROBE_CLEANUP_FAILED",
+                error.Code);
+            Assert.False(File.Exists(outputPath));
+            Assert.Equal(
+                "UNRELATED",
+                File.ReadAllText(Path.Combine(
+                    originalRoot,
+                    "unrelated.txt")));
+            Assert.Equal(
+                "FORGED",
+                File.ReadAllText(Path.Combine(
+                    originalRoot,
+                    DwgVersionProbe.OwnerMarkerName)));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(
+                testRoot,
+                ".report.json.*.tmp"));
+            Assert.All(
+                Directory.EnumerateFiles(movedRoot, "*.dwg"),
+                candidate => Assert.Equal(
+                    0,
+                    new FileInfo(candidate).Length));
+
+            lockedCandidate.Dispose();
+            lockedCandidate = null;
+        }
+        finally
+        {
+            lockedCandidate?.Dispose();
+            foreach (FileStream handle in candidateHandles)
+            {
+                handle.Dispose();
+            }
+            if (Directory.Exists(movedRoot))
+            {
+                Directory.Delete(movedRoot, recursive: true);
             }
             Directory.Delete(testRoot, recursive: true);
         }

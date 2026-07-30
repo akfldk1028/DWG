@@ -16,8 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/DwgIntelligence.CadIo/DwgIntelligence.CadIo.csproj" />
-    <ProjectReference Include="../../src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj" />
     <None Include="../../../../tests/fixtures/dxf/minimal-architectural.dxf">
       <Link>Fixtures/minimal-architectural.dxf</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
