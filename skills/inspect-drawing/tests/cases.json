@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "cad-skill-cases/v1",
+  "skillId": "inspect-drawing",
+  "cases": [
+    {
+      "id": "dxf-wall-evidence",
+      "fixture": "dxf.minimal-architectural",
+      "input": "examples/input.json",
+      "output": "examples/output.json"
+    }
+  ]
+}

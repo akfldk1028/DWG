@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "cad-skill-cases/v1",
+  "skillId": "extract-schedule",
+  "cases": [
+    {
+      "id": "dxf-text-row",
+      "fixture": "dxf.minimal-architectural",
+      "input": "examples/input.json",
+      "output": "examples/output.json"
+    }
+  ]
+}
