@@ -144,10 +144,11 @@ export function createEditCapabilityComposition(
   function requireLifecycle(previewId: string, documentId: string): StoredPreview {
     const stored = activePreviews.get(previewId);
     if (stored) {
-      assertDocument(stored.documentId, documentId);
       expireDocument(stored.documentId);
       const active = activePreviews.get(previewId);
-      if (active) return active;
+      if (!active) throw lifecycleError("expired");
+      assertDocument(active.documentId, documentId);
+      return active;
     }
 
     const retained = tombstones.get(previewId);

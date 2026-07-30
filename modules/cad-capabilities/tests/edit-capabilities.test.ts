@@ -373,6 +373,66 @@ test("edit previews expire after ten minutes and retain at most twenty active pr
   }) as { revision: number }).revision, 1);
 });
 
+test("active preview expiry precedes cross-document ownership checks at the TTL boundary", async () => {
+  let now = 1_000;
+  const composition = createEditCapabilityComposition(
+    createCadEditHistory(snapshot()),
+    { now: () => now }
+  );
+  const expiring = await preview(composition, 0, 85);
+
+  now = 10 * 60 * 1000 + 999;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:other",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_DOCUMENT_MISMATCH"
+  );
+
+  now += 1;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:other",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_EXPIRED"
+  );
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:other",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_DOCUMENT_MISMATCH"
+  );
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:capabilities",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_EXPIRED"
+  );
+
+  now += 10 * 60 * 1000;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:other",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_UNKNOWN"
+  );
+});
+
 test("edit lifecycle tombstones expire and retain only the newest forty per document", async () => {
   let now = 1_000;
   const composition = createEditCapabilityComposition(
