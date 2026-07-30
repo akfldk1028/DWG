@@ -54,6 +54,7 @@ public static class DwgVersionProbe
             Path.GetTempPath(),
             $"dwg-version-probe-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
+        string? temporaryOutput = null;
         try
         {
             var results = new List<DwgVersionProbeResult>();
@@ -83,17 +84,18 @@ public static class DwgVersionProbe
             {
                 throw new CadIoException("DWG_PROBE_RESULT_LIMIT");
             }
-            string temporaryOutput = Path.Combine(
+            temporaryOutput = Path.Combine(
                 outputDirectory,
                 $".{Path.GetFileName(output)}.{Guid.NewGuid():N}.tmp");
             File.WriteAllText(
                 temporaryOutput,
                 json + Environment.NewLine,
                 new UTF8Encoding(false));
-            File.Move(temporaryOutput, output, overwrite: true);
+            File.Move(temporaryOutput, output);
         }
         finally
         {
+            TryDeleteFile(temporaryOutput);
             try
             {
                 Directory.Delete(tempRoot, recursive: true);
@@ -102,6 +104,25 @@ public static class DwgVersionProbe
             {
                 // Probe artifacts are isolated from user drawings.
             }
+        }
+    }
+
+    private static void TryDeleteFile(string? path)
+    {
+        if (path is null)
+        {
+            return;
+        }
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Never mask the bounded probe failure response.
         }
     }
 

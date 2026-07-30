@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -183,6 +184,138 @@ public sealed class DwgRoundTripTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProbePublicationFailurePreservesTargetAndCleansTemps(
+        bool targetIsDirectory)
+    {
+        string root = RepositoryRoot();
+        string sourcePath = Path.Combine(
+            root,
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-publication-{Guid.NewGuid():N}");
+        string processTemp = Path.Combine(testRoot, "process-temp");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        Directory.CreateDirectory(processTemp);
+        if (targetIsDirectory)
+        {
+            Directory.CreateDirectory(outputPath);
+            File.WriteAllText(
+                Path.Combine(outputPath, "owner.txt"),
+                "ORIGINAL");
+        }
+        else
+        {
+            File.WriteAllText(outputPath, "ORIGINAL");
+        }
+        try
+        {
+            ProcessResult result = await RunProbeHost(
+                root,
+                sourcePath,
+                outputPath,
+                processTemp);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Single(
+                result.Stdout.Split(
+                    Environment.NewLine,
+                    StringSplitOptions.RemoveEmptyEntries));
+            using JsonDocument response =
+                JsonDocument.Parse(result.Stdout);
+            Assert.Equal(
+                "error",
+                response.RootElement
+                    .GetProperty("status")
+                    .GetString());
+            Assert.InRange(
+                Encoding.UTF8.GetByteCount(result.Stdout),
+                1,
+                CadIoRequest.MaxJsonBytes);
+            Assert.Equal(
+                "CAD I/O request failed.",
+                result.Stderr.Trim());
+            Assert.DoesNotContain(testRoot, result.Stdout + result.Stderr);
+            if (targetIsDirectory)
+            {
+                Assert.True(Directory.Exists(outputPath));
+                Assert.Equal(
+                    "ORIGINAL",
+                    File.ReadAllText(
+                        Path.Combine(outputPath, "owner.txt")));
+            }
+            else
+            {
+                Assert.Equal("ORIGINAL", File.ReadAllText(outputPath));
+            }
+            Assert.Empty(Directory.EnumerateFileSystemEntries(
+                testRoot,
+                ".report.json.*.tmp"));
+            Assert.Empty(Directory.EnumerateDirectories(
+                processTemp,
+                "dwg-version-probe-*"));
+        }
+        finally
+        {
+            Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeSuccessfulPublicationLeavesNoTemps()
+    {
+        string root = RepositoryRoot();
+        string sourcePath = Path.Combine(
+            root,
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string sourceHash = Sha256(sourcePath);
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-success-{Guid.NewGuid():N}");
+        string processTemp = Path.Combine(testRoot, "process-temp");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        Directory.CreateDirectory(processTemp);
+        try
+        {
+            ProcessResult result = await RunProbeHost(
+                root,
+                sourcePath,
+                outputPath,
+                processTemp);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal("", result.Stdout);
+            Assert.Equal("", result.Stderr);
+            using JsonDocument report = JsonDocument.Parse(
+                File.ReadAllText(outputPath));
+            Assert.Equal(
+                DwgVersionPolicy.CandidateVersions.Count,
+                report.RootElement
+                    .GetProperty("candidates")
+                    .GetArrayLength());
+            Assert.Empty(Directory.EnumerateFileSystemEntries(
+                testRoot,
+                ".report.json.*.tmp"));
+            Assert.Empty(Directory.EnumerateDirectories(
+                processTemp,
+                "dwg-version-probe-*"));
+            Assert.Equal(sourceHash, Sha256(sourcePath));
+        }
+        finally
+        {
+            Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
     public static IEnumerable<object[]> InvalidManifestJson()
     {
         yield return [ManifestJson(verifiedVersion: null)];
@@ -293,6 +426,45 @@ public sealed class DwgRoundTripTests
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
+    private static async Task<ProcessResult> RunProbeHost(
+        string repositoryRoot,
+        string sourcePath,
+        string outputPath,
+        string processTemp)
+    {
+        string host = Path.Combine(
+            repositoryRoot,
+            "modules",
+            "cad-io-acadsharp",
+            "src",
+            "DwgIntelligence.CadIo.Host",
+            "bin",
+            "Debug",
+            "net9.0",
+            "DwgIntelligence.CadIo.Host.dll");
+        var start = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = repositoryRoot,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        start.ArgumentList.Add(host);
+        start.ArgumentList.Add("--probe-versions");
+        start.ArgumentList.Add(sourcePath);
+        start.ArgumentList.Add(outputPath);
+        start.Environment["TEMP"] = processTemp;
+        start.Environment["TMP"] = processTemp;
+        using Process process = Process.Start(start)!;
+        process.StandardInput.Close();
+        string stdout = await process.StandardOutput.ReadToEndAsync();
+        string stderr = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return new ProcessResult(process.ExitCode, stdout, stderr);
+    }
+
     private sealed class PolicyFixture : IDisposable
     {
         public required string Root { get; init; }
@@ -324,6 +496,11 @@ public sealed class DwgRoundTripTests
         }
     }
 }
+
+internal sealed record ProcessResult(
+    int ExitCode,
+    string Stdout,
+    string Stderr);
 
 internal static class StringTestExtensions
 {
