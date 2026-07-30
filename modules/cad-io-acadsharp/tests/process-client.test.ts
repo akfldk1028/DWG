@@ -136,6 +136,21 @@ test("passes the configured DWG manifest as a host-only policy argument", async 
   ]);
 });
 
+test("keeps DXF writes independent from a configured DWG policy", async () => {
+  const runner = new RecordingRunner(successResponse({
+    copiedHandleMap: {}
+  }));
+  const client = createAcadSharpCadIoClient({
+    projectPath: "C:\\repo\\CadIo.Host.csproj",
+    processRunner: runner,
+    dwgVersionManifestPath: "C:\\repo\\roundtrip-manifest.json"
+  });
+
+  await client.writeCopy(writeRequest([]));
+
+  assert.deepEqual(runner.calls[0]!.args.slice(-1), ["--"]);
+});
+
 test("rejects unknown fields non-finite points duplicates copy mismatches and command overflow", async () => {
   const invalidRequests: unknown[] = [
     { ...writeRequest([]), unknown: true },

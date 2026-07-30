@@ -7,11 +7,17 @@ public static class CadFileWriter
 {
     public static CadIoSuccessResponse Write(
         CadIoRequest request,
-        bool dwgPolicyConfigured = false)
+        DwgVersionPolicy? dwgVersionPolicy = null)
     {
-        if (request.Format == "dwg" && !dwgPolicyConfigured)
+        if (request.Format == "dwg" && dwgVersionPolicy is null)
         {
             throw new CadIoException("DWG_POLICY_NOT_CONFIGURED");
+        }
+        if (
+            request.Format == "dwg"
+            && !dwgVersionPolicy!.IsAllowed(request.Version))
+        {
+            throw new CadIoException("DWG_VERSION_NOT_ALLOWLISTED");
         }
         if (!File.Exists(request.SourcePath))
         {

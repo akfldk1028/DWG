@@ -10,16 +10,20 @@ var jsonOptions = new JsonSerializerOptions
 
 try
 {
+    if (IsProbeMode(args))
+    {
+        DwgVersionProbe.Run(args[1], args[2]);
+        return 0;
+    }
+    string? manifest = ParseManifestArgument(args);
+    DwgVersionPolicy? dwgVersionPolicy = manifest is null
+        ? null
+        : DwgVersionPolicy.Load(manifest);
     string requestJson = ReadSingleRequest();
     CadIoRequest request = CadIoRequest.Parse(requestJson);
-    string? manifest = ParseManifestArgument(args);
-    if (request.Format == "dwg" && manifest is null)
-    {
-        throw new CadIoException("DWG_POLICY_NOT_CONFIGURED");
-    }
     CadIoSuccessResponse response = CadFileWriter.Write(
         request,
-        dwgPolicyConfigured: manifest is not null);
+        dwgVersionPolicy);
     WriteBoundedJson(response);
     return 0;
 }
@@ -78,6 +82,21 @@ string? ParseManifestArgument(string[] arguments)
         throw new CadIoException("CAD_REQUEST_INVALID");
     }
     return arguments[1];
+}
+
+bool IsProbeMode(string[] arguments)
+{
+    if (
+        arguments.Length > 0
+        && arguments[0] == "--probe-versions")
+    {
+        if (arguments.Length != 3)
+        {
+            throw new CadIoException("CAD_REQUEST_INVALID");
+        }
+        return true;
+    }
+    return false;
 }
 
 void WriteBoundedJson<T>(T response)

@@ -29,7 +29,7 @@ export async function loadFixtureManifest(
   const manifestPath = resolve(fixtureRoot, "manifest.json");
   const manifest = parseManifest(await readFile(manifestPath, "utf8"));
 
-  return Promise.all(
+  const fixtures = await Promise.all(
     manifest.fixtures.map(async (fixture) => {
       const fixturePath = await resolveFixturePath(
         canonicalRepositoryRoot,
@@ -39,8 +39,18 @@ export async function loadFixtureManifest(
       const kind = fixtureKind(fixture.path);
 
       await assertFileHash(fixturePath, fixture.sha256);
-      return { id: fixture.id, path: fixture.path, sha256: fixture.sha256, kind };
+      return kind === null
+        ? null
+        : {
+            id: fixture.id,
+            path: fixture.path,
+            sha256: fixture.sha256,
+            kind
+          };
     })
+  );
+  return fixtures.filter(
+    (fixture): fixture is FixtureDescriptor => fixture !== null
   );
 }
 
@@ -110,13 +120,18 @@ function assertWithinFixtureRoot(fixtureRoot: string, candidatePath: string): vo
   }
 }
 
-function fixtureKind(path: string): FixtureDescriptor["kind"] {
+function fixtureKind(path: string): FixtureDescriptor["kind"] | null {
   const extension = extname(path).toLowerCase();
   if (extension === ".dwg" || extension === ".dxf") {
     return extension.slice(1) as FixtureDescriptor["kind"];
   }
+  if (extension === ".json") {
+    return null;
+  }
 
-  throw new Error("Fixture path must name a DWG or DXF file");
+  throw new Error(
+    "Fixture path must name a DWG, DXF, or JSON file"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

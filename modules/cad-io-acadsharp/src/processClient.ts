@@ -135,7 +135,7 @@ export function createAcadSharpCadIoClient(options: {
         "--no-launch-profile",
         "--"
       ];
-      if (manifestPath !== undefined) {
+      if (wire.format === "dwg" && manifestPath !== undefined) {
         args.push("--dwg-policy-manifest", manifestPath);
       }
 
