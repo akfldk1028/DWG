@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { CadCapabilityRuntime } from "@dwg/cad-capabilities";
@@ -13,10 +11,10 @@ import {
 } from "@dwg/contracts";
 import {
   discoverCadSkills,
+  loadCadSkillWorkflow,
   runCadSkillWorkflow,
   type InstalledCadSkill
 } from "@dwg/skill-runtime";
-import { parseCadSkillWorkflow } from "@dwg/skill-contracts";
 
 const MAX_SKILL_REQUEST_BYTES = 64 * 1024;
 const MAX_RECENT_STATUSES = 128;
@@ -74,11 +72,12 @@ export function createSkillGatewayRoutes(dependencies: SkillGatewayDependencies)
         const identity = skillIdentity(skill);
         setStatus(statuses, identity, { runId, status: "running" });
         try {
-          const workflow = parseCadSkillWorkflow(JSON.parse(await readFile(resolve(skill.root, "workflows", "default.json"), "utf8")));
+          const workflow = await loadCadSkillWorkflow(skill);
           const result = await runCadSkillWorkflow({
             skill,
             workflow,
             input: run.input,
+            documentId: run.documentId,
             grantedPermissions: skill.manifest.permissions,
             capabilities: dependencies.capabilities,
             signal

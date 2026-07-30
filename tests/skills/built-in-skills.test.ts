@@ -16,6 +16,7 @@ import { buildCadIndexForPath } from "../../modules/cad-runtime/src/application/
 import { createCadApplication } from "../../modules/cad-runtime/src/application/createCadApplication.js";
 import {
   discoverCadSkills,
+  loadCadSkillWorkflow,
   runCadSkillWorkflow,
   type CadSkillRunResult,
   type InstalledCadSkill
@@ -100,9 +101,7 @@ test("executes every declared built-in case against its official fixture", async
   const fixtures = await loadOfficialFixtures();
 
   for (const skill of skills) {
-    const workflow = parseCadSkillWorkflow(
-      await readJson(resolve(skill.root, "workflows/default.json"))
-    );
+    const workflow = await loadCadSkillWorkflow(skill);
     const declaredCases = await loadCases(skill);
 
     for (const declaredCase of declaredCases) {

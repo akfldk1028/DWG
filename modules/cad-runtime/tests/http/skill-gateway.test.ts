@@ -36,7 +36,7 @@ test("assembled gateway lists visible skills and runs a selected compatible work
   const run = await post(baseUrl, {
     skillId: "inspect-drawing",
     version: "1.0.0",
-    documentId: "dwg:skill-test",
+    documentId: "86be7bbdf2ca52e4",
     input: { path: "tests/fixtures/dxf/minimal-architectural.dxf", layer: "A-WALL" }
   });
   assert.equal(run.status, 200);
@@ -45,6 +45,23 @@ test("assembled gateway lists visible skills and runs a selected compatible work
   assert.equal(result.skillId, "inspect-drawing");
   assert.deepEqual(Object.keys(result).sort(), ["changeCount", "previewId", "result", "runId", "skillId", "status", "version", "warningCodes"]);
   assert.equal(Array.isArray((result.result as { matches?: unknown }).matches), true);
+});
+
+test("assembled gateway rejects a document scope mismatch without opening another drawing", async (context) => {
+  const server = await createCadGatewayServer({
+    workspaceRoot: process.cwd(),
+    drawingPath: "tests/fixtures/dxf/minimal-architectural.dxf"
+  });
+  const baseUrl = await listen(server, context);
+  const run = await post(baseUrl, {
+    skillId: "inspect-drawing", version: "1.0.0", documentId: "drawing-other",
+    input: { path: "tests/fixtures/dxf/minimal-architectural.dxf", layer: "A-WALL" }
+  });
+  assert.equal(run.status, 200);
+  const result = parseSkillRunResponse(await run.json());
+  assert.equal(result.status, "failed");
+  assert.deepEqual(result.warningCodes, ["CAPABILITY_EXECUTION_FAILED"]);
+  assert.equal(result.result, null);
 });
 
 test("assembled gateway keeps incompatible skills visible but rejects execution", async (context) => {
@@ -99,7 +116,7 @@ test("assembled gateway redacts malformed oversized and invalid-output skill exe
   assert.equal(oversized.status, 413);
   assert.deepEqual(await oversized.json(), { error: { code: "SKILL_REQUEST_TOO_LARGE", message: "Skill request exceeds the limit." } });
 
-  const invalid = await post(baseUrl, { skillId: "invalid-output", version: "1.0.0", documentId: "dwg:test", input: { path: "test.dxf" } });
+  const invalid = await post(baseUrl, { skillId: "invalid-output", version: "1.0.0", documentId: "dwg:skill-test", input: { path: "test.dxf" } });
   assert.equal(invalid.status, 200);
   const invalidResult = await invalid.json() as { runId: string; [key: string]: unknown };
   assert.deepEqual(invalidResult, {
@@ -127,7 +144,7 @@ test("assembled gateway keeps the latest concurrent status and clears cancelled 
   });
   const server = await createCadGatewayServer({ workspaceRoot: process.cwd(), skillRoot: skills, application });
   const baseUrl = await listen(server, context);
-  const body = { skillId: "slow-open", version: "1.0.0", documentId: "dwg:test", input: { path: "test.dxf" } };
+  const body = { skillId: "slow-open", version: "1.0.0", documentId: "dwg:skill-test", input: { path: "test.dxf" } };
 
   const first = post(baseUrl, body);
   await waitFor(() => pending.length === 1);

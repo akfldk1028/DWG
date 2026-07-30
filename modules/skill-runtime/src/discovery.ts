@@ -13,6 +13,7 @@ const MAX_INSTRUCTION_BYTES = 64 * 1024;
 const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 export interface InstalledCadSkill {
+  discoveryRoot?: string;
   root: string;
   manifest: CadSkillManifest;
   instructions: string;
@@ -43,12 +44,19 @@ export async function discoverCadSkills(
     ]);
     const compatibility = assessCadSkillCompatibility(manifest, capabilityVersion);
 
-    skills.push({
+    const skill: InstalledCadSkill = {
       root: skillRoot,
       manifest,
       instructions,
       ...compatibility
+    };
+    Object.defineProperty(skill, "discoveryRoot", {
+      value: canonicalRoot,
+      enumerable: false,
+      writable: false,
+      configurable: false
     });
+    skills.push(skill);
   }
 
   assertUniqueSkillVersions(skills);

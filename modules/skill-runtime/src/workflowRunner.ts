@@ -32,6 +32,7 @@ export interface RunCadSkillWorkflowOptions {
   skill: InstalledCadSkill;
   workflow: CadSkillWorkflow;
   input: unknown;
+  documentId?: string;
   grantedPermissions: SkillPermission[];
   capabilities: CadCapabilityRuntime;
   signal?: AbortSignal;
@@ -53,7 +54,29 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
     return failWithoutStep(result, "INPUT_VALUE_INVALID");
   }
 
-  if (!validates(manifest.inputSchema, safeInput)) return failWithoutStep(result, "INPUT_SCHEMA_INVALID");
+  if (options.documentId !== undefined) {
+    if (!validDocumentId(options.documentId) || !isDataObject(safeInput)) {
+      return failWithoutStep(result, "DOCUMENT_SCOPE_INVALID");
+    }
+    if (Object.hasOwn(safeInput, "documentId") && safeInput.documentId !== options.documentId) {
+      return failWithoutStep(result, "DOCUMENT_SCOPE_MISMATCH");
+    }
+  }
+
+  if (!validates(manifest.inputSchema, safeInput)) {
+    if (
+      options.documentId === undefined ||
+      !isDataObject(safeInput) ||
+      !Object.hasOwn(safeInput, "documentId") ||
+      !validates(manifest.inputSchema, withoutDocumentId(safeInput))
+    ) return failWithoutStep(result, "INPUT_SCHEMA_INVALID");
+  }
+  if (options.documentId !== undefined) {
+    safeInput = { ...safeInput as Record<string, unknown>, documentId: options.documentId };
+  }
+  const capabilities = options.documentId === undefined
+    ? options.capabilities
+    : createDocumentScopedRuntime(options.capabilities, options.documentId);
 
   for (const step of workflow.steps) {
     if (options.signal?.aborted) return cancel(result, step.id);
@@ -70,7 +93,7 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
     const boundInput = bindInput(step.input, safeInput, result.steps);
     let output: unknown;
     try {
-      output = await options.capabilities.execute(step.capability as never, boundInput, options.signal);
+      output = await capabilities.execute(step.capability as never, boundInput, options.signal);
     } catch {
       if (options.signal?.aborted) return cancel(result, step.id);
       return fail(result, step.id, "CAPABILITY_EXECUTION_FAILED");
@@ -96,6 +119,60 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
   }
   if (!withinLimit(result)) return fail(result, result.steps.at(-1)!.id, "RESULT_TOO_LARGE");
   return result;
+}
+
+function createDocumentScopedRuntime(
+  capabilities: CadCapabilityRuntime,
+  documentId: string
+): CadCapabilityRuntime {
+  return {
+    async execute(name, input, signal) {
+      assertDocumentReferences(input, documentId);
+      const output = await capabilities.execute(name, input, signal);
+      if (name === "document.open") {
+        const safeOutput = cloneCadSkillJsonValue(output);
+        if (!isDataObject(safeOutput) || safeOutput.drawingId !== documentId) {
+          throw new Error("DOCUMENT_SCOPE_MISMATCH");
+        }
+        return safeOutput;
+      }
+      return output;
+    }
+  };
+}
+
+function assertDocumentReferences(value: unknown, documentId: string): void {
+  const safeValue = cloneCadSkillJsonValue(value);
+  visitDocumentReferences(safeValue, documentId);
+}
+
+function visitDocumentReferences(value: unknown, documentId: string): void {
+  if (Array.isArray(value)) {
+    for (const item of value) visitDocumentReferences(item, documentId);
+    return;
+  }
+  if (!isDataObject(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    if (
+      (key === "drawingId" || key === "documentId" || key === "beforeDrawingId" || key === "afterDrawingId") &&
+      item !== documentId
+    ) throw new Error("DOCUMENT_SCOPE_MISMATCH");
+    visitDocumentReferences(item, documentId);
+  }
+}
+
+function isDataObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validDocumentId(value: string): boolean {
+  return value.length >= 1 && value.length <= 256 && /^[A-Za-z0-9][A-Za-z0-9:._-]*$/.test(value);
+}
+
+function withoutDocumentId(value: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...value };
+  delete copy.documentId;
+  return copy;
 }
 
 function bindInput(input: Record<string, unknown>, workflowInput: unknown, previousSteps: readonly CadSkillRunStepResult[]): Record<string, unknown> {

@@ -13,3 +13,7 @@ export {
   type CadSkillRunStepResult,
   type RunCadSkillWorkflowOptions
 } from "./workflowRunner.js";
+export {
+  loadCadSkillWorkflow,
+  MAX_CAD_SKILL_WORKFLOW_BYTES
+} from "./workflowLoader.js";

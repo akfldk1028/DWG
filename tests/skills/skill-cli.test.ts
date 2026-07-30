@@ -28,6 +28,18 @@ test("skill CLI uses a distinct usage exit code and does not print raw failures"
   assert.doesNotMatch(result.stderr, /secret|snapshot|path/i);
 });
 
+test("skill CLI returns a bounded failure for an explicit document mismatch", async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-mismatch-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = resolve(directory, "input.json");
+  await writeFile(input, JSON.stringify({ path: "tests/fixtures/dxf/minimal-architectural.dxf", layer: "A-WALL" }));
+
+  const result = await invoke("--skill", "inspect-drawing", "--input", input, "--document-id", "drawing-other");
+  assert.equal(result.code, 1);
+  assert.deepEqual(JSON.parse(result.stdout), { skillId: "inspect-drawing", status: "failed", changeCount: 0, warningCount: 1, hasPreview: false });
+  assert.equal(result.stdout.trim().split(/\r?\n/).length, 1);
+});
+
 function invoke(...args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, ["--import", "tsx", "modules/cad-runtime/harness/run-skill.ts", ...args], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });

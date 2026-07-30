@@ -394,6 +394,7 @@ test("uses the identical AbortSignal for every capability and returns cancelled 
       { id: "layers", capability: "query.layers", input: {} }
     ]),
     input: { path: "drawing.dwg" },
+    documentId: "drawing-1",
     grantedPermissions: ["read"],
     signal: controller.signal,
     capabilities: runtime(async (name, _input, signal) => {
@@ -416,6 +417,107 @@ test("uses the identical AbortSignal for every capability and returns cancelled 
     warnings: []
   });
   assertResultBounded(result);
+});
+
+test("injects the authoritative document ID for workflow bindings", async () => {
+  const calls: Array<{ name: CadCapabilityName; input: unknown }> = [];
+  const result = await runCadSkillWorkflow({
+    skill: installedSkill(),
+    workflow: workflow([
+      { id: "open", capability: "document.open", input: { path: "$input.path" } },
+      { id: "layers", capability: "query.layers", input: { drawingId: "$input.documentId" } }
+    ]),
+    documentId: "drawing-1",
+    input: { path: "drawing.dwg" },
+    grantedPermissions: ["read"],
+    capabilities: runtime(async (name, input) => {
+      calls.push({ name, input });
+      return name === "document.open" ? { drawingId: "drawing-1" } : { layers: ["A-WALL"] };
+    })
+  });
+
+  assert.equal(result.status, "passed");
+  assert.deepEqual(calls[1], { name: "query.layers", input: { drawingId: "drawing-1" } });
+});
+
+test("rejects conflicting input document IDs before capability execution", async () => {
+  let calls = 0;
+  const result = await runCadSkillWorkflow({
+    skill: installedSkill(),
+    workflow: workflow([{ id: "open", capability: "document.open", input: { path: "$input.path" } }]),
+    documentId: "drawing-1",
+    input: { path: "drawing.dwg", documentId: "drawing-other" },
+    grantedPermissions: ["read"],
+    capabilities: runtime(async () => { calls += 1; return { drawingId: "drawing-1" }; })
+  });
+
+  assert.equal(calls, 0);
+  assert.deepEqual(result, { skillId: "workflow-test", status: "failed", steps: [], warnings: ["DOCUMENT_SCOPE_MISMATCH"] });
+});
+
+test("accepts a matching transport document ID even when the skill schema does not declare it", async () => {
+  const result = await runCadSkillWorkflow({
+    skill: installedSkill(),
+    workflow: workflow([
+      { id: "open", capability: "document.open", input: { path: "$input.path" } },
+      { id: "layers", capability: "query.layers", input: { drawingId: "$input.documentId" } }
+    ]),
+    documentId: "drawing-1",
+    input: { path: "drawing.dwg", documentId: "drawing-1" },
+    grantedPermissions: ["read"],
+    capabilities: runtime(async (name) => name === "document.open" ? { drawingId: "drawing-1" } : { layers: [] })
+  });
+
+  assert.equal(result.status, "passed");
+});
+
+test("rejects a mismatched document.open result before subsequent steps", async () => {
+  const calls: CadCapabilityName[] = [];
+  const result = await runCadSkillWorkflow({
+    skill: installedSkill(),
+    workflow: workflow([
+      { id: "open", capability: "document.open", input: { path: "$input.path" } },
+      { id: "layers", capability: "query.layers", input: { drawingId: "$steps.open.output.drawingId" } }
+    ]),
+    documentId: "drawing-1",
+    input: { path: "drawing.dwg" },
+    grantedPermissions: ["read"],
+    capabilities: runtime(async (name) => {
+      calls.push(name);
+      return name === "document.open" ? { drawingId: "drawing-other" } : { layers: [] };
+    })
+  });
+
+  assert.deepEqual(calls, ["document.open"]);
+  assert.deepEqual(result, failed("open", "CAPABILITY_EXECUTION_FAILED"));
+});
+
+test("blocks access to another cached drawing and cross-document edit proposals", async () => {
+  for (const testCase of [
+    {
+      skill: installedSkill({ manifest: { ...readManifest, capabilities: ["query.layers"] } }),
+      step: { id: "layers", capability: "query.layers", input: { drawingId: "drawing-other" } },
+      permissions: ["read"] as const
+    },
+    {
+      skill: installedSkill({ manifest: { ...readManifest, permissions: ["propose-edit"], capabilities: ["edit.preview"] } }),
+      step: { id: "preview", capability: "edit.preview", input: { batch: { documentId: "drawing-other" } } },
+      permissions: ["propose-edit"] as const
+    }
+  ]) {
+    let calls = 0;
+    const result = await runCadSkillWorkflow({
+      skill: testCase.skill,
+      workflow: workflow([testCase.step]),
+      documentId: "drawing-1",
+      input: { path: "drawing.dwg" },
+      grantedPermissions: [...testCase.permissions],
+      capabilities: runtime(async () => { calls += 1; return { layers: [] }; })
+    });
+    assert.equal(calls, 0);
+    assert.equal(result.status, "failed");
+    assert.equal((result.steps[0]?.output as { error: { code: string } }).error.code, "CAPABILITY_EXECUTION_FAILED");
+  }
 });
 
 test("keeps an overflowing cancellation fallback bounded and cancellation-only", async () => {
