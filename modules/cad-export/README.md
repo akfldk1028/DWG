@@ -12,9 +12,10 @@ imports the workspace, runtime, parser, browser APIs, or native exporters.
 stable ordering and SHA-256. CSV protects formula-leading cells, filenames are
 sanitized, and every report is limited to 1 MiB. A bounded iterative preflight
 rejects excessive depth, collection counts, strings, and estimated input bytes
-before serialization; every serializer also uses an exact UTF-8 byte-accounting
-writer. SVG/PDF render only known line geometry; all other geometry is explicitly
-reported as unsupported.
+before serialization. It also rejects malformed UTF-16 and active-ancestor
+cycles while permitting shared data aliases, counted once per occurrence. Every
+serializer uses an exact UTF-8 byte-accounting writer. SVG/PDF render only known
+line geometry; all other geometry is explicitly reported as unsupported.
 
 Run focused tests with:
 

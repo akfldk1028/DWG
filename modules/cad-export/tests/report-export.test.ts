@@ -205,6 +205,114 @@ test("preflights excessive depth and collection counts", async () => {
   await assert.rejects(exportCadReport(numerous, "json"), /EXPORT_REPORT_INPUT_COLLECTION_LIMIT/u);
 });
 
+test("preflight rejects lone high and low surrogates in scalar values", async () => {
+  for (const invalid of ["\ud800", "\udc00"]) {
+    await assert.rejects(
+      exportCadReport(input(invalid), "json"),
+      /EXPORT_REPORT_INPUT_UTF16_INVALID/u
+    );
+  }
+});
+
+test("preflight rejects lone surrogates in attribute and map keys regardless of insertion order", async () => {
+  for (const surrogate of ["\ud800", "\udc00"]) {
+    for (const invalidFirst of [false, true]) {
+      const entries = invalidFirst
+        ? [[surrogate, "invalid"], ["safe", "value"]]
+        : [["safe", "value"], [surrogate, "invalid"]];
+      const invalidAttribute = input();
+      invalidAttribute.document.index.entities[0]!.attributes = Object.fromEntries(entries);
+      await assert.rejects(
+        exportCadReport(invalidAttribute, "json"),
+        /EXPORT_REPORT_INPUT_UTF16_INVALID/u
+      );
+
+      const invalidMap = input();
+      invalidMap.verification!.copiedHandleMap = Object.fromEntries(entries);
+      await assert.rejects(
+        exportCadReport(invalidMap, "json"),
+        /EXPORT_REPORT_INPUT_UTF16_INVALID/u
+      );
+    }
+  }
+});
+
+test("valid supplementary characters round-trip and use exact UTF-8 byte counts", async () => {
+  const emoji = "😀";
+  const valid = input(emoji.repeat(131_072));
+  valid.changeSet = null;
+  const report = await exportCadReport(valid, "json");
+  const decoded = JSON.parse(new TextDecoder().decode(report.bytes)) as {
+    findings: { findings: Array<{ text: string }> };
+  };
+  assert.equal(decoded.findings.findings[0]?.text, emoji.repeat(131_072));
+
+  const oversized = input(emoji.repeat(131_073));
+  oversized.changeSet = null;
+  await assert.rejects(
+    exportCadReport(oversized, "json"),
+    /EXPORT_REPORT_INPUT_STRING_LIMIT/u
+  );
+});
+
+test("valid supplementary object keys are permutation-stable", async () => {
+  const left = input();
+  const right = input();
+  left.verification!.copiedHandleMap = { "😀": "smile", "𐀀": "linear-b" };
+  right.verification!.copiedHandleMap = { "𐀀": "linear-b", "😀": "smile" };
+
+  const [leftReport, rightReport] = await Promise.all([
+    exportCadReport(left, "json"),
+    exportCadReport(right, "json")
+  ]);
+  assert.equal(rightReport.sha256, leftReport.sha256);
+  assert.deepEqual(rightReport.bytes, leftReport.bytes);
+});
+
+test("preflight rejects direct and indirect active-ancestor cycles", async () => {
+  const direct = input() as CadReportInput & { extra?: unknown };
+  direct.extra = direct;
+  await assert.rejects(exportCadReport(direct, "json"), /EXPORT_REPORT_INPUT_CYCLE/u);
+
+  const indirect = input() as CadReportInput & { extra?: unknown };
+  const first: { next?: unknown } = {};
+  const second: { next?: unknown } = { next: first };
+  first.next = second;
+  indirect.extra = first;
+  await assert.rejects(exportCadReport(indirect, "json"), /EXPORT_REPORT_INPUT_CYCLE/u);
+});
+
+test("shared object and array aliases serialize as deterministic duplicate values", async () => {
+  const aliased = input();
+  const sharedLayer = aliased.document.index.layers[0]!;
+  aliased.document.index.layers = [sharedLayer, sharedLayer];
+  const sharedWarnings = ["shared-z", "shared-a"];
+  aliased.document.index.entities[0]!.warnings = sharedWarnings;
+  aliased.findings!.warnings = sharedWarnings;
+
+  const duplicated = structuredClone(aliased);
+  duplicated.document.index.layers = duplicated.document.index.layers.map((layer) => ({ ...layer }));
+  duplicated.document.index.entities[0]!.warnings = [...sharedWarnings];
+  duplicated.findings!.warnings = [...sharedWarnings];
+
+  const [aliasReport, duplicateReport] = await Promise.all([
+    exportCadReport(aliased, "json"),
+    exportCadReport(duplicated, "json")
+  ]);
+  assert.equal(aliasReport.sha256, duplicateReport.sha256);
+  assert.deepEqual(aliasReport.bytes, duplicateReport.bytes);
+  const decoded = JSON.parse(new TextDecoder().decode(aliasReport.bytes)) as {
+    document: { index: { layers: unknown[]; entities: Array<{ id: string; warnings: string[] }> } };
+    findings: { warnings: string[] };
+  };
+  assert.equal(decoded.document.index.layers.length, 2);
+  assert.deepEqual(
+    decoded.document.index.entities.find(({ id }) => id === "h:20")?.warnings,
+    ["shared-a", "shared-z"]
+  );
+  assert.deepEqual(decoded.findings.warnings, ["shared-a", "shared-z"]);
+});
+
 test("enforces the exact final encoded-byte boundary including multibyte text", () => {
   assert.equal(encodeBounded("한".repeat(349_525) + "x").byteLength, MAX_REPORT_BYTES);
   assert.throws(

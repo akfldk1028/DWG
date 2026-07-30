@@ -216,26 +216,32 @@ function writeJsonString(writer: BoundedTextWriter, value: string): void {
 }
 
 function preflightReportInput(input: CadReportInput): void {
-  const seen = new WeakSet<object>();
-  const stack: Array<{ value: unknown; depth: number }> = [{ value: input, depth: 0 }];
+  const active = new WeakSet<object>();
+  const stack: PreflightFrame[] = [{ kind: "enter", value: input, depth: 0 }];
   let collectionItems = 0;
   let estimatedBytes = 0;
 
   while (stack.length > 0) {
     const current = stack.pop()!;
+    if (current.kind === "exit") {
+      active.delete(current.value);
+      continue;
+    }
     if (current.depth > MAX_REPORT_INPUT_DEPTH) {
       throw new Error("EXPORT_REPORT_INPUT_DEPTH_LIMIT");
     }
     const value = current.value;
     if (typeof value === "string") {
+      assertWellFormedUtf16(value);
       const bytes = Buffer.byteLength(value, "utf8");
       if (bytes > MAX_REPORT_INPUT_STRING_BYTES) {
         throw new Error("EXPORT_REPORT_INPUT_STRING_LIMIT EXPORT_REPORT_BYTE_LIMIT");
       }
       estimatedBytes += bytes;
     } else if (value && typeof value === "object") {
-      if (seen.has(value)) throw new Error("EXPORT_REPORT_INPUT_INVALID");
-      seen.add(value);
+      if (active.has(value)) throw new Error("EXPORT_REPORT_INPUT_CYCLE");
+      active.add(value);
+      stack.push({ kind: "exit", value });
       const descriptors = Object.getOwnPropertyDescriptors(value);
       const entries = Object.entries(descriptors);
       collectionItems += entries.length;
@@ -244,8 +250,9 @@ function preflightReportInput(input: CadReportInput): void {
       }
       for (const [key, descriptor] of entries) {
         if (!("value" in descriptor)) throw new Error("EXPORT_REPORT_INPUT_INVALID");
+        assertWellFormedUtf16(key);
         estimatedBytes += Buffer.byteLength(key, "utf8");
-        stack.push({ value: descriptor.value, depth: current.depth + 1 });
+        stack.push({ kind: "enter", value: descriptor.value, depth: current.depth + 1 });
       }
     } else {
       estimatedBytes += 16;
@@ -255,6 +262,25 @@ function preflightReportInput(input: CadReportInput): void {
     }
   }
 }
+
+function assertWellFormedUtf16(value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        throw new Error("EXPORT_REPORT_INPUT_UTF16_INVALID");
+      }
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      throw new Error("EXPORT_REPORT_INPUT_UTF16_INVALID");
+    }
+  }
+}
+
+type PreflightFrame =
+  | { kind: "enter"; value: unknown; depth: number }
+  | { kind: "exit"; value: object };
 
 const unorderedCollections = new Set([
   "entities",
