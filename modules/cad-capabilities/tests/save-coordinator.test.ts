@@ -25,6 +25,10 @@ import {
   type CadParsedDocumentEvidence,
   type CadSaveCoordinator
 } from "../src/index.js";
+import {
+  createNodeCadSaveFileSystem,
+  type CadSaveFileSystem
+} from "../src/saveCoordinator.js";
 
 const TX1 = "10000000-0000-4000-8000-000000000001";
 const TX2 = "10000000-0000-4000-8000-000000000002";
@@ -101,6 +105,177 @@ test("successful save uses resolver source and active two-transaction lineage th
   const copy = harness.coordinator.getVerification(verification.id)!;
   copy.warnings.push("outside mutation");
   assert.deepEqual(harness.coordinator.getVerification(verification.id), verification);
+});
+
+test("atomic publication preserves a racing existing destination without overwriting it", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async link(temporaryPath, finalPath) {
+      await writeFile(finalPath, "racing owner");
+      return base.link(temporaryPath, finalPath);
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_OUTPUT_EXISTS")
+  );
+  assert.equal(await readFile(harness.finalPath, "utf8"), "racing owner");
+  assert.deepEqual(await temporaryOutputs(harness.destination), []);
+});
+
+test("publication rejects a replaced temporary file and removes the linked final", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async link(temporaryPath, finalPath) {
+      await rm(temporaryPath, { force: true });
+      await writeFile(temporaryPath, "unverified replacement");
+      return base.link(temporaryPath, finalPath);
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_VERIFICATION_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+});
+
+test("publication revalidates the canonical destination directory identity", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let directoryChecks = 0;
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async statIdentity(path) {
+      const identity = await base.statIdentity(path);
+      if (identity.kind === "directory" && ++directoryChecks === 2) {
+        return { ...identity, ino: `${identity.ino}-replaced` };
+      }
+      return identity;
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_DESTINATION_INVALID")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+});
+
+test("late cancellation during the pre-publication source hash never exposes final output", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let sourceHashes = 0;
+  let releaseHash!: () => void;
+  let markHashStarted!: () => void;
+  const hashStarted = new Promise<void>((resolve) => { markHashStarted = resolve; });
+  const hashRelease = new Promise<void>((resolve) => { releaseHash = resolve; });
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async sha256(path) {
+      if (basename(path) === "source.dxf" && ++sourceHashes === 2) {
+        markHashStarted();
+        await hashRelease;
+      }
+      return base.sha256(path);
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+  const controller = new AbortController();
+
+  const pending = harness.coordinator.saveCopy(harness.input, controller.signal);
+  await hashStarted;
+  controller.abort();
+  releaseHash();
+
+  await assert.rejects(pending, isAbort);
+  assert.equal(await exists(harness.finalPath), false);
+});
+
+test("cancellation immediately after atomic link removes final and never stores passed verification", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  const controller = new AbortController();
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async link(temporaryPath, finalPath) {
+      await base.link(temporaryPath, finalPath);
+      controller.abort();
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input, controller.signal),
+    isAbort
+  );
+  assert.equal(await exists(harness.finalPath), false);
+});
+
+test("unsupported hard-link publication fails closed without rename fallback", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async link() {
+      throw Object.assign(new Error("hard links unavailable"), { code: "EPERM" });
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_FINALIZE_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+});
+
+test("cleanup failure is explicit and never stores a passed verification", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async remove() {
+      throw Object.assign(new Error("locked"), { code: "EACCES" });
+    },
+    async move() {
+      throw Object.assign(new Error("still locked"), { code: "EACCES" });
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), {
+    fileSystem,
+    writerFailure: true
+  });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+});
+
+test("post-publication temporary cleanup failure retracts final and reports fatal cleanup", async (t) => {
+  const base = createNodeCadSaveFileSystem();
+  let failedTemporaryRemoval = false;
+  const fileSystem: CadSaveFileSystem = {
+    ...base,
+    async remove(path) {
+      if (!failedTemporaryRemoval && path.includes(".click-around.tmp.")) {
+        failedTemporaryRemoval = true;
+        throw Object.assign(new Error("locked temp"), { code: "EACCES" });
+      }
+      return base.remove(path);
+    }
+  };
+  const harness = await createHarness(t, createCadEditHistory(snapshot()), { fileSystem });
+
+  await assert.rejects(
+    harness.coordinator.saveCopy(harness.input),
+    hasCode("CAD_SAVE_CLEANUP_FAILED")
+  );
+  assert.equal(await exists(harness.finalPath), false);
+  assert.ok((await temporaryOutputs(harness.destination)).every((name) => name.includes(".failed.")));
 });
 
 test("an undone branch exports only the active branch and rebases process revisions without caller lineage", async (t) => {
@@ -235,6 +410,62 @@ test("writer, reopen, and invariant failures never publish final and remove or q
   }
 });
 
+test("verification rejects copied-handle collisions and extra reopened entities", async (t) => {
+  await t.test("copy handle collides with an existing identical entity", async (child) => {
+    const history = createCadEditHistory(snapshot());
+    apply(history, copyBatch(0, TX1, CMD1, [0, 0, 0]));
+    const harness = await createHarness(child, history, { copyHandleCollision: true });
+
+    await assert.rejects(
+      harness.coordinator.saveCopy(harness.input),
+      hasCode("CAD_SAVE_VERIFICATION_FAILED")
+    );
+    assert.equal(await exists(harness.finalPath), false);
+  });
+
+  await t.test("reopened output contains an extra non-null entity", async (child) => {
+    const harness = await createHarness(child, createCadEditHistory(snapshot()), {
+      mutateEvidence(evidence) {
+        evidence.index.entities.push({
+          ...structuredClone(evidence.index.entities[0]!),
+          id: "h:FE",
+          handle: "FE"
+        });
+        evidence.index.summary.entityCount += 1;
+      },
+      writerEntityCountDelta: 1
+    });
+
+    await assert.rejects(
+      harness.coordinator.saveCopy(harness.input),
+      hasCode("CAD_SAVE_VERIFICATION_FAILED")
+    );
+    assert.equal(await exists(harness.finalPath), false);
+  });
+
+  await t.test("reopened output contains an arbitrary empty layer", async (child) => {
+    const harness = await createHarness(child, createCadEditHistory(snapshot()), {
+      mutateEvidence(evidence) {
+        evidence.index.layers.push({
+          name: "UNEXPECTED",
+          entityCount: 0,
+          visible: true,
+          frozen: false,
+          color: 7,
+          locked: false
+        });
+        evidence.index.summary.layerCount += 1;
+      }
+    });
+
+    await assert.rejects(
+      harness.coordinator.saveCopy(harness.input),
+      hasCode("CAD_SAVE_VERIFICATION_FAILED")
+    );
+    assert.equal(await exists(harness.finalPath), false);
+  });
+});
+
 test("pre-cancel and in-flight cancellation do not publish files and preserve source", async (t) => {
   const before = await createHarness(t, createCadEditHistory(snapshot()));
   const preAborted = new AbortController();
@@ -323,9 +554,12 @@ interface HarnessOptions {
   reopenFailure?: boolean;
   abortInWriter?: boolean;
   invalidCopyMap?: boolean;
+  copyHandleCollision?: boolean;
+  writerEntityCountDelta?: number;
   evidenceVersion?: string | null;
   evidenceUnits?: string | null;
   mutateEvidence?: (evidence: CadParsedDocumentEvidence) => void;
+  fileSystem?: CadSaveFileSystem;
 }
 
 async function createHarness(
@@ -348,6 +582,7 @@ async function createHarness(
   const current = saveState?.current ?? snapshot();
   const copyIds = current.index.entities.filter((entity) => entity.handle === null).map((entity) => entity.id);
   const copyMap = Object.fromEntries(copyIds.map((id, index) => [id, (0xABC + index).toString(16).toUpperCase()]));
+  if (options.copyHandleCollision && copyIds.length > 0) copyMap[copyIds[0]!] = "11";
   if (options.invalidCopyMap && copyIds.length > 0) delete copyMap[copyIds[0]!];
   const requests: CadIoWriteRequest[] = [];
   const events: string[] = [];
@@ -379,7 +614,7 @@ async function createHarness(
       return {
         format: request.format,
         version: request.version,
-        entityCount: current.index.entities.length,
+        entityCount: current.index.entities.length + (options.writerEntityCountDelta ?? 0),
         copiedHandleMap: copyMap,
         warnings: ["writer-normalized-header"]
       };
@@ -416,7 +651,8 @@ async function createHarness(
       return evidence;
     },
     transactions,
-    grants
+    grants,
+    fileSystem: options.fileSystem
   });
   const finalPath = join(destination, "verified-copy.dxf");
   const input = {
@@ -507,11 +743,16 @@ function textBatch(
   });
 }
 
-function copyBatch(expectedRevision: number, transactionId: string, commandId: string): CadEditBatch {
+function copyBatch(
+  expectedRevision: number,
+  transactionId: string,
+  commandId: string,
+  delta: [number, number, number] = [10, 0, 0]
+): CadEditBatch {
   return batch(expectedRevision, transactionId, commandId, {
     kind: "entity.copy",
     handles: ["11"],
-    delta: [10, 0, 0]
+    delta
   });
 }
 

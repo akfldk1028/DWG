@@ -10,7 +10,6 @@ export {
   type CadEditCapabilityErrorCode
 } from "./editCapabilities.js";
 export { createDestinationGrantStore } from "./destinationGrants.js";
-export { verifySavedOutput } from "./outputVerification.js";
 export { createSaveCoordinator } from "./saveCoordinator.js";
 export { createSaveCapabilityModule } from "./saveCapabilities.js";
 export type {

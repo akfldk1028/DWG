@@ -77,6 +77,32 @@ export interface CadParsedDocumentEvidence {
   units: string | null;
 }
 
+export interface CadSaveFileIdentity {
+  dev: string;
+  ino: string;
+  size: string;
+  kind: "file" | "directory" | "other";
+  symbolicLink: boolean;
+}
+
+export interface CadSaveReadHandle {
+  identity(): Promise<CadSaveFileIdentity>;
+  sha256(): Promise<string>;
+  close(): Promise<void>;
+}
+
+export interface CadSaveFileSystem {
+  canonicalize(path: string): Promise<string>;
+  statIdentity(path: string): Promise<CadSaveFileIdentity>;
+  lstatIdentity(path: string): Promise<CadSaveFileIdentity>;
+  openRead(path: string): Promise<CadSaveReadHandle>;
+  sha256(path: string): Promise<string>;
+  exists(path: string): Promise<boolean>;
+  link(existingPath: string, newPath: string): Promise<void>;
+  remove(path: string): Promise<void>;
+  move(sourcePath: string, destinationPath: string): Promise<void>;
+}
+
 export interface CadSaveDependencies {
   cadIo: CadIoClient;
   sources: CadSourceDocumentResolver;
@@ -86,6 +112,7 @@ export interface CadSaveDependencies {
   ): Promise<CadParsedDocumentEvidence>;
   transactions: CadCommittedTransactionStore;
   grants: DestinationGrantProvider;
+  fileSystem?: CadSaveFileSystem;
 }
 
 export interface CadSaveInput {
@@ -122,7 +149,8 @@ export type CadSaveErrorCode =
   | "CAD_SAVE_WRITE_FAILED"
   | "CAD_SAVE_REOPEN_FAILED"
   | "CAD_SAVE_VERIFICATION_FAILED"
-  | "CAD_SAVE_FINALIZE_FAILED";
+  | "CAD_SAVE_FINALIZE_FAILED"
+  | "CAD_SAVE_CLEANUP_FAILED";
 
 export class CadSaveError extends Error {
   constructor(

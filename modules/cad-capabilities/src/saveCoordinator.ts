@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  link,
   lstat,
+  open,
   readFile,
   realpath,
   rename,
@@ -23,6 +25,8 @@ import {
   CadSaveError,
   type CadSaveCoordinator,
   type CadSaveDependencies,
+  type CadSaveFileIdentity,
+  type CadSaveFileSystem,
   type CadSaveInput
 } from "./contracts.js";
 import { verifySavedOutput } from "./outputVerification.js";
@@ -37,6 +41,7 @@ export function createSaveCoordinator(
   dependencies: CadSaveDependencies
 ): CadSaveCoordinator {
   const verifications = new Map<string, CadOutputVerification>();
+  const fileSystem = dependencies.fileSystem ?? createNodeCadSaveFileSystem();
 
   return {
     async saveCopy(input, signal) {
@@ -65,16 +70,20 @@ export function createSaveCoordinator(
       }
 
       let canonicalSource: string;
+      let sourceIdentity: CadSaveFileIdentity;
       try {
-        canonicalSource = await realpath(source.canonicalPath);
-        if (!(await stat(canonicalSource)).isFile()) throw new Error("not file");
+        canonicalSource = await fileSystem.canonicalize(source.canonicalPath);
+        sourceIdentity = await fileSystem.statIdentity(canonicalSource);
+        if (sourceIdentity.kind !== "file") throw new Error("not file");
       } catch {
         throw new CadSaveError("CAD_SAVE_SOURCE_MISMATCH");
       }
       if (pathKey(canonicalSource) !== pathKey(source.canonicalPath)) {
         throw new CadSaveError("CAD_SAVE_SOURCE_MISMATCH");
       }
-      const sourceHashBefore = await shaFile(canonicalSource);
+      throwIfAborted(signal);
+      const sourceHashBefore = await fileSystem.sha256(canonicalSource);
+      throwIfAborted(signal);
       if (sourceHashBefore !== upperHash(source.sourceSha256)) {
         throw new CadSaveError("CAD_SAVE_SOURCE_MISMATCH");
       }
@@ -84,9 +93,13 @@ export function createSaveCoordinator(
       );
       throwIfAborted(signal);
       let canonicalDirectory: string;
+      let directoryIdentity: CadSaveFileIdentity;
       try {
-        canonicalDirectory = await realpath(grant.canonicalDirectory);
-        if (!(await stat(canonicalDirectory)).isDirectory()) throw new Error("not directory");
+        canonicalDirectory = await fileSystem.canonicalize(
+          grant.canonicalDirectory
+        );
+        directoryIdentity = await fileSystem.statIdentity(canonicalDirectory);
+        if (directoryIdentity.kind !== "directory") throw new Error("not directory");
       } catch {
         throw new CadSaveError("CAD_SAVE_DESTINATION_INVALID");
       }
@@ -102,7 +115,7 @@ export function createSaveCoordinator(
       if (pathKey(finalPath) === pathKey(canonicalSource)) {
         throw new CadSaveError("CAD_SAVE_SOURCE_OUTPUT_EQUAL");
       }
-      if (await pathExists(finalPath)) {
+      if (await fileSystem.exists(finalPath)) {
         throw new CadSaveError("CAD_SAVE_OUTPUT_EXISTS");
       }
 
@@ -111,11 +124,15 @@ export function createSaveCoordinator(
         canonicalDirectory,
         `.${stem}.${saveRequestId}.click-around.tmp.${request.format}`
       );
-      if (await pathExists(temporaryPath)) {
+      if (await fileSystem.exists(temporaryPath)) {
         throw new CadSaveError("CAD_SAVE_OUTPUT_EXISTS");
       }
 
-      let finalized = false;
+      let published = false;
+      let temporaryHandle: Awaited<
+        ReturnType<CadSaveFileSystem["openRead"]>
+      > | null = null;
+      let temporaryHandleClosed = false;
       try {
         const lineage = writerLineage(saveState);
         let writer;
@@ -132,7 +149,19 @@ export function createSaveCoordinator(
           throw new CadSaveError("CAD_SAVE_WRITE_FAILED");
         }
         throwIfAborted(signal);
-        assertTemporaryRegularFile(temporaryPath, canonicalDirectory);
+        const temporaryPathIdentity = await assertTemporaryRegularFile(
+          fileSystem,
+          temporaryPath,
+          canonicalDirectory
+        );
+        throwIfAborted(signal);
+        temporaryHandle = await fileSystem.openRead(temporaryPath);
+        const temporaryIdentity = await temporaryHandle.identity();
+        if (!sameFileIdentity(temporaryIdentity, temporaryPathIdentity)) {
+          throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+        }
+        const outputSha256 = await temporaryHandle.sha256();
+        throwIfAborted(signal);
 
         let reopened;
         try {
@@ -142,7 +171,6 @@ export function createSaveCoordinator(
           throw new CadSaveError("CAD_SAVE_REOPEN_FAILED");
         }
         throwIfAborted(signal);
-        const outputSha256 = await shaFile(temporaryPath);
         const verification = verifySavedOutput({
           verificationId: saveRequestId,
           format: request.format,
@@ -154,30 +182,83 @@ export function createSaveCoordinator(
           expectedTemporaryIds: temporaryIds(lineage)
         });
 
-        if (await shaFile(canonicalSource) !== sourceHashBefore) {
+        if (await fileSystem.sha256(canonicalSource) !== sourceHashBefore) {
           throw new CadSaveError("CAD_SAVE_SOURCE_MUTATED");
         }
-        if (await pathExists(finalPath)) {
-          throw new CadSaveError("CAD_SAVE_OUTPUT_EXISTS");
-        }
+        throwIfAborted(signal);
+        await revalidateBeforePublication({
+          fileSystem,
+          canonicalSource,
+          sourceIdentity,
+          sourceHashBefore,
+          canonicalDirectory,
+          directoryIdentity,
+          grantDirectory: grant.canonicalDirectory,
+          temporaryPath,
+          temporaryHandle,
+          temporaryIdentity,
+          outputSha256,
+          signal
+        });
+        throwIfAborted(signal);
         try {
-          await rename(temporaryPath, finalPath);
-        } catch {
+          await fileSystem.link(temporaryPath, finalPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+            throw new CadSaveError("CAD_SAVE_OUTPUT_EXISTS");
+          }
           throw new CadSaveError("CAD_SAVE_FINALIZE_FAILED");
         }
-        finalized = true;
-        if (await shaFile(canonicalSource) !== sourceHashBefore) {
-          throw new CadSaveError("CAD_SAVE_SOURCE_MUTATED");
+        published = true;
+        throwIfAborted(signal);
+        await validatePublishedFile({
+          fileSystem,
+          temporaryPath,
+          finalPath,
+          temporaryIdentity,
+          outputSha256
+        });
+        throwIfAborted(signal);
+
+        try {
+          await temporaryHandle.close();
+          temporaryHandleClosed = true;
+        } catch {
+          throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
         }
+
+        const temporaryCleanup = await cleanupPath(fileSystem, temporaryPath);
+        if (temporaryCleanup === "quarantined") {
+          throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
+        }
+        throwIfAborted(signal);
         verifications.set(verification.id, structuredClone(verification));
         return structuredClone(verification);
       } catch (error) {
-        if (!finalized) await removeOrQuarantine(temporaryPath);
-        if (
-          await safeShaFile(canonicalSource) !== sourceHashBefore
-          && !(error instanceof CadSaveError && error.code === "CAD_SAVE_SOURCE_MUTATED")
-        ) {
-          throw new CadSaveError("CAD_SAVE_SOURCE_MUTATED");
+        let cleanupFailed = false;
+        if (temporaryHandle && !temporaryHandleClosed) {
+          try {
+            await temporaryHandle.close();
+            temporaryHandleClosed = true;
+          } catch {
+            cleanupFailed = true;
+          }
+        }
+        if (published) {
+          try {
+            await cleanupPath(fileSystem, finalPath);
+            published = false;
+          } catch {
+            cleanupFailed = true;
+          }
+        }
+        try {
+          await cleanupPath(fileSystem, temporaryPath);
+        } catch {
+          cleanupFailed = true;
+        }
+        if (cleanupFailed) {
+          throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
         }
         throw error;
       }
@@ -187,6 +268,51 @@ export function createSaveCoordinator(
       const verification = verifications.get(id);
       return verification ? structuredClone(verification) : null;
     }
+  };
+}
+
+export type { CadSaveFileSystem } from "./contracts.js";
+
+export function createNodeCadSaveFileSystem(): CadSaveFileSystem {
+  return {
+    canonicalize: realpath,
+    async statIdentity(path) {
+      return fileIdentity(await stat(path, { bigint: true }));
+    },
+    async lstatIdentity(path) {
+      return fileIdentity(await lstat(path, { bigint: true }));
+    },
+    async openRead(path) {
+      const handle = await open(path, "r");
+      return {
+        async identity() {
+          return fileIdentity(await handle.stat({ bigint: true }));
+        },
+        async sha256() {
+          return hashBytes(await handle.readFile());
+        },
+        async close() {
+          await handle.close();
+        }
+      };
+    },
+    async sha256(path) {
+      return hashBytes(await readFile(path));
+    },
+    async exists(path) {
+      try {
+        await lstat(path);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    },
+    link,
+    async remove(path) {
+      await rm(path);
+    },
+    move: rename
   };
 }
 
@@ -330,36 +456,158 @@ function containedSibling(directory: string, filename: string): string {
 }
 
 async function assertTemporaryRegularFile(
+  fileSystem: CadSaveFileSystem,
   path: string,
   directory: string
-): Promise<void> {
+): Promise<CadSaveFileIdentity> {
   try {
-    const metadata = await lstat(path);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("unsafe output");
-    if (pathKey(dirname(await realpath(path))) !== pathKey(directory)) {
+    const identity = await fileSystem.lstatIdentity(path);
+    if (identity.kind !== "file" || identity.symbolicLink) {
+      throw new Error("unsafe output");
+    }
+    if (
+      pathKey(dirname(await fileSystem.canonicalize(path))) !== pathKey(directory)
+    ) {
       throw new Error("escaped output");
+    }
+    return identity;
+  } catch {
+    throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+  }
+}
+
+async function revalidateBeforePublication(input: {
+  fileSystem: CadSaveFileSystem;
+  canonicalSource: string;
+  sourceIdentity: CadSaveFileIdentity;
+  sourceHashBefore: string;
+  canonicalDirectory: string;
+  directoryIdentity: CadSaveFileIdentity;
+  grantDirectory: string;
+  temporaryPath: string;
+  temporaryHandle: Awaited<ReturnType<CadSaveFileSystem["openRead"]>>;
+  temporaryIdentity: CadSaveFileIdentity;
+  outputSha256: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  throwIfAborted(input.signal);
+  let currentDirectory: string;
+  let currentDirectoryIdentity: CadSaveFileIdentity;
+  try {
+    currentDirectory = await input.fileSystem.canonicalize(input.grantDirectory);
+    currentDirectoryIdentity = await input.fileSystem.statIdentity(
+      currentDirectory
+    );
+  } catch {
+    throw new CadSaveError("CAD_SAVE_DESTINATION_INVALID");
+  }
+  throwIfAborted(input.signal);
+  if (
+    pathKey(currentDirectory) !== pathKey(input.canonicalDirectory)
+    || !sameObjectIdentity(currentDirectoryIdentity, input.directoryIdentity)
+  ) {
+    throw new CadSaveError("CAD_SAVE_DESTINATION_INVALID");
+  }
+
+  const handleIdentity = await input.temporaryHandle.identity();
+  throwIfAborted(input.signal);
+  let pathIdentity: CadSaveFileIdentity;
+  try {
+    pathIdentity = await input.fileSystem.lstatIdentity(input.temporaryPath);
+  } catch {
+    throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+  }
+  if (
+    !sameFileIdentity(handleIdentity, input.temporaryIdentity)
+    || !sameFileIdentity(pathIdentity, input.temporaryIdentity)
+    || pathIdentity.kind !== "file"
+    || pathIdentity.symbolicLink
+  ) {
+    throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+  }
+  const canonicalTemporary = await input.fileSystem.canonicalize(
+    input.temporaryPath
+  );
+  throwIfAborted(input.signal);
+  if (pathKey(dirname(canonicalTemporary)) !== pathKey(input.canonicalDirectory)) {
+    throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+  }
+  if (
+    await input.fileSystem.sha256(input.temporaryPath) !== input.outputSha256
+  ) {
+    throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
+  }
+  throwIfAborted(input.signal);
+
+  let currentSourceIdentity: CadSaveFileIdentity;
+  try {
+    currentSourceIdentity = await input.fileSystem.statIdentity(
+      input.canonicalSource
+    );
+  } catch {
+    throw new CadSaveError("CAD_SAVE_SOURCE_MUTATED");
+  }
+  if (
+    !sameFileIdentity(currentSourceIdentity, input.sourceIdentity)
+    || await input.fileSystem.sha256(input.canonicalSource)
+      !== input.sourceHashBefore
+  ) {
+    throw new CadSaveError("CAD_SAVE_SOURCE_MUTATED");
+  }
+  throwIfAborted(input.signal);
+}
+
+async function validatePublishedFile(input: {
+  fileSystem: CadSaveFileSystem;
+  temporaryPath: string;
+  finalPath: string;
+  temporaryIdentity: CadSaveFileIdentity;
+  outputSha256: string;
+}): Promise<void> {
+  try {
+    const finalIdentity = await input.fileSystem.lstatIdentity(input.finalPath);
+    const temporaryIdentity = await input.fileSystem.lstatIdentity(
+      input.temporaryPath
+    );
+    if (
+      finalIdentity.kind !== "file"
+      || finalIdentity.symbolicLink
+      || !sameFileIdentity(finalIdentity, input.temporaryIdentity)
+      || !sameFileIdentity(temporaryIdentity, input.temporaryIdentity)
+      || await input.fileSystem.sha256(input.finalPath) !== input.outputSha256
+    ) {
+      throw new Error("published output changed");
     }
   } catch {
     throw new CadSaveError("CAD_SAVE_VERIFICATION_FAILED");
   }
 }
 
-async function removeOrQuarantine(path: string): Promise<void> {
-  if (!(await pathExists(path))) return;
+async function cleanupPath(
+  fileSystem: CadSaveFileSystem,
+  path: string
+): Promise<"absent" | "removed" | "quarantined"> {
+  let exists: boolean;
   try {
-    await rm(path, { force: true });
-    return;
+    exists = await fileSystem.exists(path);
   } catch {
-    // A locked Windows file may need to remain as a visibly failed sibling.
+    throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
   }
-  const quarantine = join(
-    dirname(path),
-    `.${basename(path)}.failed.${randomUUID()}`
-  );
+  if (!exists) return "absent";
   try {
-    await rename(path, quarantine);
+    await fileSystem.remove(path);
+    return "removed";
   } catch {
-    // Never touch the intended final path while cleanup is blocked.
+    const quarantine = join(
+      dirname(path),
+      `.${basename(path)}.failed.${randomUUID()}`
+    );
+    try {
+      await fileSystem.move(path, quarantine);
+      return "quarantined";
+    } catch {
+      throw new CadSaveError("CAD_SAVE_CLEANUP_FAILED");
+    }
   }
 }
 
@@ -371,26 +619,48 @@ function temporaryIds(lineage: readonly CadIoWriteTransaction[]): string[] {
   );
 }
 
-async function shaFile(path: string): Promise<string> {
-  return createHash("sha256").update(await readFile(path)).digest("hex").toUpperCase();
+function fileIdentity(metadata: {
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  isFile(): boolean;
+  isDirectory(): boolean;
+  isSymbolicLink(): boolean;
+}): CadSaveFileIdentity {
+  return {
+    dev: metadata.dev.toString(),
+    ino: metadata.ino.toString(),
+    size: metadata.size.toString(),
+    kind: metadata.isFile()
+      ? "file"
+      : metadata.isDirectory()
+        ? "directory"
+        : "other",
+    symbolicLink: metadata.isSymbolicLink()
+  };
 }
 
-async function safeShaFile(path: string): Promise<string | null> {
-  try {
-    return await shaFile(path);
-  } catch {
-    return null;
-  }
+function sameObjectIdentity(
+  left: CadSaveFileIdentity,
+  right: CadSaveFileIdentity
+): boolean {
+  return (
+    left.dev === right.dev
+    && left.ino === right.ino
+    && left.kind === right.kind
+    && left.symbolicLink === right.symbolicLink
+  );
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await lstat(path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw new CadSaveError("CAD_SAVE_DESTINATION_INVALID");
-  }
+function sameFileIdentity(
+  left: CadSaveFileIdentity,
+  right: CadSaveFileIdentity
+): boolean {
+  return sameObjectIdentity(left, right) && left.size === right.size;
+}
+
+function hashBytes(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex").toUpperCase();
 }
 
 function pathKey(path: string): string {

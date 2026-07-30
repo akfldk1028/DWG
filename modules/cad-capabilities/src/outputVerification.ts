@@ -13,6 +13,7 @@ import {
 } from "./contracts.js";
 
 const BBOX_TOLERANCE = 0.000001;
+const EMPTY_SYSTEM_LAYERS = new Set(["0", "DEFPOINTS"]);
 
 export function verifySavedOutput(input: {
   verificationId: string;
@@ -88,10 +89,17 @@ function verifyCounts(input: Parameters<typeof verifySavedOutput>[0]): void {
 function verifyCopiedHandles(input: Parameters<typeof verifySavedOutput>[0]): void {
   const expected = [...input.expectedTemporaryIds].sort(compareText);
   const actual = Object.keys(input.writer.copiedHandleMap).sort(compareText);
+  const existingHandles = new Set(
+    input.saveState.current.index.entities.flatMap((entity) =>
+      entity.handle === null ? [] : [entity.handle]
+    )
+  );
+  const copiedHandles = Object.values(input.writer.copiedHandleMap);
   if (
     expected.length !== actual.length
     || expected.some((id, index) => id !== actual[index])
-    || new Set(Object.values(input.writer.copiedHandleMap)).size !== actual.length
+    || new Set(copiedHandles).size !== actual.length
+    || copiedHandles.some((handle) => existingHandles.has(handle))
   ) {
     fail();
   }
@@ -111,13 +119,16 @@ function verifyCopiedHandles(input: Parameters<typeof verifySavedOutput>[0]): vo
 }
 
 function verifyEntities(input: Parameters<typeof verifySavedOutput>[0]): void {
-  const reopenedByHandle = new Map(
-    input.reopened.index.entities
-      .filter((entity) => entity.handle !== null)
-      .map((entity) => [entity.handle!, entity])
+  const reopenedWithHandles = input.reopened.index.entities.filter(
+    (entity) => entity.handle !== null
   );
+  const reopenedByHandle = new Map(
+    reopenedWithHandles.map((entity) => [entity.handle!, entity])
+  );
+  if (reopenedByHandle.size !== reopenedWithHandles.length) fail();
+
+  const expectedByHandle = new Map<string, CadEntityIndexItem>();
   const expectedNull: string[] = [];
-  const reopenedMappedHandles = new Set(Object.values(input.writer.copiedHandleMap));
 
   for (const entity of input.saveState.current.index.entities) {
     const effectiveHandle = entity.handle ?? input.writer.copiedHandleMap[entity.id];
@@ -125,8 +136,18 @@ function verifyEntities(input: Parameters<typeof verifySavedOutput>[0]): void {
       expectedNull.push(entityFingerprint(entity));
       continue;
     }
-    const actual = reopenedByHandle.get(effectiveHandle);
-    if (!actual || !sameEntity(entity, actual)) fail();
+    if (expectedByHandle.has(effectiveHandle)) fail();
+    expectedByHandle.set(effectiveHandle, entity);
+  }
+
+  if (
+    expectedByHandle.size !== reopenedByHandle.size
+    || [...expectedByHandle.keys()].some((handle) => !reopenedByHandle.has(handle))
+  ) {
+    fail();
+  }
+  for (const [handle, entity] of expectedByHandle) {
+    if (!sameEntity(entity, reopenedByHandle.get(handle)!)) fail();
   }
 
   const actualNull = input.reopened.index.entities
@@ -141,9 +162,6 @@ function verifyEntities(input: Parameters<typeof verifySavedOutput>[0]): void {
     fail();
   }
 
-  for (const handle of reopenedMappedHandles) {
-    if (!reopenedByHandle.has(handle)) fail();
-  }
 }
 
 function sameEntity(expected: CadEntityIndexItem, actual: CadEntityIndexItem): boolean {
@@ -166,6 +184,12 @@ function entityFingerprint(entity: CadEntityIndexItem): string {
 
 function verifyLayers(expected: CadEntityIndex, actual: CadEntityIndex): void {
   const actualByName = new Map(actual.layers.map((layer) => [layer.name, layer]));
+  if (
+    actualByName.size !== actual.layers.length
+    || actual.summary.layerCount !== actual.layers.length
+  ) {
+    fail();
+  }
   for (const layer of expected.layers) {
     const reopened = actualByName.get(layer.name);
     if (
@@ -189,7 +213,11 @@ function verifyLayers(expected: CadEntityIndex, actual: CadEntityIndex): void {
   }
   const expectedNames = new Set(expected.layers.map((layer) => layer.name));
   if (actual.layers.some((layer) =>
-    !expectedNames.has(layer.name) && layer.entityCount !== 0
+    !expectedNames.has(layer.name)
+    && (
+      layer.entityCount !== 0
+      || !EMPTY_SYSTEM_LAYERS.has(layer.name.toUpperCase())
+    )
   )) {
     fail();
   }
