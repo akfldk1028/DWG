@@ -50,11 +50,13 @@ export type CadEditCapabilityErrorCode =
 
 export class CadEditCapabilityError extends Error {
   readonly code: CadEditCapabilityErrorCode;
+  readonly currentRevision: number | null;
 
-  constructor(code: CadEditCapabilityErrorCode, message: string) {
+  constructor(code: CadEditCapabilityErrorCode, message: string, currentRevision: number | null = null) {
     super(message);
     this.name = "CadEditCapabilityError";
     this.code = code;
+    this.currentRevision = currentRevision;
   }
 }
 
@@ -147,7 +149,7 @@ export function createEditCapabilityComposition(
     if (stored) {
       expireDocument(stored.documentId);
       const active = activePreviews.get(previewId);
-      if (!active) throw lifecycleError("expired");
+      if (!active) throw lifecycleError("expired", history.current().revision);
       assertDocument(active.documentId, documentId);
       return active;
     }
@@ -163,7 +165,7 @@ export function createEditCapabilityComposition(
       throw new CadEditCapabilityError("EDIT_PREVIEW_UNKNOWN", "Edit preview ID is not known.");
     }
     assertDocument(tombstone.documentId, documentId);
-    throw lifecycleError(tombstone.status);
+    throw lifecycleError(tombstone.status, history.current().revision);
   }
 
   const module: CadCapabilityModule = {
@@ -230,7 +232,11 @@ export function createEditCapabilityComposition(
       current.documentId !== stored.documentId
     ) {
       retire(request.previewId, "stale");
-      throw new CadEditCapabilityError("EDIT_PREVIEW_STALE", "Edit preview no longer matches the current document revision.");
+      throw new CadEditCapabilityError(
+        "EDIT_PREVIEW_STALE",
+        "Edit preview no longer matches the current document revision.",
+        current.revision
+      );
     }
     try {
       const currentAfter = history.apply(stored.preview);
@@ -244,7 +250,11 @@ export function createEditCapabilityComposition(
     } catch (error) {
       if (error instanceof CadEditError && error.code === "EDIT_REVISION_CONFLICT") {
         retire(request.previewId, "stale");
-        throw new CadEditCapabilityError("EDIT_PREVIEW_STALE", "Edit preview no longer matches the current document revision.");
+        throw new CadEditCapabilityError(
+          "EDIT_PREVIEW_STALE",
+          "Edit preview no longer matches the current document revision.",
+          history.current().revision
+        );
       }
       throw error;
     }
@@ -320,14 +330,14 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function lifecycleError(status: PreviewStatus): CadEditCapabilityError {
+function lifecycleError(status: PreviewStatus, currentRevision: number): CadEditCapabilityError {
   switch (status) {
     case "applied":
       return new CadEditCapabilityError("EDIT_PREVIEW_REUSED", "Edit preview has already been applied.");
     case "rejected":
       return new CadEditCapabilityError("EDIT_PREVIEW_REJECTED", "Edit preview was rejected.");
     case "stale":
-      return new CadEditCapabilityError("EDIT_PREVIEW_STALE", "Edit preview is stale.");
+      return new CadEditCapabilityError("EDIT_PREVIEW_STALE", "Edit preview is stale.", currentRevision);
     case "expired":
       return new CadEditCapabilityError("EDIT_PREVIEW_EXPIRED", "Edit preview has expired.");
     case "evicted":

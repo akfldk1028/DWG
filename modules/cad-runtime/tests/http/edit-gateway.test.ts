@@ -173,7 +173,13 @@ test("edit gateway drives preview apply reuse stale undo and redo through one pa
     previewId: stale.previewId, documentId, expectedRevision: 1, approved: true
   });
   assert.equal(staleApply.status, 409);
-  assert.equal((await staleApply.json() as { error: { code: string } }).error.code, "EDIT_PREVIEW_STALE");
+  assert.deepEqual(await staleApply.json(), {
+    error: {
+      code: "EDIT_PREVIEW_STALE",
+      message: "CAD edit operation could not be completed.",
+      currentRevision: 2
+    }
+  });
 
   const redo = await post(baseUrl, "/api/edit/redo", {
     documentId, expectedRevision: 2, approved: true

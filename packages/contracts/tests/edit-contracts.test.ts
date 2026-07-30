@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   cadEditApplyRequestSchema,
+  cadEditErrorResponseSchema,
   cadEditHistoryRequestSchema,
   cadEditPreviewRequestSchema,
   cadEditPreviewResponseSchema,
@@ -195,6 +196,29 @@ test("strictly validates literal approval requests and typed preview evidence", 
     warningsTruncated: false,
     warnings: [],
     engine: {}
+  }).success, false);
+});
+
+test("stale edit failures require an authoritative current revision", () => {
+  assert.equal(cadEditErrorResponseSchema.safeParse({
+    error: {
+      code: "EDIT_PREVIEW_STALE",
+      message: "CAD edit operation could not be completed.",
+      currentRevision: 9
+    }
+  }).success, true);
+  assert.equal(cadEditErrorResponseSchema.safeParse({
+    error: {
+      code: "EDIT_PREVIEW_STALE",
+      message: "CAD edit operation could not be completed."
+    }
+  }).success, false);
+  assert.equal(cadEditErrorResponseSchema.safeParse({
+    error: {
+      code: "EDIT_PREVIEW_REUSED",
+      message: "CAD edit operation could not be completed.",
+      currentRevision: 9
+    }
   }).success, false);
 });
 

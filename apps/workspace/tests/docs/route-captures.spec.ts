@@ -1,7 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { parseCadEditBatch, parseCadEditPreviewResponse } from "@dwg/contracts";
+import {
+  parseCadEditPreviewRequest,
+  parseCadEditPreviewResponse,
+  type CadEditBatch
+} from "@dwg/contracts";
 import {
   documentationCaptureDirectory,
   documentationCapturePath
@@ -80,24 +84,30 @@ test("captures the focused desktop sidebar preference state", async ({ page }) =
 
 test("captures populated change review at desktop and narrow widths", async ({ page }) => {
   await mkdir(captureDirectory, { recursive: true });
-  await page.route("**/api/edit/preview", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify(capturePreview())
-  }));
+  await mockInspection(page);
+  await page.route("**/api/edit/preview", (route) => {
+    const batch = parseCadEditPreviewRequest(route.request().postDataJSON()).batch;
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(capturePreview(batch))
+    });
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-  await publishCaptureProposal(page);
-  await page.getByRole("tab", { name: "Changes" }).click();
-  await expect(page.getByRole("region", { name: "Change review" })).toContainText("Layer changes");
+  await createVisibleMoveProposal(page);
+  const review = page.getByRole("region", { name: "Change review" });
+  await expect(review).toContainText("Selected handle 239");
+  await expect(page.getByRole("button", { name: "Approve changes" })).toBeVisible();
   await stabilize(page);
   await capture(page, "change-review-desktop.png");
 
-  await page.setViewportSize({ width: 800, height: 700 });
+  await page.setViewportSize({ width: 800, height: 900 });
   await page.reload();
   await page.locator(".artifact-toggle").click();
-  await publishCaptureProposal(page);
-  await page.getByRole("tab", { name: "Changes" }).click();
-  await expect(page.getByRole("region", { name: "Change review" })).toContainText("Entity changes");
+  await createVisibleMoveProposal(page);
+  await expect(review).toContainText("Selected handle 239");
+  await page.getByRole("button", { name: "Approve changes" }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Approve changes" })).toBeInViewport();
   await stabilize(page);
   await capture(page, "change-review-narrow.png");
 });
@@ -156,50 +166,59 @@ async function capture(page: Page, fileName: string) {
   });
 }
 
-async function publishCaptureProposal(page: Page) {
-  const batch = parseCadEditBatch({
-    schemaVersion: "cad-edit/v1",
-    transactionId: "20000000-0000-4000-8000-000000000001",
-    documentId: "dwg:b60b4a7242e43b34ca35561b",
-    expectedRevision: 0,
-    commands: [{
-      commandId: "30000000-0000-4000-8000-000000000001",
-      expectedRevision: 0,
-      origin: { kind: "user", id: "documentation-capture" },
-      preconditions: [{ target: "layer:imported:A-WALL", field: "exists", equals: true }],
-      operation: { kind: "layer.update", layerId: "layer:imported:A-WALL", visible: false }
-    }]
-  });
-  await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("dwg:cad-edit-proposal/v1", { detail })), batch);
+async function createVisibleMoveProposal(page: Page) {
+  await page.getByRole("button", { name: "Run agents" }).click();
+  await page.getByRole("tab", { name: /Findings/ }).click();
+  await page.locator(".finding-group-heading").click();
+  await page.locator(".finding-row").click();
+  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByLabel("Move X").fill("5");
+  await page.getByRole("button", { name: "Preview move" }).click();
+  await expect(page.getByRole("status")).toContainText("Ready for approval");
 }
 
-function capturePreview() {
+function capturePreview(batch: CadEditBatch) {
   return parseCadEditPreviewResponse({
     previewId: "10000000-0000-4000-8000-000000000001",
-    documentId: "dwg:b60b4a7242e43b34ca35561b",
-    transactionId: "20000000-0000-4000-8000-000000000001",
-    baseRevision: 0,
-    nextRevision: 1,
-    changeCount: 2,
+    documentId: batch.documentId,
+    transactionId: batch.transactionId,
+    baseRevision: batch.expectedRevision,
+    nextRevision: batch.expectedRevision + 1,
+    changeCount: 1,
     changesTruncated: false,
     changes: [
       {
-        commandId: "30000000-0000-4000-8000-000000000001",
-        kind: "layer.update",
-        targetId: "layer:imported:A-WALL",
-        before: { id: "layer:imported:A-WALL", name: "A-WALL", color: 7, visible: true, frozen: false, locked: false },
-        after: { id: "layer:imported:A-WALL", name: "A-WALL", color: 7, visible: false, frozen: false, locked: false }
-      },
-      {
-        commandId: "30000000-0000-4000-8000-000000000001",
-        kind: "text.replace",
-        targetId: "h:1A",
-        before: { id: "h:1A", handle: "1A", type: "TEXT", layer: "A-WALL", bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "Before" },
-        after: { id: "h:1A", handle: "1A", type: "TEXT", layer: "A-WALL", bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "After" }
+        commandId: batch.commands[0]!.commandId,
+        kind: "entity.move",
+        targetId: "h:239",
+        before: { id: "h:239", handle: "239", type: "LWPOLYLINE", layer: "0", bbox: { min: [0, 0, 0], max: [10, 10, 0] }, text: null },
+        after: { id: "h:239", handle: "239", type: "LWPOLYLINE", layer: "0", bbox: { min: [5, 0, 0], max: [15, 10, 0] }, text: null }
       }
     ],
-    warningCount: 1,
+    warningCount: 0,
     warningsTruncated: false,
-    warnings: ["Source text review required."]
+    warnings: []
   });
+}
+
+async function mockInspection(page: Page) {
+  await page.route("**/api/inspections", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      status: "completed",
+      drawingId: "dwg:b60b4a7242e43b34ca35561b",
+      events: [],
+      findings: [{
+        id: "h:239",
+        handle: "239",
+        type: "LWPOLYLINE",
+        layer: "0",
+        bbox: { min: [0, 0, 0], max: [10, 10, 0] },
+        reason: "layer:0",
+        confidence: 1
+      }],
+      issues: [],
+      warnings: []
+    })
+  }));
 }

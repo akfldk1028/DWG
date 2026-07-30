@@ -3,6 +3,7 @@ import {
   parseCadEditApplyResponse,
   parseCadEditBatch,
   parseCadEditHistoryRequest,
+  parseCadEditErrorResponse,
   parseCadEditPreviewRequest,
   parseCadEditPreviewResponse,
   type CadEditApplyResponse,
@@ -11,7 +12,11 @@ import {
 } from "@dwg/contracts";
 
 export class EditClientError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly currentRevision: number | null = null
+  ) {
     super(message);
     this.name = "EditClientError";
   }
@@ -115,17 +120,16 @@ async function postEdit<T>(
 }
 
 function toEditClientError(payload: unknown, status: number): EditClientError {
-  if (typeof payload === "object" && payload !== null) {
-    const error = (payload as Record<string, unknown>).error;
-    if (typeof error === "object" && error !== null) {
-      const code = (error as Record<string, unknown>).code;
-      const message = (error as Record<string, unknown>).message;
-      if (typeof code === "string" && typeof message === "string") {
-        return new EditClientError(code.slice(0, 96), message.slice(0, 240));
-      }
-    }
+  try {
+    const { error } = parseCadEditErrorResponse(payload);
+    return new EditClientError(
+      error.code,
+      error.message,
+      "currentRevision" in error ? error.currentRevision : null
+    );
+  } catch {
+    return new EditClientError("EDIT_REQUEST_FAILED", `HTTP ${status}`);
   }
-  return new EditClientError("EDIT_REQUEST_FAILED", `HTTP ${status}`);
 }
 
 function requireCorrelatedResult(

@@ -25,8 +25,11 @@ test("reviews bounded typed changes, rejects without applying, and re-previews s
   const applyBodies: unknown[] = [];
   const previewedBatches: CadEditBatch[] = [];
   let stale = false;
+  let currentRevision = 0;
   await mockInspection(page);
-  await mockEditGateway(page, calls, applyBodies, previewedBatches, () => stale);
+  await mockEditGateway(page, calls, applyBodies, previewedBatches, () => (
+    stale ? currentRevision : null
+  ), () => currentRevision);
   await page.goto("/");
 
   await selectGroundedEntity(page);
@@ -54,19 +57,21 @@ test("reviews bounded typed changes, rejects without applying, and re-previews s
   await page.getByRole("button", { name: "Re-preview changes" }).click();
   await expect(page.getByRole("button", { name: "Approve changes" })).toBeEnabled();
   stale = true;
+  currentRevision = 2;
   await page.getByRole("button", { name: "Approve changes" }).click();
   await expect(page.getByRole("alert")).toContainText("Preview is stale");
   await expect(page.getByRole("button", { name: "Re-preview changes" })).toBeEnabled();
 
   stale = false;
   await page.getByRole("button", { name: "Re-preview changes" }).click();
+  await expect(review).toContainText("Revision 2 → 3");
   await page.getByRole("button", { name: "Approve changes" }).dblclick();
-  await expect(page.getByRole("status")).toContainText("Applied at revision 1");
+  await expect(page.getByRole("status")).toContainText("Applied at revision 3");
   await expect(page.getByRole("button", { name: "Undo changes" })).toBeEnabled();
   await page.getByRole("button", { name: "Undo changes" }).click();
-  await expect(page.getByRole("status")).toContainText("Undone at revision 2");
+  await expect(page.getByRole("status")).toContainText("Undone at revision 4");
   await page.getByRole("button", { name: "Redo changes" }).click();
-  await expect(page.getByRole("status")).toContainText("Redone at revision 3");
+  await expect(page.getByRole("status")).toContainText("Redone at revision 5");
   expect(calls).toEqual({ preview: 3, apply: 2, undo: 1, redo: 1 });
   expect(previewedBatches).toHaveLength(3);
   expect(previewedBatches[0]).toMatchObject({
@@ -81,10 +86,55 @@ test("reviews bounded typed changes, rejects without applying, and re-previews s
       operation: { kind: "entity.move", handles: ["239"], delta: [5, 0, 0] }
     }]
   });
+  expect(previewedBatches[2]).toMatchObject({
+    expectedRevision: 2,
+    commands: [{
+      expectedRevision: 2,
+      preconditions: [
+        { target: "239", field: "type", equals: "LWPOLYLINE" },
+        { target: "239", field: "layer", equals: "0" }
+      ],
+      operation: { kind: "entity.move", handles: ["239"], delta: [5, 0, 0] }
+    }]
+  });
   expect(applyBodies).toEqual([
     { previewId, documentId, expectedRevision: 0, approved: true },
-    { previewId, documentId, expectedRevision: 0, approved: true }
+    { previewId, documentId, expectedRevision: 2, approved: true }
   ]);
+});
+
+test("blocks new proposals without aborting a delayed committed mutation", async ({ page }) => {
+  let previewCalls = 0;
+  let releaseApply!: () => void;
+  const applyReleased = new Promise<void>((resolve) => { releaseApply = resolve; });
+  let batch: CadEditBatch | null = null;
+  await mockInspection(page);
+  await page.route("**/api/edit/preview", (route) => {
+    previewCalls += 1;
+    batch = parseCadEditPreviewRequest(route.request().postDataJSON()).batch;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(previewResponse(batch)) });
+  });
+  await page.route("**/api/edit/apply", async (route) => {
+    await applyReleased;
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(applyResponse(1, batch!))
+    });
+  });
+  await page.goto("/");
+  await selectGroundedEntity(page);
+  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByLabel("Move X").fill("4");
+  await page.getByRole("button", { name: "Preview move" }).click();
+  await expect(page.getByRole("status")).toContainText("Ready for approval");
+
+  await page.getByRole("button", { name: "Approve changes" }).click();
+  await expect(page.getByRole("button", { name: "Preview move" })).toBeDisabled();
+  await publishProposal(page, batch!);
+  await page.waitForTimeout(100);
+  expect(previewCalls).toBe(1);
+  releaseApply();
+  await expect(page.getByRole("status")).toContainText("Applied at revision 1");
 });
 
 test("retries an initial preview failure from the retained product proposal", async ({ page }) => {
@@ -211,7 +261,8 @@ async function mockEditGateway(
   calls: { preview: number; apply: number; undo: number; redo: number },
   applyBodies: unknown[],
   previewedBatches: CadEditBatch[],
-  isStale: () => boolean
+  staleRevision: () => number | null,
+  currentRevision: () => number
 ) {
   await page.route("**/api/edit/preview", (route) => {
     calls.preview += 1;
@@ -222,20 +273,30 @@ async function mockEditGateway(
   await page.route("**/api/edit/apply", (route) => {
     calls.apply += 1;
     applyBodies.push(route.request().postDataJSON());
-    if (isStale()) {
+    const stale = staleRevision();
+    if (stale !== null) {
       return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({
-        error: { code: "EDIT_PREVIEW_STALE", message: "Preview is stale." }
+        error: { code: "EDIT_PREVIEW_STALE", message: "Preview is stale.", currentRevision: stale }
       }) });
     }
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify(applyResponse(1, previewedBatches.at(-1)!)) });
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(applyResponse(currentRevision() + 1, previewedBatches.at(-1)!))
+    });
   });
   await page.route("**/api/edit/undo", (route) => {
     calls.undo += 1;
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify(applyResponse(2, previewedBatches.at(-1)!)) });
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(applyResponse(currentRevision() + 2, previewedBatches.at(-1)!))
+    });
   });
   await page.route("**/api/edit/redo", (route) => {
     calls.redo += 1;
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify(applyResponse(3, previewedBatches.at(-1)!)) });
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(applyResponse(currentRevision() + 3, previewedBatches.at(-1)!))
+    });
   });
 }
 

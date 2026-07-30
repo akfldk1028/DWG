@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { CadEditBatch, CadEditPreviewResponse } from "@dwg/contracts";
+import { parseCadEditBatch, type CadEditBatch, type CadEditPreviewResponse } from "@dwg/contracts";
 
 import {
   EditClientError,
@@ -115,11 +115,18 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
       setState((current) => ({ ...current, phase: "applied", revision: response.revision, error: null, retryAction: null }));
     } catch (reason) {
       if (operation.controller.signal.aborted || !complete(operation)) return;
-      const stale = reason instanceof EditClientError && reason.code === "EDIT_PREVIEW_STALE";
+      const stale = (
+        reason instanceof EditClientError &&
+        reason.code === "EDIT_PREVIEW_STALE" &&
+        reason.currentRevision !== null
+      );
       setState((current) => ({
         ...current,
         phase: stale ? "stale" : "error",
-        error: stale ? "Preview is stale. Re-preview changes before approval." : messageFor(reason),
+        revision: stale ? reason.currentRevision : current.revision,
+        error: stale
+          ? "Preview is stale. Re-preview changes at the current revision before approval."
+          : messageFor(reason),
         retryAction: stale ? "preview" : "apply"
       }));
     }
@@ -169,26 +176,43 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
     }
   }, [begin, complete, state.preview, state.revision]);
 
+  const rePreview = useCallback(() => {
+    if (!batchRef.current) return;
+    const batch = state.phase === "stale" && state.revision !== null
+      ? rebaseBatchRevision(batchRef.current, state.revision)
+      : batchRef.current;
+    void preview(batch);
+  }, [preview, state.phase, state.revision]);
+
   const retry = useCallback(() => {
     if (state.retryAction === "preview" && batchRef.current) {
-      void preview(batchRef.current);
+      rePreview();
     } else if (state.retryAction === "apply") {
       void approve();
     } else if (state.retryAction === "undo" || state.retryAction === "redo") {
       void transition(state.retryAction);
     }
-  }, [approve, preview, state.retryAction, transition]);
+  }, [approve, rePreview, state.retryAction, transition]);
 
   return {
     ...state,
     busy: ["previewing", "applying", "undoing", "redoing"].includes(state.phase),
+    mutationBusy: ["applying", "undoing", "redoing"].includes(state.phase),
     approve,
     reject,
     retry,
-    rePreview: () => batchRef.current && void preview(batchRef.current),
+    rePreview,
     undo: () => void transition("undo"),
     redo: () => void transition("redo")
   };
+}
+
+function rebaseBatchRevision(batch: CadEditBatch, expectedRevision: number): CadEditBatch {
+  return parseCadEditBatch({
+    ...batch,
+    expectedRevision,
+    commands: batch.commands.map((command) => ({ ...command, expectedRevision }))
+  });
 }
 
 function messageFor(reason: unknown) {

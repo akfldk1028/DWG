@@ -146,11 +146,22 @@ The gateway forwards the same `AbortSignal` through the composed application.
 A pre-aborted preview, apply, undo, or redo fails before preview lifecycle or
 transaction state changes.
 
-Edit failures use only a bounded, redacted
-`{ error: { code, message } }` response. Responses and errors never expose
-document snapshots, resolved-command before-state, provider content, request
-payloads, or internal engine objects. The preview `changes` array contains
-only the contract-owned typed entity/layer evidence required for user review.
+Edit failures use the strict, bounded, redacted `CadEditErrorResponse`.
+Generic failures remain `{ error: { code, message } }`.
+`EDIT_PREVIEW_STALE` additionally requires the authoritative non-negative
+`currentRevision`; the browser may rebuild the same validated batch at that
+revision, changing only the batch and command `expectedRevision` fields. It
+must preserve operations, preconditions, and handles so stale recovery cannot
+silently retarget an edit. This additive stale variant is coordinated between
+the runtime producer and workspace consumer; generic failure compatibility is
+unchanged.
+
+Responses and errors never expose document snapshots, resolved-command
+before-state, provider content, request payloads, or internal engine objects.
+The preview `changes` array contains only the contract-owned typed entity/layer
+evidence required for user review. While apply, undo, or redo is in flight, the
+workspace disables its proposal composer and ignores newly published proposals
+so a preview cannot abort or replace a committed mutation request.
 
 All routes operate inside a single loopback trust boundary. Health, read,
 provider, chat, inspection, and edit use the same process. It binds only to

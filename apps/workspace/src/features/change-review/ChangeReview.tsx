@@ -15,6 +15,7 @@ interface Props {
   documentId: string;
   expectedRevision: number;
   selectedEntity: CadEntityIndexItem | null;
+  mutationBusy: boolean;
   retryAction: ChangeReviewRetry;
   busy: boolean;
   onApprove(): void;
@@ -34,6 +35,7 @@ export function ChangeReview({
   documentId,
   expectedRevision,
   selectedEntity,
+  mutationBusy,
   retryAction,
   busy,
   onApprove,
@@ -53,6 +55,7 @@ export function ChangeReview({
     <section aria-label="Change review" className="change-review" role="region">
       <ChangeProposalComposer
         documentId={documentId}
+        disabled={mutationBusy}
         expectedRevision={expectedRevision}
         selectedEntity={selectedEntity}
       />

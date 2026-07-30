@@ -66,11 +66,15 @@ export function App() {
 
   useEffect(() => subscribeCadEditProposals({
     onProposal: (batch) => {
+      if (changeReview.mutationBusy) {
+        setProposalError("Finish the current CAD mutation before proposing another change.");
+        return;
+      }
       setProposalError(null);
       setPendingChangeBatch(batch);
     },
     onInvalid: () => setProposalError("Invalid CAD edit proposal.")
-  }), []);
+  }), [changeReview.mutationBusy]);
 
   const layerVisibility = useLayerVisibility(
     index?.layers ?? []

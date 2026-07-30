@@ -221,6 +221,7 @@ export function CadArtifactPanel({
             documentId={index.drawingId}
             error={changeReview.error}
             expectedRevision={changeReview.revision ?? 0}
+            mutationBusy={changeReview.mutationBusy}
             onApprove={changeReview.approve}
             onRePreview={changeReview.rePreview}
             onRedo={changeReview.redo}

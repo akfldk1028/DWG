@@ -265,7 +265,9 @@ test("edit apply denies unknown, cross-document, rejected, and stale previews wi
     () => composition.module.execute("edit.apply", {
       previewId: stale.previewId, documentId: "drawing:capabilities", expectedRevision: 1, approved: true
     }),
-    (error) => codeOf(error) === "EDIT_PREVIEW_STALE"
+    (error) =>
+      codeOf(error) === "EDIT_PREVIEW_STALE" &&
+      (error as { currentRevision?: unknown }).currentRevision === 2
   );
 });
 

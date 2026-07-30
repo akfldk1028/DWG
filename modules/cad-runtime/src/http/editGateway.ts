@@ -6,6 +6,7 @@ import {
   parseCadEditHistoryRequest,
   parseCadEditPreviewRequest,
   parseCadEditPreviewResponse,
+  parseCadEditErrorResponse,
   type CadEditApplyResponse,
   type CadEditPreviewResponse
 } from "@dwg/contracts";
@@ -36,7 +37,13 @@ export async function handleEditGatewayRequest(
     sendJson(response, 200, parseResponse(operation, result));
   } catch (error) {
     const failure = toEditGatewayFailure(error);
-    sendJson(response, failure.status, { error: { code: failure.code, message: failure.message } });
+    sendJson(response, failure.status, parseCadEditErrorResponse({
+      error: {
+        code: failure.code,
+        message: failure.message,
+        ...(failure.currentRevision === null ? {} : { currentRevision: failure.currentRevision })
+      }
+    }));
   }
   return true;
 }
@@ -125,7 +132,8 @@ class EditGatewayError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
-    readonly publicMessage: string
+    readonly publicMessage: string,
+    readonly currentRevision: number | null = null
   ) {
     super(publicMessage);
   }
@@ -137,6 +145,28 @@ function toEditGatewayFailure(error: unknown): EditGatewayError {
     ? (error as { code?: unknown }).code
     : undefined;
   if (typeof code === "string" && /^EDIT_[A-Z0-9_]{1,60}$/.test(code)) {
+    if (code === "EDIT_PREVIEW_STALE") {
+      const currentRevision = typeof error === "object" && error !== null && "currentRevision" in error
+        ? (error as { currentRevision?: unknown }).currentRevision
+        : undefined;
+      if (
+        typeof currentRevision !== "number" ||
+        !Number.isSafeInteger(currentRevision) ||
+        currentRevision < 0
+      ) {
+        return new EditGatewayError(
+          500,
+          "EDIT_RESPONSE_INVALID",
+          "CAD edit capability returned an invalid response."
+        );
+      }
+      return new EditGatewayError(
+        409,
+        code,
+        "CAD edit operation could not be completed.",
+        currentRevision
+      );
+    }
     return new EditGatewayError(409, code, "CAD edit operation could not be completed.");
   }
   return new EditGatewayError(400, "EDIT_REQUEST_INVALID", "Invalid CAD edit request.");

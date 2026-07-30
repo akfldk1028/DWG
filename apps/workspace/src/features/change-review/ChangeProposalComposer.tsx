@@ -8,9 +8,10 @@ interface Props {
   documentId: string;
   expectedRevision: number;
   selectedEntity: CadEntityIndexItem | null;
+  disabled: boolean;
 }
 
-export function ChangeProposalComposer({ documentId, expectedRevision, selectedEntity }: Props) {
+export function ChangeProposalComposer({ documentId, expectedRevision, selectedEntity, disabled }: Props) {
   const [delta, setDelta] = useState({ x: "0", y: "0", z: "0" });
   const [error, setError] = useState<string | null>(null);
   const handle = selectedEntity?.handle ?? null;
@@ -63,7 +64,7 @@ export function ChangeProposalComposer({ documentId, expectedRevision, selectedE
         <label>Move X<input aria-label="Move X" inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, x: event.target.value }))} value={delta.x} /></label>
         <label>Move Y<input aria-label="Move Y" inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, y: event.target.value }))} value={delta.y} /></label>
         <label>Move Z<input aria-label="Move Z" inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, z: event.target.value }))} value={delta.z} /></label>
-        <button disabled={!handle} onClick={proposeMove} type="button">Preview move</button>
+        <button disabled={!handle || disabled} onClick={proposeMove} type="button">Preview move</button>
       </div>
       {error && <div className="change-proposal-error" role="alert">{error}</div>}
     </section>

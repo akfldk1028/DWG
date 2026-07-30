@@ -11,6 +11,8 @@ export const CAD_EDIT_LAYER_ID_PATTERN = /^layer:(?:imported|created):[A-Za-z0-9
 const nonEmptyString = z.string().min(1);
 const uuid = z.string().uuid();
 const revision = z.number().int().nonnegative().safe();
+const editErrorCode = z.string().regex(/^EDIT_[A-Z0-9_]{1,60}$/);
+const editErrorMessage = z.string().min(1).max(240);
 const aciColor = z.number().int().min(1).max(255);
 const handle = nonEmptyString;
 const layerId = z.string().regex(CAD_EDIT_LAYER_ID_PATTERN);
@@ -225,6 +227,21 @@ export const cadEditApplyResponseSchema = z.object({
   changeCount: z.number().int().nonnegative()
 }).strict();
 
+const cadEditStaleErrorSchema = z.object({
+  code: z.literal("EDIT_PREVIEW_STALE"),
+  message: editErrorMessage,
+  currentRevision: revision
+}).strict();
+
+const cadEditGenericErrorSchema = z.object({
+  code: editErrorCode.refine((code) => code !== "EDIT_PREVIEW_STALE"),
+  message: editErrorMessage
+}).strict();
+
+export const cadEditErrorResponseSchema = z.object({
+  error: z.union([cadEditStaleErrorSchema, cadEditGenericErrorSchema])
+}).strict();
+
 export const cadEditPreviewRequestSchema = z.object({
   batch: cadEditBatchSchema
 }).strict();
@@ -254,6 +271,7 @@ export type CadChange = z.infer<typeof cadChangeSchema>;
 export type CadResolvedCommand = z.infer<typeof cadResolvedCommandSchema>;
 export type CadEditPreviewResponse = z.infer<typeof cadEditPreviewResponseSchema>;
 export type CadEditApplyResponse = z.infer<typeof cadEditApplyResponseSchema>;
+export type CadEditErrorResponse = z.infer<typeof cadEditErrorResponseSchema>;
 export type CadEditPreviewRequest = z.infer<typeof cadEditPreviewRequestSchema>;
 export type CadEditApplyRequest = z.infer<typeof cadEditApplyRequestSchema>;
 export type CadEditHistoryRequest = z.infer<typeof cadEditHistoryRequestSchema>;
@@ -280,4 +298,8 @@ export function parseCadEditPreviewResponse(value: unknown): CadEditPreviewRespo
 
 export function parseCadEditApplyResponse(value: unknown): CadEditApplyResponse {
   return cadEditApplyResponseSchema.parse(value);
+}
+
+export function parseCadEditErrorResponse(value: unknown): CadEditErrorResponse {
+  return cadEditErrorResponseSchema.parse(value);
 }
