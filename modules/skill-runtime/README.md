@@ -32,7 +32,11 @@ undo, and redo are never workflow-executable. A capability must be listed in the
 compatible skill manifest and its required permission must be both declared and
 granted. The same supplied `AbortSignal` is forwarded to every capability call.
 Runs return only bounded error codes, validate the final output against the
-manifest output JSON Schema, and never exceed one MiB of UTF-8 JSON.
+manifest output JSON Schema, and never exceed one MiB of UTF-8 JSON. If the
+ordinary result cannot fit, the runner replaces it with a fixed
+`bounded-skill-result` identifier and bounded status-specific error. Invalid
+manifest or input data also returns only fixed error codes; capability
+exceptions and rejected data are never copied into failures.
 
 From the repository root, run focused tests with:
 

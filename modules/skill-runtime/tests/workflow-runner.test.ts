@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MAX_CAD_SKILL_ID_CHARS,
   parseCadSkillWorkflow,
   type CadSkillWorkflow,
   type CadSkillManifest
@@ -9,6 +10,7 @@ import {
 import type { CadCapabilityName, CadCapabilityRuntime } from "@dwg/cad-capabilities";
 
 import {
+  MAX_CAD_SKILL_RUN_RESULT_BYTES,
   runCadSkillWorkflow,
   type InstalledCadSkill
 } from "../src/index.js";
@@ -196,8 +198,190 @@ test("bounds every encoded result to one MiB without exposing capability data", 
     capabilities: runtime(async () => ({ layers: ["sensitive-" + "x".repeat(1024 * 1024)] }))
   });
 
-  assert.deepEqual(result, failed("layers", "RESULT_TOO_LARGE"));
-  assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 1024 * 1024);
+  assert.deepEqual(result, {
+    skillId: "bounded-skill-result",
+    status: "failed",
+    steps: [
+      { id: "result", status: "failed", output: { error: { code: "RESULT_TOO_LARGE" } } }
+    ],
+    warnings: []
+  });
+  assertResultBounded(result);
+});
+
+test("bounds ordinary and fallback failures even when a caller supplies an oversized skill ID", async () => {
+  const boundaryId = "a".repeat(MAX_CAD_SKILL_ID_CHARS);
+  const ordinary = await runCadSkillWorkflow({
+    skill: installedSkill({ manifest: { ...readManifest, id: boundaryId } }),
+    workflow: workflow([{ id: "layers", capability: "query.layers", input: {} }]),
+    input: { path: "drawing.dwg" },
+    grantedPermissions: [],
+    capabilities: runtime(async () => ({ layers: [] }))
+  });
+  assert.equal(ordinary.skillId, boundaryId);
+  assertResultBounded(ordinary);
+
+  const oversized = await runCadSkillWorkflow({
+    skill: installedSkill({
+      manifest: {
+        ...readManifest,
+        id: "a".repeat(MAX_CAD_SKILL_RUN_RESULT_BYTES + 128)
+      }
+    }),
+    workflow: workflow([{ id: "layers", capability: "query.layers", input: {} }]),
+    input: null,
+    grantedPermissions: ["read"],
+    capabilities: runtime(async () => ({ layers: [] }))
+  });
+  assert.deepEqual(oversized, {
+    skillId: "bounded-skill-result",
+    status: "failed",
+    steps: [],
+    warnings: ["SKILL_MANIFEST_INVALID"]
+  });
+  assertResultBounded(oversized);
+});
+
+test("rejects non-data arrays in workflows", () => {
+  const alteredPrototype: unknown[] = [];
+  Object.setPrototypeOf(alteredPrototype, {});
+
+  const ownPrototypeKey: unknown[] = [];
+  Object.defineProperty(ownPrototypeKey, "__proto__", {
+    value: "polluted",
+    enumerable: true
+  });
+
+  const ownConstructorKey: unknown[] = [];
+  Object.defineProperty(ownConstructorKey, "constructor", {
+    value: "polluted",
+    enumerable: true
+  });
+
+  const ownPrototypeName: unknown[] = [];
+  Object.defineProperty(ownPrototypeName, "prototype", {
+    value: "polluted",
+    enumerable: true
+  });
+
+  const extraProperty: unknown[] = [];
+  Object.defineProperty(extraProperty, "extra", {
+    value: "not-an-index",
+    enumerable: true
+  });
+
+  const symbolProperty: unknown[] = [];
+  Object.defineProperty(symbolProperty, Symbol("extra"), {
+    value: "not-json",
+    enumerable: true
+  });
+
+  const sparse = new Array(1);
+  const accessor: unknown[] = [];
+  let getterCalls = 0;
+  Object.defineProperty(accessor, "0", {
+    get() {
+      getterCalls += 1;
+      return "executed";
+    },
+    enumerable: true,
+    configurable: true
+  });
+  accessor.length = 1;
+
+  for (const value of [
+    alteredPrototype,
+    ownPrototypeKey,
+    ownConstructorKey,
+    ownPrototypeName,
+    extraProperty,
+    symbolProperty,
+    sparse,
+    accessor
+  ]) {
+    assert.throws(() => parseCadSkillWorkflow({
+      schemaVersion: "cad-skill-workflow/v1",
+      steps: [{ id: "one", capability: "query.layers", input: { value } }]
+    }), /WORKFLOW_VALUE_NOT_JSON/);
+  }
+  assert.equal(getterCalls, 0);
+});
+
+test("rejects object accessors and unexpected own metadata without reading them", () => {
+  let getterCalls = 0;
+  const accessor: Record<string, unknown> = {};
+  Object.defineProperty(accessor, "secret", {
+    get() {
+      getterCalls += 1;
+      return "executed";
+    },
+    enumerable: true
+  });
+
+  const hidden: Record<string, unknown> = {};
+  Object.defineProperty(hidden, "secret", {
+    value: "hidden",
+    enumerable: false
+  });
+
+  const symbolKeyed: Record<string | symbol, unknown> = {
+    [Symbol("secret")]: "hidden"
+  };
+
+  for (const value of [accessor, hidden, symbolKeyed]) {
+    assert.throws(() => parseCadSkillWorkflow({
+      schemaVersion: "cad-skill-workflow/v1",
+      steps: [{ id: "one", capability: "query.layers", input: { value } }]
+    }), /WORKFLOW_VALUE_NOT_JSON/);
+  }
+  assert.equal(getterCalls, 0);
+});
+
+test("returns bounded failures for accessor input and capability output without invoking getters", async () => {
+  let inputGetterCalls = 0;
+  const input: Record<string, unknown> = {};
+  Object.defineProperty(input, "path", {
+    get() {
+      inputGetterCalls += 1;
+      return "drawing.dwg";
+    },
+    enumerable: true
+  });
+  const invalidInput = await runCadSkillWorkflow({
+    skill: installedSkill(),
+    workflow: workflow([{ id: "layers", capability: "query.layers", input: {} }]),
+    input,
+    grantedPermissions: ["read"],
+    capabilities: runtime(async () => ({ layers: [] }))
+  });
+  assert.deepEqual(invalidInput, {
+    skillId: "workflow-test",
+    status: "failed",
+    steps: [],
+    warnings: ["INPUT_VALUE_INVALID"]
+  });
+  assert.equal(inputGetterCalls, 0);
+  assertResultBounded(invalidInput);
+
+  let outputGetterCalls = 0;
+  const output: Record<string, unknown> = {};
+  Object.defineProperty(output, "layers", {
+    get() {
+      outputGetterCalls += 1;
+      return [];
+    },
+    enumerable: true
+  });
+  const invalidOutput = await runCadSkillWorkflow({
+    skill: installedSkill(),
+    workflow: workflow([{ id: "layers", capability: "query.layers", input: {} }]),
+    input: { path: "drawing.dwg" },
+    grantedPermissions: ["read"],
+    capabilities: runtime(async () => output)
+  });
+  assert.deepEqual(invalidOutput, failed("layers", "CAPABILITY_OUTPUT_INVALID"));
+  assert.equal(outputGetterCalls, 0);
+  assertResultBounded(invalidOutput);
 });
 
 test("uses the identical AbortSignal for every capability and returns cancelled without leaking errors", async () => {
@@ -231,6 +415,40 @@ test("uses the identical AbortSignal for every capability and returns cancelled 
     ],
     warnings: []
   });
+  assertResultBounded(result);
+});
+
+test("keeps an overflowing cancellation fallback bounded and cancellation-only", async () => {
+  const controller = new AbortController();
+  const result = await runCadSkillWorkflow({
+    skill: installedSkill(),
+    workflow: workflow([
+      { id: "open", capability: "document.open", input: {} },
+      { id: "layers", capability: "query.layers", input: {} }
+    ]),
+    input: { path: "drawing.dwg" },
+    grantedPermissions: ["read"],
+    signal: controller.signal,
+    capabilities: runtime(async (name) => {
+      if (name === "document.open") {
+        return {
+          padding: "x".repeat(MAX_CAD_SKILL_RUN_RESULT_BYTES - 180)
+        };
+      }
+      controller.abort();
+      return { layers: [] };
+    })
+  });
+
+  assert.deepEqual(result, {
+    skillId: "bounded-skill-result",
+    status: "cancelled",
+    steps: [
+      { id: "result", status: "cancelled", output: { error: { code: "CANCELLED" } } }
+    ],
+    warnings: []
+  });
+  assertResultBounded(result);
 });
 
 function workflow(steps: CadSkillWorkflow["steps"]): CadSkillWorkflow {
@@ -261,4 +479,11 @@ function failed(id: string, code: string) {
     steps: [{ id, status: "failed", output: { error: { code } } }],
     warnings: []
   };
+}
+
+function assertResultBounded(result: unknown) {
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(result), "utf8") <=
+      MAX_CAD_SKILL_RUN_RESULT_BYTES
+  );
 }

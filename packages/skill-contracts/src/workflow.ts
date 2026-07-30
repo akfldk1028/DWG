@@ -44,38 +44,92 @@ export function assertCadSkillJsonValue(value: unknown): void {
 }
 
 export function cloneCadSkillJsonValue<T>(value: T): T {
-  assertJsonValue(value);
-  return clone(value) as T;
+  return cloneDataValue(value, new Set<object>()) as T;
 }
 
-function assertJsonValue(value: unknown, ancestors = new Set<object>()): void {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+function assertJsonValue(value: unknown): void {
+  cloneDataValue(value, new Set<object>());
+}
+
+function cloneDataValue(value: unknown, ancestors: Set<object>): unknown {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
   if (typeof value === "number") {
-    if (Number.isFinite(value)) return;
+    if (Number.isFinite(value)) return value;
     throw new Error("WORKFLOW_VALUE_NOT_JSON");
   }
   if (typeof value !== "object") throw new Error("WORKFLOW_VALUE_NOT_JSON");
   if (ancestors.has(value)) throw new Error("WORKFLOW_VALUE_NOT_JSON");
 
   ancestors.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) assertJsonValue(item, ancestors);
-  } else {
-    if (Object.getPrototypeOf(value) !== Object.prototype) {
-      throw new Error("WORKFLOW_VALUE_NOT_JSON");
-    }
-    for (const key of Object.keys(value)) {
-      if (forbiddenKeys.has(key)) throw new Error("WORKFLOW_VALUE_NOT_JSON");
-      assertJsonValue((value as Record<string, unknown>)[key], ancestors);
-    }
+  try {
+    return Array.isArray(value)
+      ? cloneDataArray(value, ancestors)
+      : cloneDataObject(value, ancestors);
+  } finally {
+    ancestors.delete(value);
   }
-  ancestors.delete(value);
 }
 
-function clone(value: unknown): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(clone);
+function cloneDataArray(value: unknown[], ancestors: Set<object>): unknown[] {
+  if (Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new Error("WORKFLOW_VALUE_NOT_JSON");
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+  if (
+    !lengthDescriptor ||
+    !("value" in lengthDescriptor) ||
+    lengthDescriptor.enumerable ||
+    lengthDescriptor.configurable ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0
+  ) {
+    throw new Error("WORKFLOW_VALUE_NOT_JSON");
+  }
+
+  const length = lengthDescriptor.value as number;
+  const keys = Reflect.ownKeys(descriptors);
+  if (keys.length !== length + 1) throw new Error("WORKFLOW_VALUE_NOT_JSON");
+
+  const copied: unknown[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (
+      !descriptor ||
+      !("value" in descriptor) ||
+      !descriptor.enumerable
+    ) {
+      throw new Error("WORKFLOW_VALUE_NOT_JSON");
+    }
+    copied.push(cloneDataValue(descriptor.value, ancestors));
+  }
+  return copied;
+}
+
+function cloneDataObject(
+  value: object,
+  ancestors: Set<object>
+): Record<string, unknown> {
+  if (Object.getPrototypeOf(value) !== Object.prototype) {
+    throw new Error("WORKFLOW_VALUE_NOT_JSON");
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
   const copied: Record<string, unknown> = {};
-  for (const key of Object.keys(value)) copied[key] = clone((value as Record<string, unknown>)[key]);
+  for (const key of Reflect.ownKeys(descriptors)) {
+    if (typeof key !== "string" || forbiddenKeys.has(key)) {
+      throw new Error("WORKFLOW_VALUE_NOT_JSON");
+    }
+    const descriptor = descriptors[key]!;
+    if (!("value" in descriptor) || !descriptor.enumerable) {
+      throw new Error("WORKFLOW_VALUE_NOT_JSON");
+    }
+    copied[key] = cloneDataValue(descriptor.value, ancestors);
+  }
   return copied;
 }

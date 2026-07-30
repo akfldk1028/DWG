@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MAX_CAD_SKILL_CAPABILITIES,
+  MAX_CAD_SKILL_CAPABILITY_CHARS,
+  MAX_CAD_SKILL_CODE_CHARS,
+  MAX_CAD_SKILL_CODES,
+  MAX_CAD_SKILL_ENTITY_TYPE_CHARS,
+  MAX_CAD_SKILL_ENTITY_TYPES,
+  MAX_CAD_SKILL_ID_CHARS,
+  MAX_CAD_SKILL_PURPOSE_CHARS,
+  MAX_CAD_SKILL_VERSION_CHARS,
   parseCadSkillManifest,
   type CadSkillManifest
 } from "@dwg/skill-contracts";
@@ -81,6 +90,55 @@ test("requires nonempty unique limitation codes", () => {
 
 test("rejects unknown manifest properties", () => {
   assertManifestRejected({ unexpected: true });
+});
+
+test("bounds every manifest scalar that can identify or describe a skill", () => {
+  assertManifestRejected({ id: "a".repeat(MAX_CAD_SKILL_ID_CHARS + 1) });
+  assertManifestRejected({
+    version: `1.0.0+${"a".repeat(MAX_CAD_SKILL_VERSION_CHARS)}`
+  });
+  assertManifestRejected({
+    purpose: "p".repeat(MAX_CAD_SKILL_PURPOSE_CHARS + 1)
+  });
+  assertManifestRejected({
+    capabilities: ["q." + "a".repeat(MAX_CAD_SKILL_CAPABILITY_CHARS)]
+  });
+  assertManifestRejected({
+    entityTypes: ["E".repeat(MAX_CAD_SKILL_ENTITY_TYPE_CHARS + 1)]
+  });
+  assertManifestRejected({
+    failureCodes: ["E".repeat(MAX_CAD_SKILL_CODE_CHARS + 1)]
+  });
+});
+
+test("bounds and de-duplicates every manifest string array", () => {
+  assertManifestRejected({
+    capabilities: Array.from(
+      { length: MAX_CAD_SKILL_CAPABILITIES + 1 },
+      (_, index) => `query.capability-${index}`
+    )
+  });
+  assertManifestRejected({
+    entityTypes: Array.from(
+      { length: MAX_CAD_SKILL_ENTITY_TYPES + 1 },
+      (_, index) => `ENTITY_${index}`
+    )
+  });
+  assertManifestRejected({
+    failureCodes: Array.from(
+      { length: MAX_CAD_SKILL_CODES + 1 },
+      (_, index) => `FAILURE_${index}`
+    )
+  });
+  assertManifestRejected({
+    capabilities: ["query.layers", "query.layers"]
+  });
+  assertManifestRejected({
+    entityTypes: ["LAYER", "LAYER"]
+  });
+  assertManifestRejected({
+    formats: ["dwg", "dwg"]
+  });
 });
 
 function assertManifestRejected(overrides: Record<string, unknown>) {

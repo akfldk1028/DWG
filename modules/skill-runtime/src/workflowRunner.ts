@@ -13,6 +13,7 @@ import type { InstalledCadSkill } from "./discovery.js";
 import { requiredSkillPermission } from "./permissions.js";
 
 export const MAX_CAD_SKILL_RUN_RESULT_BYTES = 1024 * 1024;
+const BOUNDED_SKILL_ID = "bounded-skill-result";
 
 export interface CadSkillRunStepResult {
   id: string;
@@ -38,9 +39,19 @@ export interface RunCadSkillWorkflowOptions {
 
 export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): Promise<CadSkillRunResult> {
   const workflow = parseCadSkillWorkflow(options.workflow);
-  const manifest = parseCadSkillManifest(cloneCadSkillJsonValue(options.skill.manifest));
-  const safeInput = cloneCadSkillJsonValue(options.input);
+  let manifest;
+  try {
+    manifest = parseCadSkillManifest(cloneCadSkillJsonValue(options.skill.manifest));
+  } catch {
+    return failWithoutStep(createResult(BOUNDED_SKILL_ID), "SKILL_MANIFEST_INVALID");
+  }
   const result = createResult(manifest.id);
+  let safeInput: unknown;
+  try {
+    safeInput = cloneCadSkillJsonValue(options.input);
+  } catch {
+    return failWithoutStep(result, "INPUT_VALUE_INVALID");
+  }
 
   if (!validates(manifest.inputSchema, safeInput)) return failWithoutStep(result, "INPUT_SCHEMA_INVALID");
 
@@ -73,7 +84,7 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
     result.steps.push({ id: step.id, status: "passed", output });
     if (!withinLimit(result)) {
       result.steps.pop();
-      return fail(result, step.id, "RESULT_TOO_LARGE");
+      return oversizedResult("failed");
     }
   }
 
@@ -160,10 +171,17 @@ function withinLimit(result: CadSkillRunResult): boolean {
 
 function bounded(result: CadSkillRunResult): CadSkillRunResult {
   if (withinLimit(result)) return result;
+  return oversizedResult(result.status);
+}
+
+function oversizedResult(
+  status: CadSkillRunResult["status"]
+): CadSkillRunResult {
+  const code = status === "cancelled" ? "CANCELLED" : "RESULT_TOO_LARGE";
   return {
-    skillId: result.skillId,
-    status: result.status,
-    steps: [{ id: "result", status: result.status === "cancelled" ? "cancelled" : "failed", output: { error: { code: "RESULT_TOO_LARGE" } } }],
+    skillId: BOUNDED_SKILL_ID,
+    status,
+    steps: [{ id: "result", status: status === "cancelled" ? "cancelled" : "failed", output: { error: { code } } }],
     warnings: []
   };
 }
