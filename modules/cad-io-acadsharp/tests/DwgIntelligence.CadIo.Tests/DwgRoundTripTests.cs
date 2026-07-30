@@ -316,6 +316,131 @@ public sealed class DwgRoundTripTests
         }
     }
 
+    [Fact]
+    public async Task ProbeCandidateCleanupFailurePreventsReportPublication()
+    {
+        string root = RepositoryRoot();
+        string sourcePath = Path.Combine(
+            root,
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-locked-cleanup-{Guid.NewGuid():N}");
+        string processTemp = Path.Combine(testRoot, "process-temp");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        Directory.CreateDirectory(processTemp);
+        FileStream? lockedCandidate = null;
+        string? candidateRoot = null;
+        try
+        {
+            using Process process = StartProbeHost(
+                root,
+                sourcePath,
+                outputPath,
+                processTemp);
+            Task<string> stdoutTask =
+                process.StandardOutput.ReadToEndAsync();
+            Task<string> stderrTask =
+                process.StandardError.ReadToEndAsync();
+            var deadline = Stopwatch.StartNew();
+            while (
+                lockedCandidate is null
+                && deadline.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                candidateRoot = Directory
+                    .EnumerateDirectories(
+                        processTemp,
+                        "dwg-version-probe-*")
+                    .SingleOrDefault();
+                string? candidate = candidateRoot is null
+                    ? null
+                    : Directory
+                        .EnumerateFiles(candidateRoot, "*.dwg")
+                        .FirstOrDefault();
+                if (candidate is not null)
+                {
+                    try
+                    {
+                        lockedCandidate = new FileStream(
+                            candidate,
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.None);
+                    }
+                    catch (IOException)
+                    {
+                        // The writer or reader still owns this candidate.
+                    }
+                }
+                if (lockedCandidate is null)
+                {
+                    await Task.Delay(5);
+                }
+            }
+            Assert.NotNull(lockedCandidate);
+            Assert.NotNull(candidateRoot);
+
+            await process.WaitForExitAsync();
+            var result = new ProcessResult(
+                process.ExitCode,
+                await stdoutTask,
+                await stderrTask);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Single(
+                result.Stdout.Split(
+                    Environment.NewLine,
+                    StringSplitOptions.RemoveEmptyEntries));
+            using JsonDocument response =
+                JsonDocument.Parse(result.Stdout);
+            Assert.Equal(
+                "error",
+                response.RootElement
+                    .GetProperty("status")
+                    .GetString());
+            Assert.Equal(
+                "DWG_PROBE_CLEANUP_FAILED",
+                response.RootElement
+                    .GetProperty("error")
+                    .GetProperty("code")
+                    .GetString());
+            Assert.InRange(
+                Encoding.UTF8.GetByteCount(result.Stdout),
+                1,
+                CadIoRequest.MaxJsonBytes);
+            Assert.Equal(
+                "CAD I/O request failed.",
+                result.Stderr.Trim());
+            Assert.DoesNotContain(testRoot, result.Stdout + result.Stderr);
+            Assert.False(File.Exists(outputPath));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(
+                testRoot,
+                ".report.json.*.tmp"));
+            Assert.True(Directory.Exists(candidateRoot));
+
+            lockedCandidate.Dispose();
+            lockedCandidate = null;
+            Directory.Delete(candidateRoot, recursive: true);
+            candidateRoot = null;
+            Assert.Empty(Directory.EnumerateFileSystemEntries(
+                processTemp));
+        }
+        finally
+        {
+            lockedCandidate?.Dispose();
+            if (
+                candidateRoot is not null
+                && Directory.Exists(candidateRoot))
+            {
+                Directory.Delete(candidateRoot, recursive: true);
+            }
+            Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
     public static IEnumerable<object[]> InvalidManifestJson()
     {
         yield return [ManifestJson(verifiedVersion: null)];
@@ -432,6 +557,23 @@ public sealed class DwgRoundTripTests
         string outputPath,
         string processTemp)
     {
+        using Process process = StartProbeHost(
+            repositoryRoot,
+            sourcePath,
+            outputPath,
+            processTemp);
+        string stdout = await process.StandardOutput.ReadToEndAsync();
+        string stderr = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return new ProcessResult(process.ExitCode, stdout, stderr);
+    }
+
+    private static Process StartProbeHost(
+        string repositoryRoot,
+        string sourcePath,
+        string outputPath,
+        string processTemp)
+    {
         string host = Path.Combine(
             repositoryRoot,
             "modules",
@@ -457,12 +599,9 @@ public sealed class DwgRoundTripTests
         start.ArgumentList.Add(outputPath);
         start.Environment["TEMP"] = processTemp;
         start.Environment["TMP"] = processTemp;
-        using Process process = Process.Start(start)!;
+        Process process = Process.Start(start)!;
         process.StandardInput.Close();
-        string stdout = await process.StandardOutput.ReadToEndAsync();
-        string stderr = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        return new ProcessResult(process.ExitCode, stdout, stderr);
+        return process;
     }
 
     private sealed class PolicyFixture : IDisposable

@@ -9,6 +9,8 @@ public static class DwgVersionProbe
 {
     private const int MaxWarnings = 16;
     private const int MaxWarningCharacters = 120;
+    private const int CleanupAttempts = 4;
+    private const int CleanupRetryMilliseconds = 25;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -54,10 +56,9 @@ public static class DwgVersionProbe
             Path.GetTempPath(),
             $"dwg-version-probe-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
-        string? temporaryOutput = null;
+        var results = new List<DwgVersionProbeResult>();
         try
         {
-            var results = new List<DwgVersionProbeResult>();
             foreach (
                 string candidate in DwgVersionPolicy.CandidateVersions)
             {
@@ -72,18 +73,28 @@ public static class DwgVersionProbe
             {
                 throw new CadIoException("DWG_PROBE_SOURCE_CHANGED");
             }
-            var report = new DwgVersionProbeReport(
-                "dwg-version-probe/v1",
-                sourceSha256,
-                sourceInvariant,
-                results.AsReadOnly());
-            string json = JsonSerializer.Serialize(report, JsonOptions);
-            if (
-                Encoding.UTF8.GetByteCount(json)
-                > CadIoRequest.MaxJsonBytes)
-            {
-                throw new CadIoException("DWG_PROBE_RESULT_LIMIT");
-            }
+        }
+        finally
+        {
+            CleanupCandidateRoot(tempRoot);
+        }
+
+        var report = new DwgVersionProbeReport(
+            "dwg-version-probe/v1",
+            sourceSha256,
+            sourceInvariant,
+            results.AsReadOnly());
+        string json = JsonSerializer.Serialize(report, JsonOptions);
+        if (
+            Encoding.UTF8.GetByteCount(json)
+            > CadIoRequest.MaxJsonBytes)
+        {
+            throw new CadIoException("DWG_PROBE_RESULT_LIMIT");
+        }
+
+        string? temporaryOutput = null;
+        try
+        {
             temporaryOutput = Path.Combine(
                 outputDirectory,
                 $".{Path.GetFileName(output)}.{Guid.NewGuid():N}.tmp");
@@ -96,15 +107,46 @@ public static class DwgVersionProbe
         finally
         {
             TryDeleteFile(temporaryOutput);
+        }
+    }
+
+    private static void CleanupCandidateRoot(string path)
+    {
+        Exception? lastFailure = null;
+        for (int attempt = 0; attempt < CleanupAttempts; attempt += 1)
+        {
             try
             {
-                Directory.Delete(tempRoot, recursive: true);
+                Directory.Delete(path, recursive: true);
+                return;
             }
-            catch
+            catch (DirectoryNotFoundException)
             {
-                // Probe artifacts are isolated from user drawings.
+                return;
+            }
+            catch (Exception exception)
+                when (
+                    exception is IOException
+                    or UnauthorizedAccessException)
+            {
+                lastFailure = exception;
+                if (attempt + 1 < CleanupAttempts)
+                {
+                    Thread.Sleep(
+                        CleanupRetryMilliseconds * (attempt + 1));
+                }
+            }
+            catch (Exception exception)
+            {
+                throw new CadIoException(
+                    "DWG_PROBE_CLEANUP_FAILED",
+                    exception);
             }
         }
+        throw new CadIoException(
+            "DWG_PROBE_CLEANUP_FAILED",
+            lastFailure
+                ?? new IOException("Candidate cleanup failed."));
     }
 
     private static void TryDeleteFile(string? path)
