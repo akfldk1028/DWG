@@ -10,6 +10,7 @@ import {
 } from "@dwg/contracts";
 
 export interface CadScheduleExtractionOptions {
+  sourceHandles?: readonly string[];
   yTolerance?: number;
 }
 
@@ -41,7 +42,16 @@ export function extractCadSchedule(
     throw new TypeError("CAD schedule Y tolerance must be a positive finite number.");
   }
 
+  const sourceHandles = options.sourceHandles === undefined
+    ? null
+    : new Set(options.sourceHandles);
   const positioned: PositionedText[] = index.entities.flatMap((entity) => {
+    if (
+      sourceHandles !== null &&
+      (entity.handle === null || !sourceHandles.has(entity.handle))
+    ) {
+      return [];
+    }
     if (!isPositionedText(entity)) return [];
     return [{ entity, x: entity.bbox.min[0], y: entity.bbox.min[1] }];
   }).sort(compareForBands);

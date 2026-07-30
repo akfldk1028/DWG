@@ -7,7 +7,7 @@
   "capabilities": ["query.text", "query.schedule"],
   "formats": ["dwg", "dxf"],
   "entityTypes": ["TEXT", "MTEXT"],
-  "failureCodes": ["DRAWING_NOT_FOUND", "INVALID_SCHEDULE_QUERY", "CAPABILITY_EXECUTION_FAILED", "OUTPUT_SCHEMA_INVALID"],
+  "failureCodes": ["INPUT_SCHEMA_INVALID", "CAPABILITY_EXECUTION_FAILED", "OUTPUT_SCHEMA_INVALID"],
   "limitationCodes": ["NO_MODEL_GEOMETRY_INFERENCE", "NO_TABLE_CELL_INFERENCE", "UNSUPPORTED_OBJECTS_REPORTED"],
   "inputSchema": {
     "type": "object",

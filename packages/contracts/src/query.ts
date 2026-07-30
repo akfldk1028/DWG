@@ -6,6 +6,7 @@ export const MAX_CAD_DRAWING_COMPARISON_ENTRIES = 2_000;
 
 export interface CadScheduleQuery {
   drawingId: string;
+  matches: CadEntityMatch[];
   yTolerance: number;
 }
 
@@ -40,13 +41,26 @@ export interface CadDrawingComparison {
 }
 
 export function parseCadScheduleQuery(value: unknown): CadScheduleQuery {
-  if (!isRecord(value) || !hasExactKeys(value, ["drawingId", "yTolerance"])) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["drawingId", "matches", "yTolerance"])
+  ) {
     throw new TypeError("Invalid CAD schedule query.");
   }
-  if (!isIdentifier(value.drawingId) || !isPositiveFinite(value.yTolerance)) {
+  if (
+    !isIdentifier(value.drawingId) ||
+    !Array.isArray(value.matches) ||
+    value.matches.length > MAX_CAD_SCHEDULE_ROWS ||
+    !value.matches.every(isCadEntityMatch) ||
+    !isPositiveFinite(value.yTolerance)
+  ) {
     throw new TypeError("Invalid CAD schedule query.");
   }
-  return { drawingId: value.drawingId, yTolerance: value.yTolerance };
+  return {
+    drawingId: value.drawingId,
+    matches: value.matches,
+    yTolerance: value.yTolerance
+  };
 }
 
 export function parseCadDrawingComparisonQuery(

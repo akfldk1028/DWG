@@ -13,6 +13,6 @@ Purpose: extract deterministic text evidence and row grouping from one opened dr
 
 Model geometry inference is forbidden. Do not invent table cells, columns, rows, or geometry. Report unsupported objects from the drawing description when they affect the requested schedule.
 
-Failure codes: `DRAWING_NOT_FOUND`, `INVALID_SCHEDULE_QUERY`, `CAPABILITY_EXECUTION_FAILED`, `OUTPUT_SCHEMA_INVALID`.
+Failure codes: `INPUT_SCHEMA_INVALID`, `CAPABILITY_EXECUTION_FAILED`, `OUTPUT_SCHEMA_INVALID`.
 
 Limits: `NO_MODEL_GEOMETRY_INFERENCE`; `NO_TABLE_CELL_INFERENCE`; `UNSUPPORTED_OBJECTS_REPORTED`; only positioned TEXT and MTEXT evidence can form rows.

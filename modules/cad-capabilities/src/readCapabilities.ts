@@ -172,8 +172,37 @@ function extractSchedule(
   const index = requireDrawing(request.drawingId, deps);
   requireNotAborted(signal);
   return extractCadSchedule(index, {
+    sourceHandles: groundedScheduleHandles(index, request.matches),
     yTolerance: request.yTolerance
   });
+}
+
+function groundedScheduleHandles(
+  index: CadEntityIndex,
+  matches: readonly CadEntityMatch[]
+): string[] {
+  const handles = new Set<string>();
+  for (const match of matches) {
+    if (match.handle === null) continue;
+    const entity = index.entities.find((item) => item.handle === match.handle);
+    if (!entity || !sameScheduleEvidence(entity, match)) continue;
+    handles.add(match.handle);
+  }
+  return [...handles].sort();
+}
+
+function sameScheduleEvidence(
+  entity: CadEntityIndexItem,
+  match: CadEntityMatch
+): boolean {
+  return (
+    entity.id === match.id &&
+    entity.handle === match.handle &&
+    entity.type === match.type &&
+    entity.layer === match.layer &&
+    entity.text === (match.text ?? null) &&
+    JSON.stringify(entity.bbox) === JSON.stringify(match.bbox)
+  );
 }
 
 function compareDrawings(
