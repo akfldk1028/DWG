@@ -2,7 +2,7 @@ using ACadSharp.Entities;
 using CSMath;
 using CadPoint = ACadSharp.Entities.Point;
 
-namespace DwgIntelligence.DwgParser;
+namespace DwgIntelligence.CadIo;
 
 public static class EntityGeometryExtractor
 {

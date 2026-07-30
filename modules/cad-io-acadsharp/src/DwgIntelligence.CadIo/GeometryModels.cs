@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace DwgIntelligence.DwgParser;
+namespace DwgIntelligence.CadIo;
 
 [JsonPolymorphic]
 [JsonDerivedType(typeof(LineGeometry))]

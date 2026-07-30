@@ -1,6 +1,6 @@
 using ACadSharp.Entities;
 
-namespace DwgIntelligence.DwgParser;
+namespace DwgIntelligence.CadIo;
 
 public sealed record InsertAttributeResult(
     IReadOnlyDictionary<string, string> Attributes,

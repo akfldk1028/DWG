@@ -2,7 +2,7 @@ using ACadSharp;
 using ACadSharp.Entities;
 using ACadSharp.Objects;
 
-namespace DwgIntelligence.DwgParser;
+namespace DwgIntelligence.CadIo;
 
 public sealed record LocatedCadEntity(
     Entity Entity,

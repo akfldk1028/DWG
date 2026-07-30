@@ -1,4 +1,4 @@
-namespace DwgIntelligence.DwgParser;
+namespace DwgIntelligence.CadIo;
 
 public sealed record CadIndex(
     string SchemaVersion,

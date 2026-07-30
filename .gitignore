@@ -48,5 +48,7 @@ modules/dwg-parser/bin/
 modules/dwg-parser/obj/
 modules/dwg-parser/**/bin/
 modules/dwg-parser/**/obj/
+modules/cad-io-acadsharp/**/bin/
+modules/cad-io-acadsharp/**/obj/
 frontend/node_modules/
 agent/.cache/

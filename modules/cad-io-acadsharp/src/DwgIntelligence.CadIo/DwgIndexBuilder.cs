@@ -5,7 +5,7 @@ using ACadSharp.IO;
 using ACadSharp.Tables;
 using CSMath;
 
-namespace DwgIntelligence.DwgParser;
+namespace DwgIntelligence.CadIo;
 
 public static class DwgIndexBuilder
 {
