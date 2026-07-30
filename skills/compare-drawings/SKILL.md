@@ -13,6 +13,6 @@ Purpose: report deterministic additions, removals, and changed CAD evidence betw
 
 Model geometry inference is forbidden. Do not describe visual differences not returned by the comparison capability. Report unsupported objects from either drawing before claiming a complete comparison.
 
-Failure codes: `DRAWING_NOT_FOUND`, `INVALID_COMPARISON_QUERY`, `CAPABILITY_EXECUTION_FAILED`, `OUTPUT_SCHEMA_INVALID`.
+Failure codes: `INPUT_SCHEMA_INVALID`, `CAPABILITY_EXECUTION_FAILED`, `OUTPUT_SCHEMA_INVALID`.
 
 Limits: `NO_MODEL_GEOMETRY_INFERENCE`; `UNSUPPORTED_OBJECTS_REPORTED`; comparisons are bounded to deterministic indexed evidence.
