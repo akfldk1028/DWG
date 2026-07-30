@@ -79,6 +79,15 @@ before drawing as `documentId` and the after drawing in `relatedDocumentIds`;
 missing authorization and any unrelated third drawing are rejected before the
 comparison capability runs.
 
+The checked-in standalone inspection example runs from the repository root:
+
+```powershell
+npm run skill -- --skill inspect-drawing --input skills/inspect-drawing/examples/input.json
+```
+
+Its input matches the public skill schema with the retained
+repository-relative DXF `path` and `A-WALL` layer.
+
 The standalone CLI preloads comparison sources by path because every invocation
 creates a fresh in-memory CAD application:
 

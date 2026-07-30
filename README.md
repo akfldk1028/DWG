@@ -34,6 +34,16 @@ Default URLs are `http://127.0.0.1:4317/api/health` and
 `http://127.0.0.1:4173/`. Override them with `DWG_GATEWAY_PORT` and
 `DWG_FRONTEND_PORT`.
 
+Run the checked-in read-only drawing inspection example from the repository
+root:
+
+```powershell
+npm run skill -- --skill inspect-drawing --input skills/inspect-drawing/examples/input.json
+```
+
+The example uses the retained repository-relative DXF fixture and emits one
+bounded summary without paths or raw CAD output.
+
 ## Repository map
 
 | Path | Owner | Cross-repository access |

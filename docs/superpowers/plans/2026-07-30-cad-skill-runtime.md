@@ -344,8 +344,11 @@ POST /api/skills/run
 - CLI:
 
 ```text
-npm run skill -- --skill inspect-drawing --input tests/harness/scenarios/find-text-room.json
+npm run skill -- --skill inspect-drawing --input skills/inspect-drawing/examples/input.json
 ```
+
+Correction: the standalone CLI consumes the skill input schema, not an MCP
+harness scenario.
 
 - [ ] **Step 1: Write HTTP and CLI tests**
 

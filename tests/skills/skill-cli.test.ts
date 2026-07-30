@@ -5,16 +5,14 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
-test("skill CLI runs a declared skill and prints only one bounded safe summary", async (context) => {
-  const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const input = resolve(directory, "input.json");
-  await writeFile(input, JSON.stringify({ path: "tests/fixtures/dxf/minimal-architectural.dxf", layer: "A-WALL" }));
-
-  const result = await invoke("--skill", "inspect-drawing", "--input", input);
+test("documented inspect CLI command runs from the repository root with one safe success summary", async () => {
+  const result = await invokeDocumentedInspectCommand();
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(result.stdout.trim().split(/\r?\n/).length, 1);
-  const summary = JSON.parse(result.stdout);
+  const summaries = result.stdout
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("{") && line.endsWith("}"));
+  assert.equal(summaries.length, 1);
+  const summary = JSON.parse(summaries[0]!);
   assert.deepEqual(Object.keys(summary).sort(), ["changeCount", "hasPreview", "skillId", "status", "warningCount"]);
   assert.deepEqual(summary, { skillId: "inspect-drawing", status: "passed", changeCount: 0, warningCount: 0, hasPreview: false });
   assert.doesNotMatch(result.stdout, /minimal-architectural|matches|[A-Za-z]:[\\/]/i);
@@ -152,8 +150,39 @@ test("CLI rejects comparison preload flags for another skill or mixed caller IDs
 });
 
 function invoke(...args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return invokeProcess(
+    process.execPath,
+    ["--import", "tsx", "modules/cad-runtime/harness/run-skill.ts", ...args]
+  );
+}
+
+function invokeDocumentedInspectCommand(): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const args = [
+    "run", "skill", "--",
+    "--skill", "inspect-drawing",
+    "--input", "skills/inspect-drawing/examples/input.json"
+  ];
+  if (process.platform !== "win32") return invokeProcess("npm", args);
+  return invokeProcess(
+    process.env.ComSpec ?? "cmd.exe",
+    [
+      "/d",
+      "/s",
+      "/c",
+      "npm run skill -- --skill inspect-drawing --input skills/inspect-drawing/examples/input.json"
+    ]
+  );
+}
+
+function invokeProcess(
+  command: string,
+  args: string[]
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, ["--import", "tsx", "modules/cad-runtime/harness/run-skill.ts", ...args], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
