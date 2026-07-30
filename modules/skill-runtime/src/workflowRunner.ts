@@ -1,6 +1,7 @@
 import { Ajv } from "ajv";
 
 import type { CadCapabilityRuntime } from "@dwg/cad-capabilities";
+import { MAX_SKILL_RELATED_DOCUMENT_IDS } from "@dwg/contracts";
 import {
   cloneCadSkillJsonValue,
   parseCadSkillManifest,
@@ -33,6 +34,7 @@ export interface RunCadSkillWorkflowOptions {
   workflow: CadSkillWorkflow;
   input: unknown;
   documentId?: string;
+  relatedDocumentIds?: readonly string[];
   grantedPermissions: SkillPermission[];
   capabilities: CadCapabilityRuntime;
   signal?: AbortSignal;
@@ -54,29 +56,41 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
     return failWithoutStep(result, "INPUT_VALUE_INVALID");
   }
 
-  if (options.documentId !== undefined) {
-    if (!validDocumentId(options.documentId) || !isDataObject(safeInput)) {
+  const documentScope = createDocumentScope(
+    options.documentId,
+    options.relatedDocumentIds
+  );
+  if (options.documentId !== undefined || options.relatedDocumentIds !== undefined) {
+    if (documentScope === null || !isDataObject(safeInput)) {
       return failWithoutStep(result, "DOCUMENT_SCOPE_INVALID");
     }
     if (Object.hasOwn(safeInput, "documentId") && safeInput.documentId !== options.documentId) {
       return failWithoutStep(result, "DOCUMENT_SCOPE_MISMATCH");
     }
+    if (
+      Object.hasOwn(safeInput, "relatedDocumentIds") &&
+      !sameStringArray(safeInput.relatedDocumentIds, documentScope.relatedDocumentIds)
+    ) return failWithoutStep(result, "DOCUMENT_SCOPE_MISMATCH");
   }
 
   if (!validates(manifest.inputSchema, safeInput)) {
     if (
-      options.documentId === undefined ||
+      documentScope === null ||
       !isDataObject(safeInput) ||
-      !Object.hasOwn(safeInput, "documentId") ||
-      !validates(manifest.inputSchema, withoutDocumentId(safeInput))
+      (!Object.hasOwn(safeInput, "documentId") && !Object.hasOwn(safeInput, "relatedDocumentIds")) ||
+      !validates(manifest.inputSchema, withoutDocumentScope(safeInput))
     ) return failWithoutStep(result, "INPUT_SCHEMA_INVALID");
   }
-  if (options.documentId !== undefined) {
-    safeInput = { ...safeInput as Record<string, unknown>, documentId: options.documentId };
+  if (documentScope !== null) {
+    safeInput = {
+      ...safeInput as Record<string, unknown>,
+      documentId: documentScope.documentId,
+      relatedDocumentIds: documentScope.relatedDocumentIds
+    };
   }
-  const capabilities = options.documentId === undefined
+  const capabilities = documentScope === null
     ? options.capabilities
-    : createDocumentScopedRuntime(options.capabilities, options.documentId);
+    : createDocumentScopedRuntime(options.capabilities, documentScope.allowed);
 
   for (const step of workflow.steps) {
     if (options.signal?.aborted) return cancel(result, step.id);
@@ -123,15 +137,19 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
 
 function createDocumentScopedRuntime(
   capabilities: CadCapabilityRuntime,
-  documentId: string
+  allowedDocumentIds: ReadonlySet<string>
 ): CadCapabilityRuntime {
   return {
     async execute(name, input, signal) {
-      assertDocumentReferences(input, documentId);
+      assertDocumentReferences(input, allowedDocumentIds);
       const output = await capabilities.execute(name, input, signal);
       if (name === "document.open") {
         const safeOutput = cloneCadSkillJsonValue(output);
-        if (!isDataObject(safeOutput) || safeOutput.drawingId !== documentId) {
+        if (
+          !isDataObject(safeOutput) ||
+          typeof safeOutput.drawingId !== "string" ||
+          !allowedDocumentIds.has(safeOutput.drawingId)
+        ) {
           throw new Error("DOCUMENT_SCOPE_MISMATCH");
         }
         return safeOutput;
@@ -141,23 +159,29 @@ function createDocumentScopedRuntime(
   };
 }
 
-function assertDocumentReferences(value: unknown, documentId: string): void {
+function assertDocumentReferences(
+  value: unknown,
+  allowedDocumentIds: ReadonlySet<string>
+): void {
   const safeValue = cloneCadSkillJsonValue(value);
-  visitDocumentReferences(safeValue, documentId);
+  visitDocumentReferences(safeValue, allowedDocumentIds);
 }
 
-function visitDocumentReferences(value: unknown, documentId: string): void {
+function visitDocumentReferences(
+  value: unknown,
+  allowedDocumentIds: ReadonlySet<string>
+): void {
   if (Array.isArray(value)) {
-    for (const item of value) visitDocumentReferences(item, documentId);
+    for (const item of value) visitDocumentReferences(item, allowedDocumentIds);
     return;
   }
   if (!isDataObject(value)) return;
   for (const [key, item] of Object.entries(value)) {
     if (
       (key === "drawingId" || key === "documentId" || key === "beforeDrawingId" || key === "afterDrawingId") &&
-      item !== documentId
+      (typeof item !== "string" || !allowedDocumentIds.has(item))
     ) throw new Error("DOCUMENT_SCOPE_MISMATCH");
-    visitDocumentReferences(item, documentId);
+    visitDocumentReferences(item, allowedDocumentIds);
   }
 }
 
@@ -169,10 +193,49 @@ function validDocumentId(value: string): boolean {
   return value.length >= 1 && value.length <= 256 && /^[A-Za-z0-9][A-Za-z0-9:._-]*$/.test(value);
 }
 
-function withoutDocumentId(value: Record<string, unknown>): Record<string, unknown> {
+function withoutDocumentScope(value: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...value };
   delete copy.documentId;
+  delete copy.relatedDocumentIds;
   return copy;
+}
+
+function createDocumentScope(
+  documentId: string | undefined,
+  relatedDocumentIds: readonly string[] | undefined
+): {
+  documentId: string;
+  relatedDocumentIds: string[];
+  allowed: ReadonlySet<string>;
+} | null {
+  if (documentId === undefined) return null;
+  let safeRelated: unknown;
+  try {
+    safeRelated = cloneCadSkillJsonValue(relatedDocumentIds ?? []);
+  } catch {
+    return null;
+  }
+  if (
+    !validDocumentId(documentId) ||
+    !Array.isArray(safeRelated) ||
+    safeRelated.length > MAX_SKILL_RELATED_DOCUMENT_IDS ||
+    !safeRelated.every((value): value is string => typeof value === "string" && validDocumentId(value)) ||
+    new Set(safeRelated).size !== safeRelated.length ||
+    safeRelated.includes(documentId)
+  ) return null;
+  return {
+    documentId,
+    relatedDocumentIds: safeRelated,
+    allowed: new Set([documentId, ...safeRelated])
+  };
+}
+
+function sameStringArray(value: unknown, expected: readonly string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((item, index) => item === expected[index])
+  );
 }
 
 function bindInput(input: Record<string, unknown>, workflowInput: unknown, previousSteps: readonly CadSkillRunStepResult[]): Record<string, unknown> {

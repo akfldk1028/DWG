@@ -25,6 +25,7 @@ export interface SkillRunRequest {
   skillId: string;
   version: string;
   documentId: string;
+  relatedDocumentIds?: string[];
   input: JsonValue;
 }
 
@@ -44,6 +45,7 @@ export const MAX_SKILL_JSON_DEPTH = 32;
 export const MAX_SKILL_JSON_COLLECTION_ITEMS = 256;
 export const MAX_SKILL_JSON_TOTAL_VALUES = 2_048;
 export const MAX_SKILL_JSON_SCALAR_CHARS = 16 * 1024;
+export const MAX_SKILL_RELATED_DOCUMENT_IDS = 3;
 
 const skillIdentifier = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const semver = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -74,14 +76,29 @@ export function parseSkillListResponse(value: unknown): SkillListResponse {
 
 export function parseSkillRunRequest(value: unknown): SkillRunRequest {
   const object = parseObject(value, "SKILL_RUN_REQUEST_INVALID");
-  requireKeys(object, ["skillId", "version", "documentId", "input"], "SKILL_RUN_REQUEST_INVALID");
+  requireKeysWithOptional(
+    object,
+    ["skillId", "version", "documentId", "input"],
+    ["relatedDocumentIds"],
+    "SKILL_RUN_REQUEST_INVALID"
+  );
   const skillId = parseSkillId(object.skillId, "SKILL_RUN_REQUEST_INVALID");
   const version = parseVersion(object.version, "SKILL_RUN_REQUEST_INVALID");
-  if (typeof object.documentId !== "string" || object.documentId.length < 1 || object.documentId.length > 256 || !documentIdentifier.test(object.documentId)) {
+  if (!isDocumentId(object.documentId)) {
     throw new Error("SKILL_RUN_REQUEST_INVALID");
   }
+  const relatedDocumentIds = parseRelatedDocumentIds(
+    object.relatedDocumentIds,
+    object.documentId
+  );
   try {
-    return { skillId, version, documentId: object.documentId, input: cloneJsonValue(object.input) };
+    return {
+      skillId,
+      version,
+      documentId: object.documentId,
+      ...(relatedDocumentIds === undefined ? {} : { relatedDocumentIds }),
+      input: cloneJsonValue(object.input)
+    };
   } catch {
     throw new Error("SKILL_RUN_REQUEST_INVALID");
   }
@@ -175,6 +192,19 @@ function requireKeys(value: Record<string, unknown>, expected: readonly string[]
   if (keys.length !== expected.length || keys.some((key, index) => key !== [...expected].sort()[index])) throw new Error(code);
 }
 
+function requireKeysWithOptional(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+  code: string
+): void {
+  const keys = Object.keys(value);
+  if (
+    required.some((key) => !keys.includes(key)) ||
+    keys.some((key) => !required.includes(key) && !optional.includes(key))
+  ) throw new Error(code);
+}
+
 function parseSkillId(value: unknown, code: string): string {
   if (typeof value !== "string" || value.length < 1 || value.length > 64 || !skillIdentifier.test(value)) throw new Error(code);
   return value;
@@ -193,6 +223,30 @@ function parsePermissions(value: unknown, code: string): SkillPermission[] {
 function parseWarningCodes(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 64 || !value.every((item) => typeof item === "string" && item.length <= 64 && warningCode.test(item)) || new Set(value).size !== value.length) throw new Error("SKILL_RUN_RESPONSE_INVALID");
   return [...value];
+}
+
+function parseRelatedDocumentIds(
+  value: unknown,
+  primaryDocumentId: string
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_SKILL_RELATED_DOCUMENT_IDS ||
+    !value.every(isDocumentId) ||
+    new Set(value).size !== value.length ||
+    value.includes(primaryDocumentId)
+  ) throw new Error("SKILL_RUN_REQUEST_INVALID");
+  return [...value];
+}
+
+function isDocumentId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= 256 &&
+    documentIdentifier.test(value)
+  );
 }
 
 function isRecentStatus(value: unknown): value is SkillListItem["recentStatus"] {

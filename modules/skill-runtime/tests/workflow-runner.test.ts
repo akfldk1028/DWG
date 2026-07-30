@@ -520,6 +520,70 @@ test("blocks access to another cached drawing and cross-document edit proposals"
   }
 });
 
+test("allows an explicitly related comparison document", async () => {
+  const calls: unknown[] = [];
+  const result = await runCadSkillWorkflow({
+    skill: installedSkill({
+      manifest: { ...readManifest, capabilities: ["query.compare"] }
+    }),
+    workflow: workflow([{
+      id: "compare",
+      capability: "query.compare",
+      input: {
+        beforeDrawingId: "drawing-before",
+        afterDrawingId: "drawing-after"
+      }
+    }]),
+    documentId: "drawing-before",
+    relatedDocumentIds: ["drawing-after"],
+    input: {
+      path: "drawing.dwg"
+    },
+    grantedPermissions: ["read"],
+    capabilities: runtime(async (_name, input) => {
+      calls.push(input);
+      return { layers: [] };
+    })
+  });
+
+  assert.equal(result.status, "passed");
+  assert.deepEqual(calls, [{
+    beforeDrawingId: "drawing-before",
+    afterDrawingId: "drawing-after"
+  }]);
+});
+
+test("denies comparison documents missing from or outside the explicit related scope", async () => {
+  for (const testCase of [
+    { relatedDocumentIds: [] as string[], afterDrawingId: "drawing-after" },
+    { relatedDocumentIds: ["drawing-after"], afterDrawingId: "drawing-third" }
+  ]) {
+    let calls = 0;
+    const result = await runCadSkillWorkflow({
+      skill: installedSkill({
+        manifest: { ...readManifest, capabilities: ["query.compare"] }
+      }),
+      workflow: workflow([{
+        id: "compare",
+        capability: "query.compare",
+        input: {
+          beforeDrawingId: "drawing-before",
+          afterDrawingId: testCase.afterDrawingId
+        }
+      }]),
+      documentId: "drawing-before",
+      relatedDocumentIds: testCase.relatedDocumentIds,
+      input: {
+        path: "drawing.dwg"
+      },
+      grantedPermissions: ["read"],
+      capabilities: runtime(async () => { calls += 1; return { layers: [] }; })
+    });
+    assert.equal(calls, 0);
+    assert.deepEqual(result, failed("compare", "CAPABILITY_EXECUTION_FAILED"));
+  }
+});
+
 test("keeps an overflowing cancellation fallback bounded and cancellation-only", async () => {
   const controller = new AbortController();
   const result = await runCadSkillWorkflow({

@@ -78,6 +78,7 @@ export function createSkillGatewayRoutes(dependencies: SkillGatewayDependencies)
             workflow,
             input: run.input,
             documentId: run.documentId,
+            relatedDocumentIds: run.relatedDocumentIds,
             grantedPermissions: skill.manifest.permissions,
             capabilities: dependencies.capabilities,
             signal

@@ -64,6 +64,59 @@ test("assembled gateway rejects a document scope mismatch without opening anothe
   assert.equal(result.result, null);
 });
 
+test("assembled gateway allows only explicitly scoped two-document comparisons", async (context) => {
+  const before = { ...index, drawingId: "drawing-before" };
+  const after = { ...index, drawingId: "drawing-after" };
+  const application = await createCadApplication({
+    loadInitialIndex: async () => before,
+    read: {
+      open: async () => before,
+      get: (drawingId) => {
+        if (drawingId === before.drawingId) return before;
+        if (drawingId === after.drawingId) return after;
+        return null;
+      }
+    }
+  });
+  const server = await createCadGatewayServer({
+    workspaceRoot: process.cwd(),
+    drawingPath: "tests/fixtures/dxf/minimal-architectural.dxf",
+    application
+  });
+  const baseUrl = await listen(server, context);
+  const baseRequest = {
+    skillId: "compare-drawings",
+    version: "1.0.0",
+    documentId: before.drawingId,
+    input: {
+      beforeDrawingId: before.drawingId,
+      afterDrawingId: after.drawingId
+    }
+  };
+
+  const allowed = await post(baseUrl, {
+    ...baseRequest,
+    relatedDocumentIds: [after.drawingId]
+  });
+  assert.equal(allowed.status, 200);
+  assert.equal(parseSkillRunResponse(await allowed.json()).status, "passed");
+
+  const missingRelated = await post(baseUrl, baseRequest);
+  assert.equal(missingRelated.status, 200);
+  assert.deepEqual(parseSkillRunResponse(await missingRelated.json()).warningCodes, ["CAPABILITY_EXECUTION_FAILED"]);
+
+  const unrelated = await post(baseUrl, {
+    ...baseRequest,
+    relatedDocumentIds: [after.drawingId],
+    input: {
+      beforeDrawingId: before.drawingId,
+      afterDrawingId: "drawing-third"
+    }
+  });
+  assert.equal(unrelated.status, 200);
+  assert.deepEqual(parseSkillRunResponse(await unrelated.json()).warningCodes, ["CAPABILITY_EXECUTION_FAILED"]);
+});
+
 test("assembled gateway keeps incompatible skills visible but rejects execution", async (context) => {
   const server = await createCadGatewayServer({
     workspaceRoot: process.cwd(),
@@ -94,6 +147,26 @@ test("skill contract parsers reject unknown fields, non-data values, invalid sem
   assert.throws(() => parseSkillRunRequest({ skillId: "inspect-drawing", version: "1.0.0", documentId: "dwg:test", input: accessor }), /SKILL_RUN_REQUEST_INVALID/);
   assert.equal(accessed, false);
   assert.throws(() => parseSkillRunResponse({ runId: "11111111-1111-4111-8111-111111111111", skillId: "inspect-drawing", version: "1.0.0", documentId: "dwg:test", status: "passed", previewId: null, changeCount: 0, warningCodes: [], result: Number.NaN }), /SKILL_RUN_RESPONSE_INVALID/);
+  assert.deepEqual(parseSkillRunRequest({
+    skillId: "compare-drawings",
+    version: "1.0.0",
+    documentId: "drawing-before",
+    relatedDocumentIds: ["drawing-after"],
+    input: {}
+  }).relatedDocumentIds, ["drawing-after"]);
+  for (const relatedDocumentIds of [
+    ["drawing-after", "drawing-after"],
+    ["drawing-before"],
+    ["one", "two", "three", "four"]
+  ]) {
+    assert.throws(() => parseSkillRunRequest({
+      skillId: "compare-drawings",
+      version: "1.0.0",
+      documentId: "drawing-before",
+      relatedDocumentIds,
+      input: {}
+    }), /SKILL_RUN_REQUEST_INVALID/);
+  }
 });
 
 test("assembled gateway redacts malformed oversized and invalid-output skill executions", async (context) => {

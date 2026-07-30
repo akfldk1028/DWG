@@ -56,10 +56,28 @@ service that should not import Node implementation code.
 | `POST` | `/api/edit/apply` | `CadEditApplyRequest` -> `CadEditApplyResponse` |
 | `POST` | `/api/edit/undo` | `CadEditHistoryRequest` -> `CadEditApplyResponse` |
 | `POST` | `/api/edit/redo` | `CadEditHistoryRequest` -> `CadEditApplyResponse` |
+| `GET` | `/api/skills` | `SkillListResponse` |
+| `POST` | `/api/skills/run` | `SkillRunRequest` -> `SkillRunResponse` |
 
 The gateway binds to `127.0.0.1`, rejects malformed/oversized input, and passes
 browser cancellation through one `AbortSignal`. Do not expose it publicly
 without adding authentication and a separate threat-model review.
+
+#### CAD skill document scope
+
+`POST /api/skills/run` requires a primary `documentId`. It may also carry
+`relatedDocumentIds`, a unique list of at most three document IDs that must not
+contain the primary ID. Omitting the optional list preserves the existing
+single-document request shape and behavior. The skill list and run response
+shapes are unchanged.
+
+The runtime treats `{ documentId, ...relatedDocumentIds }` as an exact
+allowlist. Every workflow value named `drawingId`, `documentId`,
+`beforeDrawingId`, or `afterDrawingId`, and every `document.open` result, must
+belong to that allowlist. A `compare-drawings` request therefore declares the
+before drawing as `documentId` and the after drawing in `relatedDocumentIds`;
+missing authorization and any unrelated third drawing are rejected before the
+comparison capability runs.
 
 #### CAD edit review contract
 

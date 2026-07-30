@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
+import { resolveCliDocumentScope } from "../../modules/cad-runtime/harness/skillRunScope.js";
+
 test("skill CLI runs a declared skill and prints only one bounded safe summary", async (context) => {
   const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
@@ -40,6 +42,70 @@ test("skill CLI returns a bounded failure for an explicit document mismatch", as
   assert.equal(result.stdout.trim().split(/\r?\n/).length, 1);
 });
 
+test("CLI derives an exact deterministic compare scope and rejects ambiguity", async () => {
+  const input = {
+    beforeDrawingId: "drawing-before",
+    afterDrawingId: "drawing-after"
+  };
+  assert.deepEqual(
+    await resolveCliDocumentScope(input, undefined, [], unusedCapabilities()),
+    { documentId: "drawing-before", relatedDocumentIds: ["drawing-after"] }
+  );
+  assert.deepEqual(
+    await resolveCliDocumentScope(
+      input,
+      "drawing-before",
+      ["drawing-after"],
+      unusedCapabilities()
+    ),
+    { documentId: "drawing-before", relatedDocumentIds: ["drawing-after"] }
+  );
+  await assert.rejects(
+    () => resolveCliDocumentScope(
+      input,
+      "drawing-after",
+      ["drawing-before"],
+      unusedCapabilities()
+    ),
+    /DOCUMENT_SCOPE_AMBIGUOUS/
+  );
+  await assert.rejects(
+    () => resolveCliDocumentScope(
+      input,
+      "drawing-before",
+      ["drawing-after", "drawing-third"],
+      unusedCapabilities()
+    ),
+    /DOCUMENT_SCOPE_AMBIGUOUS/
+  );
+});
+
+test("CLI accepts explicit primary and related compare scope without leaking it", async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-compare-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = resolve(directory, "input.json");
+  await writeFile(input, JSON.stringify({
+    beforeDrawingId: "drawing-before",
+    afterDrawingId: "drawing-after"
+  }));
+
+  const result = await invoke(
+    "--skill", "compare-drawings",
+    "--input", input,
+    "--document-id", "drawing-before",
+    "--related-document-id", "drawing-after"
+  );
+  assert.equal(result.code, 1);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    skillId: "compare-drawings",
+    status: "failed",
+    changeCount: 0,
+    warningCount: 1,
+    hasPreview: false
+  });
+  assert.doesNotMatch(result.stdout, /drawing-before|drawing-after/);
+});
+
 function invoke(...args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, ["--import", "tsx", "modules/cad-runtime/harness/run-skill.ts", ...args], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
@@ -50,4 +116,12 @@ function invoke(...args: string[]): Promise<{ code: number | null; stdout: strin
     child.on("error", reject);
     child.on("close", (code) => resolvePromise({ code, stdout, stderr }));
   });
+}
+
+function unusedCapabilities() {
+  return {
+    async execute(): Promise<never> {
+      throw new Error("must not open a drawing for compare scope derivation");
+    }
+  };
 }
