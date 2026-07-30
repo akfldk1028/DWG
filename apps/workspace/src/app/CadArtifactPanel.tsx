@@ -18,9 +18,11 @@ import {
 import { useMemo, useState } from "react";
 
 import { CadViewer } from "../features/cad-viewer/CadViewer";
+import { ChangeReview } from "../features/change-review/ChangeReview";
+import { useChangeReview } from "../features/change-review/useChangeReview";
 import type { CadEntity, CadIndex, InspectionRun } from "../shared/types";
 
-type ArtifactTab = "preview" | "findings" | "evidence" | "warnings";
+type ArtifactTab = "preview" | "findings" | "evidence" | "changes" | "warnings";
 
 interface Props {
   index: CadIndex;
@@ -28,6 +30,8 @@ interface Props {
   selected: CadEntity | null;
   highlightedHandles: ReadonlySet<string>;
   selectedHandle: string | null;
+  changeReview: ReturnType<typeof useChangeReview>;
+  proposalError: string | null;
   searchQuery: string;
   gridVisible: boolean;
   hiddenLayers: ReadonlySet<string>;
@@ -49,6 +53,8 @@ export function CadArtifactPanel({
   selected,
   highlightedHandles,
   selectedHandle,
+  changeReview,
+  proposalError,
   searchQuery,
   gridVisible,
   hiddenLayers,
@@ -150,6 +156,7 @@ export function CadArtifactPanel({
         <Tab active={tab === "preview"} icon={<View size={13} />} label="CAD Preview" onClick={() => setTab("preview")} />
         <Tab active={tab === "findings"} count={run?.findings.length ?? 0} icon={<ScanSearch size={13} />} label="Findings" onClick={() => setTab("findings")} />
         <Tab active={tab === "evidence"} count={selected ? 1 : 0} icon={<FileCheck2 size={13} />} label="Evidence" onClick={() => setTab("evidence")} />
+        <Tab active={tab === "changes"} count={changeReview.preview?.changeCount} icon={<FileCheck2 size={13} />} label="Changes" onClick={() => setTab("changes")} />
         <Tab active={tab === "warnings"} count={run?.warnings.length ?? 0} icon={<AlertTriangle size={13} />} label="Warnings" onClick={() => setTab("warnings")} />
       </div>
       <div className="artifact-content">
@@ -207,6 +214,21 @@ export function CadArtifactPanel({
           selected
             ? <Evidence entity={selected} />
             : <Empty>Finding을 선택하면 handle, layer, type, bbox를 표시합니다.</Empty>
+        )}
+        {tab === "changes" && (
+          <ChangeReview
+            busy={changeReview.busy}
+            error={changeReview.error}
+            onApprove={changeReview.approve}
+            onRePreview={changeReview.rePreview}
+            onRedo={changeReview.redo}
+            onReject={changeReview.reject}
+            onUndo={changeReview.undo}
+            phase={changeReview.phase}
+            preview={changeReview.preview}
+            proposalError={proposalError}
+            revision={changeReview.revision}
+          />
         )}
         {tab === "warnings" && (
           <div className="artifact-list">

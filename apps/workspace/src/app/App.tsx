@@ -4,13 +4,16 @@ import {
   PanelRight,
   Settings2
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AgentWorkspace } from "../features/agent-chat/AgentWorkspace";
 import { useProviderChat } from "../features/agent-chat/useProviderChat";
+import { useChangeReview } from "../features/change-review/useChangeReview";
 import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
 import { useLayerVisibility } from "../features/drawing-explorer/useLayerVisibility";
 import { useInspectionRun } from "../features/inspection-results/useInspectionRun";
+import { subscribeCadEditProposals } from "../shared/cadEditProposalInbox";
+import type { CadEditBatch } from "@dwg/contracts";
 import { CadArtifactPanel } from "./CadArtifactPanel";
 import { useWorkspaceControls } from "./useWorkspaceControls";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
@@ -57,6 +60,17 @@ export function App() {
   });
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const [sidebarQuery, setSidebarQuery] = useState("");
+  const [pendingChangeBatch, setPendingChangeBatch] = useState<CadEditBatch | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const changeReview = useChangeReview(pendingChangeBatch);
+
+  useEffect(() => subscribeCadEditProposals({
+    onProposal: (batch) => {
+      setProposalError(null);
+      setPendingChangeBatch(batch);
+    },
+    onInvalid: () => setProposalError("Invalid CAD edit proposal.")
+  }), []);
 
   const layerVisibility = useLayerVisibility(
     index?.layers ?? []
@@ -230,6 +244,7 @@ export function App() {
             />
 
             <CadArtifactPanel
+              changeReview={changeReview}
               gridVisible={gridVisible}
               hiddenLayers={layerVisibility.hiddenLayers}
               highlightedHandles={highlightedHandles}
@@ -254,6 +269,7 @@ export function App() {
               searchQuery={searchQuery}
               selected={selected}
               selectedHandle={selectedHandle}
+              proposalError={proposalError}
             />
           </>
         )}

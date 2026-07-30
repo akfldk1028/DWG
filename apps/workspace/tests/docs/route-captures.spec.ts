@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { parseCadEditBatch, parseCadEditPreviewResponse } from "@dwg/contracts";
 import {
   documentationCaptureDirectory,
   documentationCapturePath
@@ -28,7 +29,7 @@ test("captures the single workspace route in its key states", async ({ page }) =
   await page.getByRole("tab", { name: /CAD Preview/ }).click();
   const layerToggle = page.locator(".layer-visibility-button").first();
   await layerToggle.click();
-  await expect(layerToggle).toHaveAccessibleName("0 레이어 표시");
+  await expect(layerToggle).toHaveAccessibleName("Show layer 0");
   await capture(page, "03-layer-hidden.png");
 
   await page.reload();
@@ -75,6 +76,30 @@ test("captures the focused desktop sidebar preference state", async ({ page }) =
   await resizer.press("ArrowRight");
   await expect(resizer).toHaveAttribute("aria-valuenow", "336");
   await capture(page, "sidebar-preferences.png");
+});
+
+test("captures populated change review at desktop and narrow widths", async ({ page }) => {
+  await mkdir(captureDirectory, { recursive: true });
+  await page.route("**/api/edit/preview", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(capturePreview())
+  }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await publishCaptureProposal(page);
+  await page.getByRole("tab", { name: "Changes" }).click();
+  await expect(page.getByRole("region", { name: "Change review" })).toContainText("Layer changes");
+  await stabilize(page);
+  await capture(page, "change-review-desktop.png");
+
+  await page.setViewportSize({ width: 800, height: 700 });
+  await page.reload();
+  await page.locator(".artifact-toggle").click();
+  await publishCaptureProposal(page);
+  await page.getByRole("tab", { name: "Changes" }).click();
+  await expect(page.getByRole("region", { name: "Change review" })).toContainText("Entity changes");
+  await stabilize(page);
+  await capture(page, "change-review-narrow.png");
 });
 
 async function mockProviderStatus(page: Page) {
@@ -128,5 +153,53 @@ async function capture(page: Page, fileName: string) {
     path: documentationCapturePath(fileName),
     fullPage: true,
     animations: "disabled"
+  });
+}
+
+async function publishCaptureProposal(page: Page) {
+  const batch = parseCadEditBatch({
+    schemaVersion: "cad-edit/v1",
+    transactionId: "20000000-0000-4000-8000-000000000001",
+    documentId: "dwg:b60b4a7242e43b34ca35561b",
+    expectedRevision: 0,
+    commands: [{
+      commandId: "30000000-0000-4000-8000-000000000001",
+      expectedRevision: 0,
+      origin: { kind: "user", id: "documentation-capture" },
+      preconditions: [{ target: "layer:imported:A-WALL", field: "exists", equals: true }],
+      operation: { kind: "layer.update", layerId: "layer:imported:A-WALL", visible: false }
+    }]
+  });
+  await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("dwg:cad-edit-proposal/v1", { detail })), batch);
+}
+
+function capturePreview() {
+  return parseCadEditPreviewResponse({
+    previewId: "10000000-0000-4000-8000-000000000001",
+    documentId: "dwg:b60b4a7242e43b34ca35561b",
+    transactionId: "20000000-0000-4000-8000-000000000001",
+    baseRevision: 0,
+    nextRevision: 1,
+    changeCount: 2,
+    changesTruncated: false,
+    changes: [
+      {
+        commandId: "30000000-0000-4000-8000-000000000001",
+        kind: "layer.update",
+        targetId: "layer:imported:A-WALL",
+        before: { id: "layer:imported:A-WALL", name: "A-WALL", color: 7, visible: true, frozen: false, locked: false },
+        after: { id: "layer:imported:A-WALL", name: "A-WALL", color: 7, visible: false, frozen: false, locked: false }
+      },
+      {
+        commandId: "30000000-0000-4000-8000-000000000001",
+        kind: "text.replace",
+        targetId: "h:1A",
+        before: { id: "h:1A", handle: "1A", type: "TEXT", layer: "A-WALL", bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "Before" },
+        after: { id: "h:1A", handle: "1A", type: "TEXT", layer: "A-WALL", bbox: { min: [0, 0, 0], max: [1, 1, 0] }, text: "After" }
+      }
+    ],
+    warningCount: 1,
+    warningsTruncated: false,
+    warnings: ["Source text review required."]
   });
 }
