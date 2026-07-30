@@ -45,10 +45,59 @@ service that should not import Node implementation code.
 | `POST` | `/api/inspections` | `InspectionPayload` -> `InspectionRun` |
 | `GET` | `/api/providers` | `{ providers: ProviderStatus[] }` |
 | `POST` | `/api/chat` | `ProviderChatPayload` -> `ProviderChatResult` |
+| `POST` | `/api/edit/preview` | `CadEditPreviewRequest` -> `CadEditPreviewResponse` |
+| `POST` | `/api/edit/apply` | `CadEditApplyRequest` -> `CadEditApplyResponse` |
+| `POST` | `/api/edit/undo` | `CadEditHistoryRequest` -> `CadEditApplyResponse` |
+| `POST` | `/api/edit/redo` | `CadEditHistoryRequest` -> `CadEditApplyResponse` |
 
 The gateway binds to `127.0.0.1`, rejects malformed/oversized input, and passes
 browser cancellation through one `AbortSignal`. Do not expose it publicly
 without adding authentication and a separate threat-model review.
+
+#### CAD edit review contract
+
+The four edit routes use the strict shared `@dwg/contracts` validators for
+both requests and responses. Consumers must import the DTOs from the package
+entrypoint rather than copying their JSON shapes. Adding an optional field is
+compatible; removing or renaming a field, relaxing strict validation, or
+changing approval or revision behavior requires coordinated consumers and a
+versioned contract change.
+
+`POST /api/edit/preview` accepts a `CadEditPreviewRequest` containing one
+`cad-edit/v1` batch. The batch and every command carry the same
+`expectedRevision`. A successful response assigns a server-owned `previewId`
+and returns only bounded typed change evidence. `changeCount` and
+`warningCount` are exact totals; `changesTruncated` and `warningsTruncated`
+state whether the response omitted entries. At most 200 changes and 100
+warnings are returned.
+
+Apply, undo, and redo require the literal `approved: true` and an
+`expectedRevision` matching the current document transition:
+
+- apply also requires the matching document and server-owned `previewId`;
+- a preview is single use, expires after ten minutes, and each document keeps
+  at most 20 active previews;
+- stale, expired, evicted, reused, unknown, or cross-document previews fail
+  without committing a transaction;
+- undo and redo restore content while assigning a new monotonic revision.
+
+Each edit request has a hard 1 MiB body ceiling, including streamed bodies.
+The gateway forwards the same `AbortSignal` through the composed application.
+A pre-aborted preview, apply, undo, or redo fails before preview lifecycle or
+transaction state changes.
+
+Edit failures use only a bounded, redacted
+`{ error: { code, message } }` response. Responses and errors never expose
+document snapshots, resolved-command before-state, provider content, request
+payloads, or internal engine objects. The preview `changes` array contains
+only the contract-owned typed entity/layer evidence required for user review.
+
+All routes operate inside a single loopback trust boundary. Health, read,
+provider, chat, inspection, and edit use the same process. It binds only to
+`127.0.0.1`, has no public-network authentication, and must not be exposed
+beyond that boundary without a separate threat model. This edit-review phase
+does not write DWG or DXF files; its state remains in memory. MCP remains
+read-only and exposes no edit tools.
 
 | Variable | Meaning | Default |
 |---|---|---|
