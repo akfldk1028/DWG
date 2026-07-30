@@ -1,4 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import type { CadIndex } from "@dwg/contracts";
+
+const indexFixture = JSON.parse(readFileSync(
+  fileURLToPath(new URL("../../public/data/export_sample.index.json", import.meta.url)),
+  "utf8"
+)) as CadIndex;
 
 const skills = [
   {
@@ -56,9 +65,10 @@ test("renders grounded drawing hierarchy with actual visibility, aligned metadat
 
   const layer = tree.locator(".project-layer-row").first();
   await expect(layer.getByRole("button", { name: /Hide layer/ })).toHaveAttribute("aria-pressed", "false");
-  await expect(layer.locator(".project-layer-lock")).toHaveText("—");
-  await expect(layer.locator(".project-layer-color")).toHaveText("—");
-  await expect(layer.locator(".project-layer-count")).toHaveText(/^\d+$/);
+  await expect(layer.locator(".project-layer-lock")).toHaveText("Unlocked");
+  await expect(layer.locator(".project-layer-color")).toContainText("ACI 7");
+  await expect(layer.locator(".project-layer-swatch")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  await expect(layer.locator(".project-layer-count")).toHaveText("229");
 
   await layer.getByRole("button", { name: /Hide layer/ }).click();
   await expect(layer.getByRole("button", { name: /Show layer/ })).toHaveAttribute("aria-pressed", "true");
@@ -66,6 +76,36 @@ test("renders grounded drawing hierarchy with actual visibility, aligned metadat
 
   const longLayer = tree.locator(".project-layer-name[title]").first();
   await expect(longLayer).toHaveAttribute("title", /.+/);
+});
+
+test("source-hidden and frozen layers remain unavailable while null metadata stays unknown", async ({ page }) => {
+  const index: CadIndex = {
+    ...indexFixture,
+    layers: indexFixture.layers.map((layer) => {
+      if (layer.name === "0") {
+        return { ...layer, visible: false, frozen: false, locked: null, color: null };
+      }
+      if (layer.name === "Defpoints") {
+        return { ...layer, visible: true, frozen: true, locked: true, color: 1 };
+      }
+      return layer;
+    })
+  };
+  await page.route("**/api/drawing", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(index)
+  }));
+  await page.goto("/");
+
+  const sourceHidden = page.locator(".project-layer-row").filter({ hasText: "0" }).first();
+  const frozen = page.locator(".project-layer-row").filter({ hasText: "Defpoints" }).first();
+  await expect(sourceHidden.getByRole("button", { name: "Layer 0 is hidden in source" })).toBeDisabled();
+  await expect(sourceHidden.locator(".project-layer-lock")).toHaveText("Unknown");
+  await expect(sourceHidden.locator(".project-layer-color")).toHaveText("Unknown");
+  await expect(frozen.getByRole("button", { name: "Layer Defpoints is frozen" })).toBeDisabled();
+  await expect(frozen.locator(".project-layer-lock")).toHaveText("Locked");
+  await expect(frozen.locator(".project-layer-color")).toContainText("ACI 1");
+  await expect(page.locator(".viewer-status")).toContainText("0 visible / 22 total");
 });
 
 test("keeps search sticky while project content and sessions scroll independently", async ({ page }) => {

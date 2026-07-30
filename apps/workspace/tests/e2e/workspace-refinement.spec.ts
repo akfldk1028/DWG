@@ -48,14 +48,18 @@ test("layer visibility reports visible and total model entities", async ({ page 
   await expect(page.locator(".viewer-status")).toContainText("0 visible / 22 total");
 });
 
-test("drawing tree scroll area does not disappear behind Recents", async ({ page }) => {
+test("project and session navigation keep independent scroll containers", async ({ page }) => {
   await page.goto("/");
 
-  const layer = await page.locator(".layer-row").first().boundingBox();
-  const sessions = await page.getByRole("button", { name: "Recents", exact: true }).boundingBox();
-  expect(layer).not.toBeNull();
-  expect(sessions).not.toBeNull();
-  expect(layer!.y + layer!.height).toBeLessThanOrEqual(sessions!.y);
+  const search = page.getByLabel("Search workspace");
+  const projectScroll = page.locator(".project-navigation-scroll");
+  await expect(search).toBeVisible();
+  await expect(projectScroll).toHaveCSS("overflow-y", "auto");
+  await page.getByRole("tab", { name: "Sessions" }).click();
+  const sessionScroll = page.locator(".session-navigation-scroll");
+  await expect(sessionScroll).toHaveCSS("overflow-y", "auto");
+  await expect(projectScroll).toHaveCount(0);
+  await expect(search).toBeVisible();
 });
 
 test("keeps CAD controls inside the artifact instead of the global header", async ({ page }) => {
@@ -100,11 +104,12 @@ test("offers Claude-like artifact version, copy, and download controls", async (
 test("uses Claude-style sidebar hierarchy and wider default chat", async ({ page }) => {
   await page.goto("/");
 
-  const sidebar = page.getByLabel("워크스페이스 탐색");
-  await expect(sidebar.getByRole("button", { name: "새 대화" })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: "검색" })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: "Project", exact: true })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: "Recents", exact: true })).toBeVisible();
+  const sidebar = page.getByLabel("Workspace navigation");
+  await expect(sidebar.getByLabel("Search workspace")).toBeVisible();
+  await expect(sidebar.getByRole("tab", { name: "Project", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(sidebar.getByRole("tab", { name: "Sessions", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("tab", { name: "Skills", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("tree", { name: "Drawing hierarchy" })).toBeVisible();
 
   const conversation = await page.getByRole("main", { name: "대화" }).boundingBox();
   expect(conversation!.width).toBeGreaterThanOrEqual(500);

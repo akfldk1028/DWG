@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("uses the Claude-style project, conversation, and artifact order", async ({ page }) => {
-  const sidebar = page.getByLabel("워크스페이스 탐색");
+  const sidebar = page.getByRole("complementary", { name: "Workspace navigation" });
   const conversation = page.getByRole("main", { name: "대화" });
   const artifact = page.getByRole("region", { name: "CAD 아티팩트" });
 
@@ -63,13 +63,24 @@ test("narrow workspace opens the project tree as an overlay", async ({ page }) =
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.reload();
 
-  await expect(page.getByLabel("워크스페이스 탐색")).toHaveCount(0);
-  await page.getByRole("button", { name: "탐색 열기" }).click();
-  await expect(page.getByLabel("워크스페이스 탐색")).toHaveClass(/overlay/);
+  const menu = page.getByRole("button", { name: "탐색 열기" });
+  await expect(page.getByRole("dialog", { name: "Workspace navigation" })).toHaveCount(0);
+  await menu.focus();
+  await menu.click();
+  const sidebar = page.getByRole("dialog", { name: "Workspace navigation" });
+  await expect(sidebar).toHaveClass(/overlay/);
+  await expect(sidebar).toHaveAttribute("aria-modal", "true");
+  await expect(sidebar.getByRole("button", { name: "Close navigation" })).toBeFocused();
   await expect(page.getByRole("main", { name: "대화" })).toBeVisible();
   await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeVisible();
-  await page.getByRole("button", { name: "탐색 닫기" }).first().click();
-  await expect(page.getByLabel("워크스페이스 탐색")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(sidebar).toHaveCount(0);
+  await expect(menu).toBeFocused();
+
+  await menu.click();
+  await page.getByRole("button", { name: "탐색 닫기" }).click({ position: { x: 900, y: 300 } });
+  await expect(page.getByRole("dialog", { name: "Workspace navigation" })).toHaveCount(0);
+  await expect(menu).toBeFocused();
 });
 
 test("compact workspace opens CAD as a full artifact overlay", async ({ page }) => {

@@ -44,6 +44,7 @@ export function useWorkspaceControls({
   } | null>(null);
   const removeResizeListeners = useRef<(() => void) | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const topActionsRef = useRef<HTMLDivElement>(null);
   const setPreferredArtifactWidthRef = useRef(setPreferredArtifactWidth);
   const setPreferredSidebarWidthRef = useRef(setPreferredSidebarWidth);
@@ -85,6 +86,22 @@ export function useWorkspaceControls({
 
   useEffect(() => finishResize, [finishResize]);
 
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false);
+    if (window.innerWidth < desktopSidebarBreakpoint) {
+      window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+    }
+  }, []);
+
+  const toggleSidebarFromMenu = useCallback(() => {
+    setSidebarOpen((open) => {
+      if (open && window.innerWidth < desktopSidebarBreakpoint) {
+        window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+      }
+      return !open;
+    });
+  }, []);
+
   useEffect(() => {
     const resize = () => {
       setViewportWidth(window.innerWidth);
@@ -106,6 +123,7 @@ export function useWorkspaceControls({
         setSettingsOpen(false);
         setNotificationsOpen(false);
         setArtifactMaximized(false);
+        if (!desktop && sidebarOpen) closeSidebar();
       }
     };
     const pointerdown = (event: PointerEvent) => {
@@ -120,7 +138,7 @@ export function useWorkspaceControls({
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("pointerdown", pointerdown);
     };
-  }, []);
+  }, [closeSidebar, desktop, sidebarOpen]);
 
   function resizeArtifactBy(delta: number) {
     setPreferredArtifactWidth(clampArtifactWidth(
@@ -205,10 +223,12 @@ export function useWorkspaceControls({
     notificationsOpen,
     searchQuery,
     searchRef,
+    menuButtonRef,
     sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
+    closeSidebar,
     resizeArtifactBy,
     resizeSidebarBy,
     setArtifactMaximized,
@@ -217,8 +237,8 @@ export function useWorkspaceControls({
     setNotificationsOpen,
     setSearchQuery,
     setSettingsOpen,
-    setSidebarOpen,
     startArtifactResize,
-    startSidebarResize
+    startSidebarResize,
+    toggleSidebarFromMenu
   };
 }

@@ -64,21 +64,28 @@ export function ProjectNavigator({ index, hiddenLayers, query, onToggleLayer }: 
           </button>
           {layersOpen && <div className="project-layer-header" role="presentation"><span /><span>Eye</span><span>Lock</span><span>Color</span><span>Count</span></div>}
           {layersOpen && layers.map((layer) => {
-            const hidden = hiddenLayers.has(layer.name);
+            const sourceAvailable = layer.visible && !layer.frozen;
+            const effectiveVisible = sourceAvailable && !hiddenLayers.has(layer.name);
+            const visibilityLabel = layer.frozen
+              ? `Layer ${layer.name} is frozen`
+              : !layer.visible
+                ? `Layer ${layer.name} is hidden in source`
+                : `${effectiveVisible ? "Hide" : "Show"} layer ${layer.name}`;
             return (
               <div aria-level={3} className="project-layer-row layer-row" key={layer.name} role="treeitem">
                 <span className="project-layer-controls">
                   <button
-                    aria-label={`${hidden ? "Show" : "Hide"} layer ${layer.name}`}
-                    aria-pressed={hidden}
+                    aria-label={visibilityLabel}
+                    aria-pressed={!effectiveVisible}
                     className="layer-visibility-button"
+                    disabled={!sourceAvailable}
                     onClick={() => onToggleLayer(layer.name)}
                     type="button"
                   >
-                    {hidden ? <EyeOff size={13} /> : <Eye size={13} />}
+                    {effectiveVisible ? <Eye size={13} /> : <EyeOff size={13} />}
                   </button>
-                  <span aria-label="Lock unavailable from index" className="project-layer-lock">—</span>
-                  <span aria-label="Color unavailable from index" className="project-layer-color">—</span>
+                  <span className="project-layer-lock">{layer.locked == null ? "Unknown" : layer.locked ? "Locked" : "Unlocked"}</span>
+                  <LayerColor color={layer.color} />
                   <span aria-label={`${layer.entityCount} objects`} className="project-layer-count">{layer.entityCount}</span>
                 </span>
                 <span className="project-layer-name" title={layer.name}>{layer.name}</span>
@@ -91,4 +98,27 @@ export function ProjectNavigator({ index, hiddenLayers, query, onToggleLayer }: 
       <footer className="project-navigation-footer"><span>{index.summary.entityCount} objects</span><span>{index.schemaVersion}</span></footer>
     </section>
   );
+}
+
+function LayerColor({ color }: { color: number | null | undefined }) {
+  if (color == null) return <span className="project-layer-color">Unknown</span>;
+  return <span className="project-layer-color" title={`AutoCAD Color Index ${color}`}>
+    <i className="project-layer-swatch" style={{ backgroundColor: aciColor(color) }} />
+    ACI {color}
+  </span>;
+}
+
+function aciColor(color: number) {
+  const basic = ["#000000", "#ff0000", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff", "#000000", "#808080", "#c0c0c0"];
+  if (Number.isInteger(color) && color >= 0 && color < basic.length) return basic[color]!;
+  if (Number.isInteger(color) && color >= 10 && color <= 249) {
+    const hue = Math.floor((color - 10) / 10) * 15;
+    const shade = (color - 10) % 10;
+    const saturation = shade % 2 === 0 ? 100 : 50;
+    const lightness = [50, 75, 32, 48, 25, 37, 15, 22, 7, 11][shade]!;
+    return `hsl(${hue} ${saturation}% ${lightness}%)`;
+  }
+  const grays = ["#333333", "#505050", "#696969", "#828282", "#bebebe", "#ffffff"];
+  if (Number.isInteger(color) && color >= 250 && color <= 255) return grays[color - 250]!;
+  return "#808080";
 }

@@ -351,6 +351,10 @@ button { cursor: pointer; }
 .error-state { color: #a14242; }
 .loading-mark { width: 14px; height: 14px; border: 2px solid #eadfd9; border-top-color: #d97757; border-radius: 50%; animation: spin .8s linear infinite; }
 
+@media (min-width: 1280px) and (max-width: 1359px) {
+  .artifact-version { display: none; }
+}
+
 @media (max-width: 1279px) {
   .menu-button { display: grid; }
   .workspace-grid { grid-template-columns: minmax(360px, 1fr) 7px var(--artifact-width); }

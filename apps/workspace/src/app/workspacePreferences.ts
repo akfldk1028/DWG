@@ -30,7 +30,7 @@ const artifactMinimumWidth = 520;
 
 export const defaultWorkspacePreferences: WorkspacePreferences = {
   theme: "system",
-  artifactWidth: 680,
+  artifactWidth: artifactMinimumWidth,
   sidebarWidth: defaultSidebarWidth,
   sidebarTab: "project",
   sidebarSections: {

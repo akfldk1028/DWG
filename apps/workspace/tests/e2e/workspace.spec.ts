@@ -120,7 +120,7 @@ for (const viewport of [
     await expect(page.getByText("export_sample.dwg", { exact: true }).first()).toBeVisible();
     await expect(page.getByLabel("CAD 뷰어")).toBeVisible();
     await expect(page.locator(".cad-entity")).toHaveCount(modelEntityCount);
-    await expect(page.getByText("Sample review", { exact: true })).toBeVisible();
+    await expect(page.getByRole("tree", { name: "Drawing hierarchy" })).toContainText("export_sample.dwg");
     await expect(page.getByRole("main", { name: "대화" })).toBeVisible();
     await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeVisible();
     await expect(page.getByRole("tab", { name: /Findings/ })).toBeVisible();

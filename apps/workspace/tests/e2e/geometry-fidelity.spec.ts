@@ -155,5 +155,5 @@ test("explorer exposes every indexed layout and the active schema", async ({
   await prepare(page);
 
   await expect(page.locator(".layout-row")).toHaveCount(layoutCount);
-  await expect(page.locator(".explorer-summary")).toContainText("v0.2");
+  await expect(page.locator(".project-navigation-footer")).toContainText("cad-index/v0.2");
 });

@@ -32,10 +32,12 @@ export function App() {
     notificationsOpen,
     searchQuery,
     searchRef,
+    menuButtonRef,
     sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
+    closeSidebar,
     resizeArtifactBy,
     resizeSidebarBy,
     setArtifactMaximized,
@@ -44,9 +46,9 @@ export function App() {
     setNotificationsOpen,
     setSearchQuery,
     setSettingsOpen,
-    setSidebarOpen,
     startArtifactResize,
-    startSidebarResize
+    startSidebarResize,
+    toggleSidebarFromMenu
   } = useWorkspaceControls({
     preferredArtifactWidth: workspace.preferences.artifactWidth,
     preferredSidebarWidth: workspace.preferences.sidebarWidth,
@@ -57,7 +59,7 @@ export function App() {
   const [sidebarQuery, setSidebarQuery] = useState("");
 
   const layerVisibility = useLayerVisibility(
-    index?.layers.map((layer) => layer.name) ?? []
+    index?.layers ?? []
   );
   const selected = index?.entities.find((entity) => entity.handle === selectedHandle) ?? null;
   const highlightedHandles = useMemo(() => new Set(
@@ -82,7 +84,8 @@ export function App() {
         <button
           aria-label="탐색 열기"
           className="icon-button menu-button"
-          onClick={() => setSidebarOpen((open) => !open)}
+          onClick={toggleSidebarFromMenu}
+          ref={menuButtonRef}
         >
           <Menu size={17} />
         </button>
@@ -146,7 +149,7 @@ export function App() {
             activeSessionId={chat.activeSessionId}
             hiddenLayers={layerVisibility.hiddenLayers}
             index={index}
-            onClose={() => setSidebarOpen(false)}
+            onClose={closeSidebar}
             onNewSession={chat.reset}
             onQueryChange={setSidebarQuery}
             onSelectSession={chat.selectSession}
@@ -158,7 +161,7 @@ export function App() {
             tab={workspace.preferences.sidebarTab}
           />
         )}
-        {!desktop && sidebarOpen && <button aria-label="탐색 닫기" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
+        {!desktop && sidebarOpen && <button aria-label="탐색 닫기" className="sidebar-scrim" onClick={closeSidebar} />}
 
         {desktop && sidebarOpen && (
           <div

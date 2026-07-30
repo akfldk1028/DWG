@@ -1,4 +1,5 @@
 import { PanelLeftClose, Search } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { ProjectNavigator } from "../features/project-navigation/ProjectNavigator";
 import { SessionNavigator, type SessionNavigationItem } from "../features/session-navigation/SessionNavigator";
@@ -39,6 +40,14 @@ export function WorkspaceSidebar({
   onSelectTab,
   onToggleLayer
 }: Props) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!overlay) return;
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [overlay]);
+
   function moveTab(current: SidebarTab, direction: 1 | -1) {
     const currentIndex = tabs.indexOf(current);
     const next = tabs[(currentIndex + direction + tabs.length) % tabs.length]!;
@@ -65,10 +74,15 @@ export function WorkspaceSidebar({
   }
 
   return (
-    <aside className={`workspace-sidebar ${overlay ? "overlay" : ""}`} aria-label="Workspace navigation">
+    <aside
+      aria-label="Workspace navigation"
+      aria-modal={overlay ? true : undefined}
+      className={`workspace-sidebar ${overlay ? "overlay" : ""}`}
+      role={overlay ? "dialog" : undefined}
+    >
       <div className="sidebar-heading">
         <div className="brand-mark">DI</div><strong>DWG Intelligence</strong>
-        {overlay && <button aria-label="Close navigation" className="icon-button" onClick={onClose}><PanelLeftClose size={16} /></button>}
+        {overlay && <button aria-label="Close navigation" className="icon-button" onClick={onClose} ref={closeButtonRef}><PanelLeftClose size={16} /></button>}
       </div>
 
       <div aria-label="Workspace navigation sections" className="sidebar-tabs" role="tablist">
