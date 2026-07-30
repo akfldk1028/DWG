@@ -13,6 +13,7 @@
     "build:frontend": "npm --workspace @click-around/workspace run build",
     "pretest": "npm run build:parser",
     "test": "node --import tsx --test \"packages/**/*.test.ts\" \"modules/**/*.test.ts\" \"apps/workspace/tests/unit/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
+    "test:edit": "node --import tsx --test \"modules/cad-edit/**/*.test.ts\"",
     "test:fixtures": "node --test scripts/verify-fixture-hashes.test.mjs",
     "test:dotnet": "dotnet test modules/dwg-parser/tests/DwgIntelligence.DwgParser.Tests/DwgIntelligence.DwgParser.Tests.csproj --nologo",
     "test:e2e": "npm --workspace @click-around/workspace run test:e2e --",
@@ -31,6 +32,7 @@
   "dependencies": {
     "@dwg/cad-capabilities": "file:modules/cad-capabilities",
     "@dwg/cad-document": "file:modules/cad-document",
+    "@dwg/cad-edit": "file:modules/cad-edit",
     "@dwg/contracts": "file:packages/contracts",
     "@dwg/skill-contracts": "file:packages/skill-contracts",
     "@modelcontextprotocol/sdk": "^1.30.0",
