@@ -115,6 +115,15 @@ export function createEditCapabilityComposition(
     if (ids.length === 0) tombstonesByDocument.delete(documentId);
   }
 
+  function forgetTombstone(previewId: string, documentId: string): void {
+    tombstones.delete(previewId);
+    const ids = tombstonesByDocument.get(documentId);
+    if (!ids) return;
+    const index = ids.indexOf(previewId);
+    if (index >= 0) ids.splice(index, 1);
+    if (ids.length === 0) tombstonesByDocument.delete(documentId);
+  }
+
   function expireDocument(documentId: string): void {
     const cutoff = now() - PREVIEW_TTL_MS;
     for (const previewId of [...(previewsByDocument.get(documentId) ?? [])]) {
@@ -141,7 +150,12 @@ export function createEditCapabilityComposition(
       if (active) return active;
     }
 
-    pruneTombstones(documentId);
+    const retained = tombstones.get(previewId);
+    if (retained && retained.expiresAt <= now()) {
+      forgetTombstone(previewId, retained.documentId);
+    } else {
+      pruneTombstones(documentId);
+    }
     const tombstone = tombstones.get(previewId);
     if (!tombstone) {
       throw new CadEditCapabilityError("EDIT_PREVIEW_UNKNOWN", "Edit preview ID is not known.");

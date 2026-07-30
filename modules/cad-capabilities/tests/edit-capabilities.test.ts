@@ -410,3 +410,44 @@ test("edit lifecycle tombstones expire and retain only the newest forty per docu
     (error) => codeOf(error) === "EDIT_PREVIEW_EVICTED"
   );
 });
+
+test("expired lifecycle IDs are fully forgotten before cross-document disclosure checks", async () => {
+  let now = 1_000;
+  const composition = createEditCapabilityComposition(
+    createCadEditHistory(snapshot()),
+    { now: () => now }
+  );
+  const expiring = await preview(composition, 0, 95);
+  now = 10 * 60 * 1000 + 1_000;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:capabilities",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_EXPIRED"
+  );
+
+  now = 20 * 60 * 1000 + 1_000;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:other",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_UNKNOWN"
+  );
+
+  now -= 1;
+  await assert.rejects(
+    () => composition.module.execute("edit.apply", {
+      previewId: expiring.previewId,
+      documentId: "drawing:capabilities",
+      expectedRevision: 0,
+      approved: true
+    }),
+    (error) => codeOf(error) === "EDIT_PREVIEW_UNKNOWN"
+  );
+});
