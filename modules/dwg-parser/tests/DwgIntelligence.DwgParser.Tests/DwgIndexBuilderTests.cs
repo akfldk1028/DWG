@@ -74,6 +74,24 @@ public sealed class DwgIndexBuilderTests
             entity => entity.Space == "paper" && entity.Type == "VIEWPORT");
     }
 
+    [Fact]
+    public void PublishesOfficialDwgMetadataAndLayerEvidence()
+    {
+        CadIndex index = DwgIndexBuilder.Build(FixturePath("export_sample.dwg"));
+
+        Assert.NotNull(index.Drawing);
+        Assert.Equal("AC1032", index.Drawing.FileVersion);
+        Assert.Equal("Millimeters", index.Drawing.Units);
+        Assert.Equal(
+            [
+                ("0", 7, false),
+                ("Defpoints", 7, false),
+                ("control", 90, false),
+                ("out-margin", 1, false)
+            ],
+            index.Layers.Select(layer => (layer.Name, layer.Color, layer.Locked)));
+    }
+
     private static string FixturePath(string name)
     {
         return Path.Combine(

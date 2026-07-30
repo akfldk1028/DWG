@@ -4,6 +4,7 @@ public sealed record CadIndex(
     string SchemaVersion,
     string DrawingId,
     CadIndexSource Source,
+    CadDrawingMetadata Drawing,
     CadIndexSummary Summary,
     IReadOnlyList<CadLayerItem> Layers,
     IReadOnlyList<CadEntityItem> Entities,
@@ -21,11 +22,17 @@ public sealed record CadIndexSummary(
     int ModelSpaceCount,
     int PaperSpaceCount);
 
+public sealed record CadDrawingMetadata(
+    string? FileVersion,
+    string? Units);
+
 public sealed record CadLayerItem(
     string Name,
     int EntityCount,
     bool Visible,
-    bool Frozen);
+    bool Frozen,
+    int? Color,
+    bool? Locked);
 
 public sealed record CadBoundingBox(
     double[] Min,

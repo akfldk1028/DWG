@@ -51,6 +51,45 @@ test("creates a null-preserving snapshot with deterministic imported layer IDs",
   });
 });
 
+test("normalizes omitted v0.2 layer evidence to null without changing explicit false", () => {
+  const index = structuredClone(legacyIndex()) as CadEntityIndex;
+  index.schemaVersion = "cad-index/v0.2";
+  index.entities = index.entities.map((entity) => ({
+    ...entity,
+    geometry: { kind: "bbox", reason: "test" }
+  }));
+  index.layers[0] = {
+    ...index.layers[0],
+    color: 90,
+    locked: false
+  };
+
+  const snapshot = createDocumentSnapshot(index, sourceSha256);
+
+  assert.deepEqual(snapshot.index.drawing, {
+    fileVersion: null,
+    units: null
+  });
+  assert.deepEqual(snapshot.layers, [
+    {
+      id: "layer:imported:QS1UQUc",
+      name: "A-TAG",
+      color: 90,
+      visible: true,
+      frozen: false,
+      locked: false
+    },
+    {
+      id: "layer:imported:67K9",
+      name: legacyIndex().layers[1].name,
+      color: null,
+      visible: false,
+      frozen: true,
+      locked: null
+    }
+  ]);
+});
+
 test("rejects source hashes that are not SHA-256 digests", () => {
   assert.throws(
     () => createDocumentSnapshot(legacyIndex(), "not-a-sha256"),

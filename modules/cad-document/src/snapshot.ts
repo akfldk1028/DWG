@@ -27,12 +27,18 @@ export function normalizeEditableIndex(index: CadEntityIndex): CadEntityIndexV02
   validateEntityEvidence(index);
 
   if (index.schemaVersion === "cad-index/v0.2") {
-    return structuredClone(index);
+    return {
+      ...structuredClone(index),
+      drawing: normalizeDrawingMetadata(index.drawing),
+      layers: normalizeLayers(index.layers)
+    };
   }
 
   return {
     ...structuredClone(index),
     schemaVersion: "cad-index/v0.2",
+    drawing: normalizeDrawingMetadata(),
+    layers: normalizeLayers(index.layers),
     entities: index.entities.map((entity) => ({
       ...structuredClone(entity),
       geometry: entity.bbox === null
@@ -61,12 +67,31 @@ export function createDocumentSnapshot(
     layers: editableIndex.layers.map((layer) => ({
       id: `layer:imported:${base64UrlUtf8(layer.name)}`,
       name: layer.name,
-      color: null,
+      color: layer.color ?? null,
       visible: layer.visible,
       frozen: layer.frozen,
-      locked: null
+      locked: layer.locked ?? null
     }))
   };
+}
+
+function normalizeDrawingMetadata(
+  drawing?: CadEntityIndexV02["drawing"]
+): NonNullable<CadEntityIndexV02["drawing"]> {
+  return {
+    fileVersion: drawing?.fileVersion ?? null,
+    units: drawing?.units ?? null
+  };
+}
+
+function normalizeLayers(
+  layers: CadEntityIndex["layers"]
+): CadEntityIndexV02["layers"] {
+  return layers.map((layer) => ({
+    ...layer,
+    color: layer.color ?? null,
+    locked: layer.locked ?? null
+  }));
 }
 
 function validateEntityEvidence(index: CadEntityIndex): void {

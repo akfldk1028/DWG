@@ -34,11 +34,7 @@ public static class DwgIndexBuilder
         }
 
         IReadOnlyList<CadLayerItem> layers = document.Layers
-            .Select(layer => new CadLayerItem(
-                layer.Name,
-                entities.Count(entity => entity.Layer == layer.Name),
-                layer.IsOn,
-                layer.Flags.HasFlag(LayerFlags.Frozen)))
+            .Select(layer => CreateLayerItem(layer, entities, unsupported))
             .OrderBy(layer => layer.Name, StringComparer.Ordinal)
             .ToArray();
 
@@ -58,6 +54,9 @@ public static class DwgIndexBuilder
                 "dwg",
                 Path.GetFileName(fullPath),
                 "acadsharp@3.6.35"),
+            new CadDrawingMetadata(
+                document.Header.VersionString,
+                document.Header.InsUnits.ToString()),
             new CadIndexSummary(
                 entities.Count,
                 layers.Count,
@@ -67,6 +66,31 @@ public static class DwgIndexBuilder
             layers,
             entities,
             unsupportedItems);
+    }
+
+    private static CadLayerItem CreateLayerItem(
+        Layer layer,
+        IReadOnlyCollection<CadEntityItem> entities,
+        IDictionary<(string Type, string Reason), int> unsupported)
+    {
+        int? color = layer.Color.IsTrueColor
+            ? null
+            : layer.Color.Index;
+        if (color is null)
+        {
+            AddUnsupported(
+                unsupported,
+                "LAYER",
+                $"true-color-unsupported:{layer.Name}");
+        }
+
+        return new CadLayerItem(
+            layer.Name,
+            entities.Count(entity => entity.Layer == layer.Name),
+            layer.IsOn,
+            layer.Flags.HasFlag(LayerFlags.Frozen),
+            color,
+            layer.Flags.HasFlag(LayerFlags.Locked));
     }
 
     private static CadEntityItem ConvertEntity(

@@ -21,11 +21,18 @@ export interface CadIndexSummary {
   paperSpaceCount: number;
 }
 
+export interface CadDrawingMetadata {
+  fileVersion: string | null;
+  units: string | null;
+}
+
 export interface CadLayerIndexItem {
   name: string;
   entityCount: number;
   visible: boolean;
   frozen: boolean;
+  color?: number | null;
+  locked?: boolean | null;
 }
 
 export interface CadLwPolylineVertex {
@@ -137,6 +144,7 @@ export interface CadEntityIndexV01 extends CadEntityIndexBase {
 
 export interface CadEntityIndexV02 extends CadEntityIndexBase {
   schemaVersion: "cad-index/v0.2";
+  drawing?: CadDrawingMetadata;
   entities: CadEntityIndexItemV02[];
 }
 
@@ -178,10 +186,19 @@ function isCadIndexEnvelope(
     value.drawingId.length > 0 &&
     isCadIndexSource(value.source) &&
     isCadIndexSummary(value.summary) &&
+    (value.drawing === undefined || isCadDrawingMetadata(value.drawing)) &&
     Array.isArray(value.layers) &&
     value.layers.every(isCadLayerIndexItem) &&
     Array.isArray(value.unsupported) &&
     value.unsupported.every(isUnsupportedCadEntity)
+  );
+}
+
+function isCadDrawingMetadata(value: unknown): value is CadDrawingMetadata {
+  return (
+    isRecord(value) &&
+    (typeof value.fileVersion === "string" || value.fileVersion === null) &&
+    (typeof value.units === "string" || value.units === null)
   );
 }
 
@@ -211,7 +228,9 @@ function isCadLayerIndexItem(value: unknown): value is CadLayerIndexItem {
     typeof value.name === "string" &&
     isCount(value.entityCount) &&
     typeof value.visible === "boolean" &&
-    typeof value.frozen === "boolean"
+    typeof value.frozen === "boolean" &&
+    (value.color === undefined || value.color === null || isFiniteNumber(value.color)) &&
+    (value.locked === undefined || value.locked === null || typeof value.locked === "boolean")
   );
 }
 
