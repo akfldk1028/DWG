@@ -522,6 +522,163 @@ public sealed class DwgRoundTripTests
     }
 
     [Fact]
+    public void ProbeDeletesTheVerifiedInodeAfterItsPathIsReplaced()
+    {
+        string sourcePath = Path.Combine(
+            RepositoryRoot(),
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-delete-swap-{Guid.NewGuid():N}");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        string? replacementPath = null;
+        string? movedOwnedPath = null;
+        string? originalCandidateRoot = null;
+        Directory.CreateDirectory(testRoot);
+        try
+        {
+            CadIoException error = Assert.Throws<CadIoException>(
+                () => DwgVersionProbe.Run(
+                    sourcePath,
+                    outputPath,
+                    afterCandidateWrite: null,
+                    beforeCleanup: candidateRoot =>
+                    {
+                        originalCandidateRoot = candidateRoot;
+                    },
+                    afterDeleteIdentityVerified: candidatePath =>
+                    {
+                        if (
+                            !candidatePath.EndsWith(
+                                "AC1032.dwg",
+                                StringComparison.Ordinal))
+                        {
+                            return;
+                        }
+                        movedOwnedPath = Path.Combine(
+                            testRoot,
+                            "verified-owned.moved");
+                        File.Move(candidatePath, movedOwnedPath);
+                        File.WriteAllText(candidatePath, "UNRELATED");
+                        replacementPath = candidatePath;
+                    },
+                    beforeReportTempCleanup: null));
+
+            Assert.Equal("DWG_PROBE_CLEANUP_FAILED", error.Code);
+            Assert.False(File.Exists(outputPath));
+            Assert.NotNull(replacementPath);
+            Assert.NotNull(originalCandidateRoot);
+            replacementPath = Path.Combine(
+                originalCandidateRoot,
+                "AC1032.dwg");
+            Assert.Equal("UNRELATED", File.ReadAllText(replacementPath));
+            Assert.NotNull(movedOwnedPath);
+            Assert.False(File.Exists(movedOwnedPath));
+        }
+        finally
+        {
+            string? candidateRoot = replacementPath is null
+                ? null
+                : Path.GetDirectoryName(replacementPath);
+            if (
+                candidateRoot is not null
+                && Directory.Exists(candidateRoot))
+            {
+                Directory.Delete(candidateRoot, recursive: true);
+            }
+            if (Directory.Exists(testRoot))
+            {
+                Directory.Delete(testRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void ProbePublicationFailureDeletesOnlyItsOwnedReportTemp()
+    {
+        string sourcePath = Path.Combine(
+            RepositoryRoot(),
+            "tests",
+            "fixtures",
+            "dwg",
+            "export_sample.dwg");
+        string testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-report-swap-{Guid.NewGuid():N}");
+        string outputPath = Path.Combine(testRoot, "report.json");
+        string? replacementPath = null;
+        string? movedOwnedPath = null;
+        Directory.CreateDirectory(testRoot);
+        File.WriteAllText(outputPath, "ORIGINAL");
+        try
+        {
+            Assert.ThrowsAny<Exception>(
+                () => DwgVersionProbe.Run(
+                    sourcePath,
+                    outputPath,
+                    afterCandidateWrite: null,
+                    beforeCleanup: null,
+                    afterDeleteIdentityVerified: null,
+                    beforeReportTempCleanup: temporaryPath =>
+                    {
+                        movedOwnedPath = Path.Combine(
+                            testRoot,
+                            "owned-report.moved");
+                        File.Move(temporaryPath, movedOwnedPath);
+                        File.WriteAllText(temporaryPath, "UNRELATED");
+                        replacementPath = temporaryPath;
+                    }));
+
+            Assert.Equal("ORIGINAL", File.ReadAllText(outputPath));
+            Assert.NotNull(replacementPath);
+            Assert.Equal("UNRELATED", File.ReadAllText(replacementPath));
+            Assert.NotNull(movedOwnedPath);
+            Assert.False(File.Exists(movedOwnedPath));
+        }
+        finally
+        {
+            if (Directory.Exists(testRoot))
+            {
+                Directory.Delete(testRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void NonClosingStreamLeavesDurableFlushOwnershipWithCaller()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"dwg-probe-non-closing-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            using FileStream underlying = new(
+                path,
+                FileMode.CreateNew,
+                FileAccess.ReadWrite,
+                FileShare.Read);
+            using (var wrapper = new NonClosingStream(underlying))
+            {
+                wrapper.Write([1, 2, 3]);
+            }
+
+            Assert.True(underlying.CanWrite);
+            underlying.Flush(flushToDisk: true);
+            Assert.Equal(3, underlying.Length);
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ProbeCandidateCleanupFailurePreventsReportPublication()
     {
         string root = RepositoryRoot();
@@ -624,6 +781,14 @@ public sealed class DwgRoundTripTests
             Assert.Empty(Directory.EnumerateFileSystemEntries(
                 testRoot,
                 ".report.json.*.tmp"));
+            if (!Directory.Exists(candidateRoot))
+            {
+                candidateRoot = Directory
+                    .EnumerateDirectories(
+                        processTemp,
+                        "dwg-version-probe-*")
+                    .Single();
+            }
             Assert.True(Directory.Exists(candidateRoot));
             Assert.All(
                 Directory.EnumerateFiles(candidateRoot, "*.dwg"),
