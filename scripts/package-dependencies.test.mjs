@@ -4,6 +4,12 @@ import { join, posix } from "node:path";
 import test from "node:test";
 
 const workspaceRoots = ["apps", "packages", "modules"];
+const dependencySections = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies"
+];
 const allowedDependencies = {
   "apps/workspace": ["@dwg/contracts"],
   "modules/cad-document": ["@dwg/contracts"],
@@ -34,20 +40,47 @@ test("workspace packages declare only their planned @dwg dependencies", async ()
     const expected = allowedDependencies[workspace.path];
     assert.ok(expected, `workspace ${workspace.path} is missing a dependency policy`);
 
-    const actual = Object.keys(workspace.manifest.dependencies ?? {})
-      .filter((dependency) => dependency.startsWith("@dwg/"))
-      .sort();
+    const actual = collectDwgDependencies(workspace.manifest);
     assert.deepEqual(actual, [...expected].sort(), workspace.path);
   }
 });
 
 test("workspace packages never depend on root-owned cad-runtime", async () => {
   for (const workspace of await findWorkspacePackages()) {
-    for (const dependency of Object.keys(workspace.manifest.dependencies ?? {})) {
+    for (const dependency of collectDwgDependencies(workspace.manifest)) {
       assert.notEqual(dependency, "@dwg/cad-runtime", workspace.path);
     }
   }
 });
+
+test("dependency policy includes every dependency-bearing manifest section", () => {
+  assert.deepEqual(
+    collectDwgDependencies({
+      dependencies: { "@dwg/contracts": "0.1.0" },
+      devDependencies: { "@dwg/cad-runtime": "0.1.0" },
+      peerDependencies: { "@dwg/cad-document": "0.1.0" },
+      optionalDependencies: { "@dwg/cad-edit": "0.1.0" }
+    }),
+    [
+      "@dwg/cad-document",
+      "@dwg/cad-edit",
+      "@dwg/cad-runtime",
+      "@dwg/contracts"
+    ]
+  );
+});
+
+function collectDwgDependencies(manifest) {
+  return [
+    ...new Set(
+      dependencySections.flatMap((section) =>
+        Object.keys(manifest[section] ?? {}).filter((dependency) =>
+          dependency.startsWith("@dwg/")
+        )
+      )
+    )
+  ].sort();
+}
 
 async function findWorkspacePackages() {
   const packages = [];

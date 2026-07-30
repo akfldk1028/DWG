@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -99,6 +108,36 @@ test("current workspace respects enforced module boundaries", async () => {
   const violations = await scanWorkspaceModuleBoundaries(process.cwd());
 
   assert.deepEqual(violations, []);
+});
+
+test("workspace scan discovers imports in reusable module source roots", async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "dwg-module-boundary-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+
+  await Promise.all([
+    mkdir(join(workspace, "packages/contracts/src"), { recursive: true }),
+    mkdir(join(workspace, "modules/cad-runtime/src"), { recursive: true }),
+    mkdir(join(workspace, "modules/cad-query/src"), { recursive: true }),
+    mkdir(join(workspace, "apps/workspace/src"), { recursive: true })
+  ]);
+  await writeFile(
+    join(workspace, "modules/cad-query/package.json"),
+    JSON.stringify({ name: "@dwg/cad-query" })
+  );
+  await writeFile(
+    join(workspace, "modules/cad-query/src/query.ts"),
+    'import { x } from "@dwg/cad-document/src/model";'
+  );
+
+  const violations = await scanWorkspaceModuleBoundaries(workspace);
+
+  assert.deepEqual(
+    violations.map(({ importer, rule }) => ({ importer, rule })),
+    [{
+      importer: "modules/cad-query/src/query.ts",
+      rule: "cross-module-import-uses-public-entrypoint"
+    }]
+  );
 });
 
 test("repository exposes explicit application and module roots", async () => {
