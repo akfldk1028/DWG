@@ -44,10 +44,15 @@ export function parseExportCapabilityItem(value: unknown): ExportCapabilityItem 
   if ((REPORT_FORMATS.includes(format as ReportFormat) ? "report" : "drawing") !== kind) {
     throw new Error("EXPORT_CAPABILITY_ITEM_INVALID");
   }
-  if (typeof object.available !== "boolean" || (object.reason !== null && typeof object.reason !== "string")) {
+  if (typeof object.available !== "boolean") {
     throw new Error("EXPORT_CAPABILITY_ITEM_INVALID");
   }
-  if (typeof object.reason === "string" && (object.reason.length === 0 || object.reason.length > 128)) {
+  const reasonValid = object.available
+    ? object.reason === null
+    : typeof object.reason === "string" &&
+      object.reason.trim().length > 0 &&
+      object.reason.length <= 128;
+  if (!reasonValid) {
     throw new Error("EXPORT_CAPABILITY_ITEM_INVALID");
   }
   return { format, kind, available: object.available, reason: object.reason as string | null };
