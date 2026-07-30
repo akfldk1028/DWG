@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
+import { types as nodeTypes } from "node:util";
 
 import type {
   CadChange,
@@ -18,6 +19,7 @@ import { BoundedTextWriter, MAX_REPORT_BYTES } from "./textWriter.js";
 export { MAX_REPORT_BYTES } from "./textWriter.js";
 export const MAX_REPORT_INPUT_DEPTH = 32;
 export const MAX_REPORT_INPUT_COLLECTION_ITEMS = 20_000;
+export const MAX_REPORT_INPUT_TOTAL_ITEMS = 100_000;
 export const MAX_REPORT_INPUT_STRING_BYTES = 524_288;
 
 /** Internal application input; it is deliberately not a @dwg/contracts DTO. */
@@ -239,20 +241,50 @@ function preflightReportInput(input: CadReportInput): void {
       }
       estimatedBytes += bytes;
     } else if (value && typeof value === "object") {
+      if (nodeTypes.isProxy(value)) throw new Error("EXPORT_REPORT_INPUT_PROXY");
       if (active.has(value)) throw new Error("EXPORT_REPORT_INPUT_CYCLE");
       active.add(value);
       stack.push({ kind: "exit", value });
-      const descriptors = Object.getOwnPropertyDescriptors(value);
-      const entries = Object.entries(descriptors);
-      collectionItems += entries.length;
-      if (collectionItems > MAX_REPORT_INPUT_COLLECTION_ITEMS) {
-        throw new Error("EXPORT_REPORT_INPUT_COLLECTION_LIMIT");
-      }
-      for (const [key, descriptor] of entries) {
-        if (!("value" in descriptor)) throw new Error("EXPORT_REPORT_INPUT_INVALID");
-        assertWellFormedUtf16(key);
-        estimatedBytes += Buffer.byteLength(key, "utf8");
-        stack.push({ kind: "enter", value: descriptor.value, depth: current.depth + 1 });
+      if (Array.isArray(value)) {
+        if (!Number.isSafeInteger(value.length) || value.length > MAX_REPORT_INPUT_COLLECTION_ITEMS) {
+          throw new Error("EXPORT_REPORT_INPUT_COLLECTION_LIMIT");
+        }
+        collectionItems += value.length;
+        if (collectionItems > MAX_REPORT_INPUT_TOTAL_ITEMS) {
+          throw new Error("EXPORT_REPORT_INPUT_COLLECTION_LIMIT");
+        }
+        rejectArrayProperties(value);
+        for (let index = value.length - 1; index >= 0; index -= 1) {
+          const key = String(index);
+          const descriptor = Object.getOwnPropertyDescriptor(value, key);
+          if (descriptor === undefined) throw new Error("EXPORT_REPORT_INPUT_ARRAY_SPARSE");
+          if (!("value" in descriptor)) throw new Error("EXPORT_REPORT_INPUT_ACCESSOR");
+          if (!descriptor.enumerable) throw new Error("EXPORT_REPORT_INPUT_ARRAY_PROPERTY");
+          estimatedBytes += Buffer.byteLength(key, "utf8");
+          stack.push({ kind: "enter", value: descriptor.value, depth: current.depth + 1 });
+        }
+      } else {
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== Object.prototype && prototype !== null) {
+          throw new Error("EXPORT_REPORT_INPUT_PROTOTYPE");
+        }
+        let ownItems = 0;
+        for (const key in value) {
+          if (!Object.hasOwn(value, key)) continue;
+          ownItems += 1;
+          collectionItems += 1;
+          if (
+            ownItems > MAX_REPORT_INPUT_COLLECTION_ITEMS ||
+            collectionItems > MAX_REPORT_INPUT_TOTAL_ITEMS
+          ) {
+            throw new Error("EXPORT_REPORT_INPUT_COLLECTION_LIMIT");
+          }
+          assertWellFormedUtf16(key);
+          const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+          if (!("value" in descriptor)) throw new Error("EXPORT_REPORT_INPUT_ACCESSOR");
+          estimatedBytes += Buffer.byteLength(key, "utf8");
+          stack.push({ kind: "enter", value: descriptor.value, depth: current.depth + 1 });
+        }
       }
     } else {
       estimatedBytes += 16;
@@ -261,6 +293,20 @@ function preflightReportInput(input: CadReportInput): void {
       throw new Error("EXPORT_REPORT_INPUT_BYTE_LIMIT EXPORT_REPORT_BYTE_LIMIT");
     }
   }
+}
+
+function rejectArrayProperties(value: unknown[]): void {
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) continue;
+    if (!isArrayIndexKey(key, value.length)) {
+      throw new Error("EXPORT_REPORT_INPUT_ARRAY_PROPERTY");
+    }
+  }
+}
+
+function isArrayIndexKey(key: string, length: number): boolean {
+  const index = Number(key);
+  return Number.isSafeInteger(index) && index >= 0 && index < length && String(index) === key;
 }
 
 function assertWellFormedUtf16(value: string): void {

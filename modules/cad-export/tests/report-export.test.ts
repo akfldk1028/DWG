@@ -9,6 +9,7 @@ import {
   encodeBounded,
   exportCadReport,
   MAX_REPORT_BYTES,
+  MAX_REPORT_INPUT_COLLECTION_ITEMS,
   type CadReportInput
 } from "../src/index.js";
 
@@ -203,6 +204,141 @@ test("preflights excessive depth and collection counts", async () => {
   const numerous = input() as CadReportInput & { extra?: unknown };
   numerous.extra = Array.from({ length: 20_001 }, (_, index) => index);
   await assert.rejects(exportCadReport(numerous, "json"), /EXPORT_REPORT_INPUT_COLLECTION_LIMIT/u);
+});
+
+test("rejects oversized arrays from length before traversing indices", async () => {
+  let getterCalls = 0;
+  const oversizedWithGetter = new Array(20_001);
+  Object.defineProperty(oversizedWithGetter, "0", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return "not read";
+    }
+  });
+  for (const sparse of [new Array(20_001), new Array(4_294_967_295)]) {
+    const oversized = input() as CadReportInput & { extra?: unknown };
+    oversized.extra = sparse;
+    await assert.rejects(
+      exportCadReport(oversized, "json"),
+      /EXPORT_REPORT_INPUT_COLLECTION_LIMIT/u
+    );
+  }
+  const guarded = input() as CadReportInput & { extra?: unknown };
+  guarded.extra = oversizedWithGetter;
+  await assert.rejects(
+    exportCadReport(guarded, "json"),
+    /EXPORT_REPORT_INPUT_COLLECTION_LIMIT/u
+  );
+  assert.equal(getterCalls, 0);
+
+  const dense = input() as CadReportInput & { extra?: unknown };
+  dense.extra = Array.from({ length: MAX_REPORT_INPUT_COLLECTION_ITEMS + 1 }, (_, index) => index);
+  await assert.rejects(
+    exportCadReport(dense, "json"),
+    /EXPORT_REPORT_INPUT_COLLECTION_LIMIT/u
+  );
+});
+
+test("rejects plain objects above the per-object enumerable key cap", async () => {
+  const oversized = input() as CadReportInput & { extra?: unknown };
+  oversized.extra = Object.fromEntries(
+    Array.from(
+      { length: MAX_REPORT_INPUT_COLLECTION_ITEMS + 1 },
+      (_, index) => [`key-${index}`, null]
+    )
+  );
+  await assert.rejects(
+    exportCadReport(oversized, "json"),
+    /EXPORT_REPORT_INPUT_COLLECTION_LIMIT/u
+  );
+});
+
+test("accepts a dense array exactly at the per-collection boundary", async () => {
+  const boundary = input() as CadReportInput & { extra?: unknown };
+  boundary.extra = Array.from({ length: MAX_REPORT_INPUT_COLLECTION_ITEMS }, () => null);
+  await assert.doesNotReject(exportCadReport(boundary, "json"));
+});
+
+test("rejects sparse report arrays and non-index enumerable properties", async () => {
+  const sparse = input();
+  sparse.findings!.warnings = new Array(3);
+  sparse.findings!.warnings[2] = "visible";
+  await assert.rejects(exportCadReport(sparse, "json"), /EXPORT_REPORT_INPUT_ARRAY_SPARSE/u);
+
+  const decorated = input();
+  const warnings = ["visible"] as string[] & { extra?: string };
+  warnings.extra = "must not disappear";
+  decorated.findings!.warnings = warnings;
+  await assert.rejects(
+    exportCadReport(decorated, "json"),
+    /EXPORT_REPORT_INPUT_ARRAY_PROPERTY/u
+  );
+});
+
+test("rejects object and array accessors without invoking getters", async () => {
+  let getterCalls = 0;
+  const objectAccessor = input() as CadReportInput & { extra?: unknown };
+  objectAccessor.extra = Object.defineProperty({}, "secret", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return "secret";
+    }
+  });
+  await assert.rejects(
+    exportCadReport(objectAccessor, "json"),
+    /EXPORT_REPORT_INPUT_ACCESSOR/u
+  );
+
+  const arrayAccessor = input();
+  const warnings: string[] = [];
+  Object.defineProperty(warnings, "0", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return "secret";
+    }
+  });
+  decoratedArrayLength(warnings, 1);
+  arrayAccessor.findings!.warnings = warnings;
+  await assert.rejects(
+    exportCadReport(arrayAccessor, "json"),
+    /EXPORT_REPORT_INPUT_ACCESSOR/u
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test("rejects proxies before invoking any user traps", async () => {
+  let trapCalls = 0;
+  const proxy = new Proxy({}, {
+    getPrototypeOf() {
+      trapCalls += 1;
+      return Object.prototype;
+    },
+    ownKeys() {
+      trapCalls += 1;
+      return [];
+    },
+    getOwnPropertyDescriptor() {
+      trapCalls += 1;
+      return undefined;
+    },
+    get() {
+      trapCalls += 1;
+      return undefined;
+    }
+  });
+  const unsafe = input() as CadReportInput & { extra?: unknown };
+  unsafe.extra = proxy;
+  await assert.rejects(exportCadReport(unsafe, "json"), /EXPORT_REPORT_INPUT_PROXY/u);
+  assert.equal(trapCalls, 0);
+});
+
+test("rejects non-plain object prototypes", async () => {
+  const unsafe = input() as CadReportInput & { extra?: unknown };
+  unsafe.extra = Object.create({ inherited: "not serialized data" }) as object;
+  await assert.rejects(exportCadReport(unsafe, "json"), /EXPORT_REPORT_INPUT_PROTOTYPE/u);
 });
 
 test("preflight rejects lone high and low surrogates in scalar values", async () => {
@@ -539,6 +675,10 @@ function assertWellFormedXml(value: string): void {
   );
   assert.equal(parsed.status, 0, parsed.stderr);
   assert.equal(parsed.stdout.trim(), "svg");
+}
+
+function decoratedArrayLength(value: unknown[], length: number): void {
+  Object.defineProperty(value, "length", { value: length, writable: true });
 }
 
 function sha256(bytes: Uint8Array): string {
