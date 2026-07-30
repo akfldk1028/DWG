@@ -39,7 +39,8 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
   const drawingWorkspace = createDrawingWorkspace(
     workspace,
     drawingPath,
-    createCadToolRuntime(application.capabilities)
+    createCadToolRuntime(application.capabilities),
+    () => application.currentIndex()
   );
   const providers = createProviderRegistry(workspace);
   const chatService = createChatService({

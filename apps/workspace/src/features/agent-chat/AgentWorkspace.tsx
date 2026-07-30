@@ -61,7 +61,7 @@ export function AgentWorkspace({
   }, [activeSession?.messages.length, chatResult]);
 
   return (
-    <main className="panel agent-workspace conversation-panel" aria-label="대화">
+    <main className="panel agent-workspace conversation-panel" aria-label="대화" data-modal-background>
       <div className="agent-tabs">
         <div className="conversation-title"><Bot size={14} /> Drawing inspection</div>
         <button className="agent-tab icon-tab" aria-label="새 대화" onClick={onNewChat}>

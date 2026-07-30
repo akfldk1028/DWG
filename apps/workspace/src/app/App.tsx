@@ -4,7 +4,7 @@ import {
   PanelRight,
   Settings2
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AgentWorkspace } from "../features/agent-chat/AgentWorkspace";
 import { useProviderChat } from "../features/agent-chat/useProviderChat";
@@ -22,12 +22,13 @@ import { useWorkspacePreferences } from "./useWorkspacePreferences";
 import "./styles.css";
 
 export function App() {
-  const { index, error } = useDrawingIndex();
+  const { index, error, refresh } = useDrawingIndex();
   const chat = useProviderChat();
   const inspection = useInspectionRun();
   const workspace = useWorkspacePreferences();
   const {
     artifactMaximized,
+    artifactOverlay,
     artifactOpen,
     artifactWidth,
     desktop,
@@ -36,11 +37,14 @@ export function App() {
     searchQuery,
     searchRef,
     menuButtonRef,
+    artifactButtonRef,
     sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
     closeSidebar,
+    closeArtifact,
+    openArtifact,
     resizeArtifactBy,
     resizeSidebarBy,
     setArtifactMaximized,
@@ -62,7 +66,12 @@ export function App() {
   const [sidebarQuery, setSidebarQuery] = useState("");
   const [pendingChangeBatch, setPendingChangeBatch] = useState<CadEditBatch | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
-  const changeReview = useChangeReview(pendingChangeBatch);
+  const refreshAfterMutation = useCallback(async () => {
+    const refreshed = await refresh();
+    if (!refreshed) return;
+    setSelectedHandle((handle) => handle && refreshed.entities.some((entity) => entity.handle === handle) ? handle : null);
+  }, [refresh]);
+  const changeReview = useChangeReview(pendingChangeBatch, refreshAfterMutation);
 
   useEffect(() => subscribeCadEditProposals({
     onProposal: (batch) => {
@@ -98,7 +107,7 @@ export function App() {
 
   return (
     <div className="app-shell" data-theme={workspace.resolvedTheme}>
-      <header className="topbar">
+      <header className="topbar" data-modal-background>
         <button
           aria-label="탐색 열기"
           className="icon-button menu-button"
@@ -115,7 +124,8 @@ export function App() {
           <button
             aria-label="CAD 아티팩트 열기"
             className="icon-button artifact-toggle"
-            onClick={() => setArtifactOpen(true)}
+            onClick={openArtifact}
+            ref={artifactButtonRef}
           >
             <PanelRight size={15} />
           </button>
@@ -175,6 +185,7 @@ export function App() {
             onToggleLayer={layerVisibility.toggleLayer}
             overlay={!desktop}
             query={sidebarQuery}
+            restoreFocusRef={menuButtonRef}
             sessions={chat.sessions}
             tab={workspace.preferences.sidebarTab}
           />
@@ -255,9 +266,10 @@ export function App() {
               index={index}
               inspectionLoading={inspection.loading}
               maximized={artifactMaximized}
+              overlay={artifactOverlay}
+              restoreFocusRef={artifactButtonRef}
               onClose={() => {
-                setArtifactMaximized(false);
-                setArtifactOpen(false);
+                closeArtifact();
               }}
               onGridVisibleChange={setGridVisible}
               onMaximizedChange={setArtifactMaximized}

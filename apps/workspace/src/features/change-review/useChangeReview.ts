@@ -42,7 +42,10 @@ const initialState: ChangeReviewState = {
   retryAction: null
 };
 
-export function useChangeReview(pendingBatch: CadEditBatch | null) {
+export function useChangeReview(
+  pendingBatch: CadEditBatch | null,
+  onMutationCommitted?: () => Promise<void>
+) {
   const [state, setState] = useState<ChangeReviewState>(initialState);
   const activeController = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -126,6 +129,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
         state.preview.changeCount,
         operation.controller.signal
       );
+      await onMutationCommitted?.();
       if (!completeMutation(operation)) return;
       setState((current) => ({ ...current, phase: "applied", revision: response.revision, error: null, retryAction: null }));
     } catch (reason) {
@@ -145,7 +149,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
         retryAction: stale ? "preview" : "apply"
       }));
     }
-  }, [beginMutation, completeMutation, state.phase, state.preview]);
+  }, [beginMutation, completeMutation, onMutationCommitted, state.phase, state.preview]);
 
   const reject = useCallback(() => {
     if (busy.current || state.phase !== "ready") return;
@@ -172,6 +176,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
           state.preview.changeCount,
           operation.controller.signal
         ));
+      await onMutationCommitted?.();
       if (!completeMutation(operation)) return;
       setState((current) => ({
         ...current,
@@ -189,7 +194,7 @@ export function useChangeReview(pendingBatch: CadEditBatch | null) {
         retryAction: kind
       }));
     }
-  }, [beginMutation, completeMutation, state.preview, state.revision]);
+  }, [beginMutation, completeMutation, onMutationCommitted, state.preview, state.revision]);
 
   const rePreview = useCallback(() => {
     if (!batchRef.current) return;

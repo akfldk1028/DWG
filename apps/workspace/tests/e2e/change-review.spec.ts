@@ -145,6 +145,10 @@ test("blocks an immediate integration proposal without aborting a delayed commit
     };
   }, reviewedBatch);
   await page.getByRole("button", { name: "Approve changes" }).click();
+  await expect(page.getByLabel("Move X")).toBeDisabled();
+  await expect(page.getByLabel("Move Y")).toBeDisabled();
+  await expect(page.getByLabel("Move Z")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Preview move" })).toBeDisabled();
   await page.waitForTimeout(100);
   expect(previewCalls).toBe(1);
   releaseApply();

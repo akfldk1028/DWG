@@ -71,8 +71,8 @@ test("narrow workspace opens the project tree as an overlay", async ({ page }) =
   await expect(sidebar).toHaveClass(/overlay/);
   await expect(sidebar).toHaveAttribute("aria-modal", "true");
   await expect(sidebar.getByRole("button", { name: "Close navigation" })).toBeFocused();
-  await expect(page.getByRole("main", { name: "대화" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeVisible();
+  await expect(page.locator(".agent-workspace")).toBeVisible();
+  await expect(page.locator(".cad-artifact")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(sidebar).toHaveCount(0);
   await expect(menu).toBeFocused();
@@ -90,7 +90,7 @@ test("compact workspace opens CAD as a full artifact overlay", async ({ page }) 
   await expect(page.getByRole("main", { name: "대화" })).toBeVisible();
   await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeHidden();
   await page.getByRole("button", { name: "CAD 아티팩트 열기" }).click();
-  await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "CAD 아티팩트" })).toBeVisible();
   await page.getByRole("button", { name: "CAD 아티팩트 닫기" }).click();
   await expect(page.getByRole("region", { name: "CAD 아티팩트" })).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(800);

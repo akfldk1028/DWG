@@ -61,9 +61,9 @@ export function ChangeProposalComposer({ documentId, expectedRevision, selectedE
         <span>{handle ? `Selected handle ${bounded(handle)}` : "Select a grounded entity in Findings."}</span>
       </header>
       <div className="change-proposal-fields">
-        <label>Move X<input aria-label="Move X" inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, x: event.target.value }))} value={delta.x} /></label>
-        <label>Move Y<input aria-label="Move Y" inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, y: event.target.value }))} value={delta.y} /></label>
-        <label>Move Z<input aria-label="Move Z" inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, z: event.target.value }))} value={delta.z} /></label>
+        <label>Move X<input aria-label="Move X" disabled={disabled} inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, x: event.target.value }))} value={delta.x} /></label>
+        <label>Move Y<input aria-label="Move Y" disabled={disabled} inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, y: event.target.value }))} value={delta.y} /></label>
+        <label>Move Z<input aria-label="Move Z" disabled={disabled} inputMode="decimal" onChange={(event) => setDelta((current) => ({ ...current, z: event.target.value }))} value={delta.z} /></label>
         <button disabled={!handle || disabled} onClick={proposeMove} type="button">Preview move</button>
       </div>
       {error && <div className="change-proposal-error" role="alert">{error}</div>}

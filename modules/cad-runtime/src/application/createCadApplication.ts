@@ -33,6 +33,8 @@ export interface CadApplication {
   capabilities: CadCapabilityRuntime;
   transactions: CadCommittedTransactionStore;
   capabilityNames: readonly (typeof CAD_APPLICATION_CAPABILITY_NAMES)[number][];
+  /** Returns the immutable source-derived index with the active edit snapshot applied. */
+  currentIndex(): CadEntityIndex;
 }
 
 export interface CadApplicationOptions {
@@ -65,7 +67,18 @@ export async function createCadApplication(
       edit.module
     ]),
     transactions: edit.transactions,
-    capabilityNames: CAD_APPLICATION_CAPABILITY_NAMES
+    capabilityNames: CAD_APPLICATION_CAPABILITY_NAMES,
+    currentIndex() {
+      const current = history.current();
+      return {
+        ...current.index,
+        drawing: {
+          fileVersion: current.drawingVersion,
+          units: current.units,
+          revision: current.revision
+        }
+      };
+    }
   };
 }
 

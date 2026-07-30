@@ -24,6 +24,8 @@ export interface CadIndexSummary {
 export interface CadDrawingMetadata {
   fileVersion: string | null;
   units: string | null;
+  /** In-memory edit revision; omitted by read-only parser results. */
+  revision?: number;
 }
 
 export interface CadLayerIndexItem {
@@ -209,7 +211,8 @@ function isCadDrawingMetadata(value: unknown): value is CadDrawingMetadata {
   return (
     isRecord(value) &&
     (typeof value.fileVersion === "string" || value.fileVersion === null) &&
-    (typeof value.units === "string" || value.units === null)
+    (typeof value.units === "string" || value.units === null) &&
+    (value.revision === undefined || isCount(value.revision))
   );
 }
 

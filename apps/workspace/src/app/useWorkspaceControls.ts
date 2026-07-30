@@ -45,10 +45,12 @@ export function useWorkspaceControls({
   const removeResizeListeners = useRef<(() => void) | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const artifactButtonRef = useRef<HTMLButtonElement>(null);
   const topActionsRef = useRef<HTMLDivElement>(null);
   const setPreferredArtifactWidthRef = useRef(setPreferredArtifactWidth);
   const setPreferredSidebarWidthRef = useRef(setPreferredSidebarWidth);
   const desktop = viewportWidth >= desktopSidebarBreakpoint;
+  const artifactOverlay = viewportWidth <= compactArtifactBreakpoint;
   const sidebarWidth = clampSidebarWidth(preferredSidebarWidth);
   const artifactWidth = clampArtifactWidth(
     viewportWidth,
@@ -88,18 +90,23 @@ export function useWorkspaceControls({
 
   const closeSidebar = useCallback(() => {
     setSidebarOpen(false);
-    if (window.innerWidth < desktopSidebarBreakpoint) {
-      window.requestAnimationFrame(() => menuButtonRef.current?.focus());
-    }
   }, []);
 
   const toggleSidebarFromMenu = useCallback(() => {
     setSidebarOpen((open) => {
-      if (open && window.innerWidth < desktopSidebarBreakpoint) {
-        window.requestAnimationFrame(() => menuButtonRef.current?.focus());
-      }
+      if (!open && window.innerWidth <= compactArtifactBreakpoint) setArtifactOpen(false);
       return !open;
     });
+  }, []);
+
+  const openArtifact = useCallback(() => {
+    if (window.innerWidth <= compactArtifactBreakpoint) setSidebarOpen(false);
+    setArtifactOpen(true);
+  }, []);
+
+  const closeArtifact = useCallback(() => {
+    setArtifactMaximized(false);
+    setArtifactOpen(false);
   }, []);
 
   useEffect(() => {
@@ -216,6 +223,7 @@ export function useWorkspaceControls({
 
   return {
     artifactMaximized,
+    artifactOverlay,
     artifactOpen,
     artifactWidth,
     desktop,
@@ -224,11 +232,14 @@ export function useWorkspaceControls({
     searchQuery,
     searchRef,
     menuButtonRef,
+    artifactButtonRef,
     sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
     closeSidebar,
+    closeArtifact,
+    openArtifact,
     resizeArtifactBy,
     resizeSidebarBy,
     setArtifactMaximized,

@@ -25,6 +25,7 @@ export function ProjectNavigator({ index, hiddenLayers, query, onToggleLayer }: 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const layouts = useMemo(() => [...new Set(index.entities.map((entity) => entity.layout))], [index.entities]);
   const layers = index.layers.filter((layer) => layer.name.toLocaleLowerCase().includes(normalizedQuery));
+  const revision = index.schemaVersion === "cad-index/v0.2" ? index.drawing?.revision ?? 0 : 0;
 
   return (
     <section aria-label="Project" className="project-navigation" role="region">
@@ -95,7 +96,7 @@ export function ProjectNavigator({ index, hiddenLayers, query, onToggleLayer }: 
           {layersOpen && layers.length === 0 && <div className="project-navigation-empty">No matching layers.</div>}
         </div>
       </div>
-      <footer className="project-navigation-footer"><span>{index.summary.entityCount} objects</span><span>{index.schemaVersion}</span></footer>
+      <footer className="project-navigation-footer"><span>{index.summary.entityCount} objects</span><span>Revision {revision}</span><span>{index.schemaVersion}</span></footer>
     </section>
   );
 }

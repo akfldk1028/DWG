@@ -15,13 +15,14 @@ import {
   View,
   X
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { CadViewer } from "../features/cad-viewer/CadViewer";
 import { ChangeReview } from "../features/change-review/ChangeReview";
 import { useChangeReview } from "../features/change-review/useChangeReview";
 import { ExportPanel } from "../features/export/ExportPanel";
 import type { CadEntity, CadIndex, InspectionRun } from "../shared/types";
+import { useModalOverlay } from "./useModalOverlay";
 
 type ArtifactTab = "preview" | "findings" | "evidence" | "changes" | "export" | "warnings";
 
@@ -37,6 +38,8 @@ interface Props {
   gridVisible: boolean;
   hiddenLayers: ReadonlySet<string>;
   maximized: boolean;
+  overlay: boolean;
+  restoreFocusRef?: React.RefObject<HTMLElement | null>;
   inspectionLoading: boolean;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
   onClose(): void;
@@ -60,6 +63,8 @@ export function CadArtifactPanel({
   gridVisible,
   hiddenLayers,
   maximized,
+  overlay,
+  restoreFocusRef,
   inspectionLoading,
   searchInputRef,
   onClose,
@@ -70,6 +75,9 @@ export function CadArtifactPanel({
   onSearchQueryChange,
   onSelectFinding
 }: Props) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalOverlay({ active: overlay, dialogRef, restoreFocusRef, onClose });
+  const revision = index.schemaVersion === "cad-index/v0.2" ? index.drawing?.revision ?? 0 : 0;
   const [tab, setTab] = useState<ArtifactTab>("preview");
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const findingGroups = useMemo(
@@ -100,12 +108,17 @@ export function CadArtifactPanel({
   return (
     <section
       aria-label="CAD 아티팩트"
-      className={`cad-artifact ${maximized ? "maximized" : ""}`}
+      aria-modal={overlay ? true : undefined}
+      className={`cad-artifact ${maximized ? "maximized" : ""} ${overlay ? "modal-overlay" : ""}`}
+      data-modal-background
       data-maximized={maximized}
+      ref={dialogRef}
+      role={overlay ? "dialog" : undefined}
     >
       <div className="artifact-header">
         <div className="artifact-title">
           <strong>{index.source.displayName}</strong>
+          <span>Revision {revision}</span>
           <span><CheckCircle2 size={11} /> <b>Indexed</b> · {index.summary.modelSpaceCount} entities</span>
         </div>
         <label className="artifact-search">
@@ -214,7 +227,7 @@ export function CadArtifactPanel({
         )}
         {tab === "evidence" && (
           selected
-            ? <Evidence entity={selected} />
+            ? <Evidence entity={selected} revision={revision} />
             : <Empty>Finding을 선택하면 handle, layer, type, bbox를 표시합니다.</Empty>
         )}
         {tab === "changes" && (
@@ -297,13 +310,14 @@ function Tab({ active, icon, label, count, onClick }: {
   );
 }
 
-function Evidence({ entity }: { entity: CadEntity }) {
+function Evidence({ entity, revision }: { entity: CadEntity; revision: number }) {
   return (
     <dl className="evidence-grid" data-testid="evidence-card">
       <div><dt>HANDLE</dt><dd>{entity.handle}</dd></div>
       <div><dt>TYPE</dt><dd>{entity.type}</dd></div>
       <div><dt>LAYER</dt><dd>{entity.layer}</dd></div>
       <div><dt>BOUNDING BOX</dt><dd>{entity.bbox ? JSON.stringify(entity.bbox) : "unavailable"}</dd></div>
+      <div><dt>REVISION</dt><dd>{revision}</dd></div>
     </dl>
   );
 }

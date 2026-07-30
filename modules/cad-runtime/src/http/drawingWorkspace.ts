@@ -22,13 +22,14 @@ export interface DrawingWorkspace {
 export function createDrawingWorkspace(
   workspaceRoot: string,
   configuredPath: string,
-  runtime: OrchestrationCadRuntime
+  runtime: OrchestrationCadRuntime,
+  getCurrentIndex?: () => CadEntityIndex
 ): DrawingWorkspace {
   const drawingPath = resolveWorkspaceCadPath(workspaceRoot, configuredPath);
 
   const orchestrator = createInspectionOrchestrator(runtime);
   return {
-    getIndex: () => buildCadIndexForPath(drawingPath),
+    getIndex: async () => getCurrentIndex ? getCurrentIndex() : buildCadIndexForPath(drawingPath),
     inspect: (checks) => orchestrator.run({ path: drawingPath, checks })
   };
 }

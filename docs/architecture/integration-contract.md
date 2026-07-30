@@ -64,6 +64,11 @@ The gateway binds to `127.0.0.1`, rejects malformed/oversized input, and passes
 browser cancellation through one `AbortSignal`. Do not expose it publicly
 without adding authentication and a separate threat-model review.
 
+`GET /api/drawing` returns the active in-memory document snapshot for the
+gateway's paired application. Its optional `drawing.revision` is the current
+edit revision (zero for an unedited snapshot); parser-only indexes may omit it.
+This additive metadata does not modify or rewrite the source DWG/DXF.
+
 #### Export capability contract
 
 `GET /api/export/capabilities` returns every supported report (`json`, `csv`,

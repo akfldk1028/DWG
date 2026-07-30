@@ -6,6 +6,7 @@ import test from "node:test";
 import { createProviderGateway } from "../../src/http/providerGateway.js";
 import { createCadApplication } from "../../src/application/createCadApplication.js";
 import { handleEditGatewayRequest } from "../../src/http/editGateway.js";
+import { createCadGatewayServer } from "../../src/http/gateway.js";
 
 const documentId = "dwg:edit-test";
 const transactionId = "11111111-1111-4111-8111-111111111111";
@@ -247,6 +248,53 @@ test("pre-aborted edit gateway apply preserves the preview and transaction lifec
   }) as { revision: number }).revision, 1);
 });
 
+test("assembled gateway publishes the active edit snapshot through apply undo and redo", async (context) => {
+  const application = await createCadApplication({
+    loadInitialIndex: async () => movingIndex(),
+    read: {
+      open: async () => movingIndex(),
+      get: () => movingIndex()
+    },
+    sourceSha256: "a".repeat(64)
+  });
+  const sourceHash = application.transactions.getSaveState(documentId, 0)?.source.sourceSha256;
+  const server = await createCadGatewayServer({
+    workspaceRoot: process.cwd(),
+    drawingPath: "tests/fixtures/dwg/export_sample.dwg",
+    application
+  });
+  const baseUrl = await listen(server, context);
+
+  const initial = await getDrawing(baseUrl);
+  assert.equal(initial.drawing.revision, 0);
+  assert.deepEqual(entityBox(initial), { min: [0, 0, 0], max: [1, 1, 0] });
+
+  const preview = await post(baseUrl, "/api/edit/preview", { batch: moveBatch() });
+  const previewBody = await preview.json() as { previewId: string };
+  assert.equal(preview.status, 200, JSON.stringify(previewBody));
+  assert.equal((await post(baseUrl, "/api/edit/apply", {
+    previewId: previewBody.previewId, documentId, expectedRevision: 0, approved: true
+  })).status, 200);
+  const applied = await getDrawing(baseUrl);
+  assert.equal(applied.drawing.revision, 1);
+  assert.deepEqual(entityBox(applied), { min: [5, 0, 0], max: [6, 1, 0] });
+
+  assert.equal((await post(baseUrl, "/api/edit/undo", {
+    documentId, expectedRevision: 1, approved: true
+  })).status, 200);
+  const undone = await getDrawing(baseUrl);
+  assert.equal(undone.drawing.revision, 2);
+  assert.deepEqual(entityBox(undone), { min: [0, 0, 0], max: [1, 1, 0] });
+
+  assert.equal((await post(baseUrl, "/api/edit/redo", {
+    documentId, expectedRevision: 2, approved: true
+  })).status, 200);
+  const redone = await getDrawing(baseUrl);
+  assert.equal(redone.drawing.revision, 3);
+  assert.deepEqual(entityBox(redone), { min: [5, 0, 0], max: [6, 1, 0] });
+  assert.equal(application.transactions.getSaveState(documentId, 3)?.source.sourceSha256, sourceHash);
+});
+
 function readDependencies() {
   return {
     getDrawing: async () => { throw new Error("not used"); },
@@ -288,6 +336,34 @@ function validBatch(expectedRevision = 0) {
   };
 }
 
+function moveBatch(expectedRevision = 0) {
+  return {
+    schemaVersion: "cad-edit/v1",
+    transactionId: "44444444-4444-4444-8444-444444444444",
+    documentId,
+    expectedRevision,
+    commands: [{
+      commandId: "55555555-5555-4555-8555-555555555555",
+      expectedRevision,
+      origin: { kind: "user", id: "test" },
+      preconditions: [{ target: "10", field: "exists", equals: true }],
+      operation: { kind: "entity.move", handles: ["10"], delta: [5, 0, 0] }
+    }]
+  };
+}
+
+async function getDrawing(baseUrl: string) {
+  const response = await fetch(`${baseUrl}/api/drawing`);
+  assert.equal(response.status, 200);
+  return await response.json() as { drawing: { revision?: number }; entities: Array<{ handle: string | null; bbox: unknown }> };
+}
+
+function entityBox(index: Awaited<ReturnType<typeof getDrawing>>) {
+  const entity = index.entities.find((candidate) => candidate.handle === "10");
+  assert.ok(entity);
+  return entity.bbox;
+}
+
 function editableIndex() {
   return {
     schemaVersion: "cad-index/v0.2" as const,
@@ -309,5 +385,27 @@ function editableIndex() {
       }
     }],
     unsupported: []
+  };
+}
+
+function movingIndex() {
+  const index = editableIndex();
+  const entity = index.entities[0]!;
+  return {
+    ...index,
+    entities: [{
+      ...entity,
+      type: "LWPOLYLINE",
+      geometry: {
+        kind: "lwpolyline" as const,
+        vertices: [
+          { point: [0, 0, 0] as [number, number, number], bulge: 0, startWidth: 0, endWidth: 0 },
+          { point: [1, 1, 0] as [number, number, number], bulge: 0, startWidth: 0, endWidth: 0 }
+        ],
+        closed: false,
+        elevation: 0,
+        normal: [0, 0, 1] as [number, number, number]
+      }
+    }]
   };
 }

@@ -6,6 +6,7 @@ import { SessionNavigator, type SessionNavigationItem } from "../features/sessio
 import { SkillNavigator } from "../features/skill-navigation/SkillNavigator";
 import type { CadIndex } from "../shared/types";
 import type { SidebarTab } from "./workspacePreferences";
+import { useModalOverlay } from "./useModalOverlay";
 
 interface Props {
   activeSessionId: string | null;
@@ -15,6 +16,7 @@ interface Props {
   query: string;
   sessions: readonly SessionNavigationItem[];
   tab: SidebarTab;
+  restoreFocusRef?: React.RefObject<HTMLElement | null>;
   onClose(): void;
   onNewSession(): void;
   onQueryChange(query: string): void;
@@ -33,6 +35,7 @@ export function WorkspaceSidebar({
   query,
   sessions,
   tab,
+  restoreFocusRef,
   onClose,
   onNewSession,
   onQueryChange,
@@ -40,13 +43,8 @@ export function WorkspaceSidebar({
   onSelectTab,
   onToggleLayer
 }: Props) {
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!overlay) return;
-    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
-  }, [overlay]);
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalOverlay({ active: overlay, dialogRef, restoreFocusRef, onClose });
 
   function moveTab(current: SidebarTab, direction: 1 | -1) {
     const currentIndex = tabs.indexOf(current);
@@ -77,12 +75,14 @@ export function WorkspaceSidebar({
     <aside
       aria-label="Workspace navigation"
       aria-modal={overlay ? true : undefined}
-      className={`workspace-sidebar ${overlay ? "overlay" : ""}`}
+      className={`workspace-sidebar ${overlay ? "overlay modal-overlay" : ""}`}
+      data-modal-background
+      ref={dialogRef}
       role={overlay ? "dialog" : undefined}
     >
       <div className="sidebar-heading">
         <div className="brand-mark">DI</div><strong>DWG Intelligence</strong>
-        {overlay && <button aria-label="Close navigation" className="icon-button" onClick={onClose} ref={closeButtonRef}><PanelLeftClose size={16} /></button>}
+        {overlay && <button aria-label="Close navigation" className="icon-button" onClick={onClose}><PanelLeftClose size={16} /></button>}
       </div>
 
       <div aria-label="Workspace navigation sections" className="sidebar-tabs" role="tablist">

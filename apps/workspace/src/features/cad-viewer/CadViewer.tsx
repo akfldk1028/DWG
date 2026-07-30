@@ -43,6 +43,7 @@ export function CadViewer({
     (entity) => !hiddenLayers.has(entity.layer)
   ).length;
   const activeView = viewMode === "fit" ? fitView : view;
+  const revision = index.schemaVersion === "cad-index/v0.2" ? index.drawing?.revision ?? 0 : 0;
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const highlightSet = new Set(highlightedHandles);
   if (selectedHandle) highlightSet.add(selectedHandle);
@@ -184,6 +185,7 @@ export function CadViewer({
             : `${visibleModelEntityCount} visible / ${modelEntities.length} total`}
         </span>
         <span>Model space</span>
+        <span>Revision {revision}</span>
         <span className="coordinates">X 50.000&nbsp;&nbsp; Y 50.000&nbsp;&nbsp; Z 0.000</span>
       </div>
     </main>
