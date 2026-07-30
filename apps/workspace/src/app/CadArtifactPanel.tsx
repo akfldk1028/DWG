@@ -20,9 +20,10 @@ import { useMemo, useState } from "react";
 import { CadViewer } from "../features/cad-viewer/CadViewer";
 import { ChangeReview } from "../features/change-review/ChangeReview";
 import { useChangeReview } from "../features/change-review/useChangeReview";
+import { ExportPanel } from "../features/export/ExportPanel";
 import type { CadEntity, CadIndex, InspectionRun } from "../shared/types";
 
-type ArtifactTab = "preview" | "findings" | "evidence" | "changes" | "warnings";
+type ArtifactTab = "preview" | "findings" | "evidence" | "changes" | "export" | "warnings";
 
 interface Props {
   index: CadIndex;
@@ -157,6 +158,7 @@ export function CadArtifactPanel({
         <Tab active={tab === "findings"} count={run?.findings.length ?? 0} icon={<ScanSearch size={13} />} label="Findings" onClick={() => setTab("findings")} />
         <Tab active={tab === "evidence"} count={selected ? 1 : 0} icon={<FileCheck2 size={13} />} label="Evidence" onClick={() => setTab("evidence")} />
         <Tab active={tab === "changes"} count={changeReview.preview?.changeCount} icon={<FileCheck2 size={13} />} label="Changes" onClick={() => setTab("changes")} />
+        <Tab active={tab === "export"} icon={<Download size={13} />} label="Export" onClick={() => setTab("export")} />
         <Tab active={tab === "warnings"} count={run?.warnings.length ?? 0} icon={<AlertTriangle size={13} />} label="Warnings" onClick={() => setTab("warnings")} />
       </div>
       <div className="artifact-content">
@@ -236,6 +238,7 @@ export function CadArtifactPanel({
             selectedEntity={selected}
           />
         )}
+        {tab === "export" && <ExportPanel />}
         {tab === "warnings" && (
           <div className="artifact-list">
             {run?.warnings.map((warning) => (

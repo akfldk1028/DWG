@@ -15,6 +15,41 @@ const captureDirectory = documentationCaptureDirectory;
 
 test.describe.configure({ mode: "serial" });
 
+test("captures the required navigation, change, narrow, and theme states through visible controls", async ({ page }) => {
+  await mkdir(captureDirectory, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  await page.getByRole("tab", { name: "Skills", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Skills" })).toContainText("inspect-drawing");
+  await stabilize(page);
+  await capture(page, "skill-selected.png");
+
+  await mockInspection(page);
+  await page.route("**/api/edit/preview", (route) => {
+    const batch = parseCadEditPreviewRequest(route.request().postDataJSON()).batch;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(capturePreview(batch)) });
+  });
+  await page.reload();
+  await createVisibleMoveProposal(page);
+  await expect(page.getByRole("region", { name: "Change review" })).toContainText("Selected handle 239");
+  await capture(page, "change-preview.png");
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.reload();
+  await page.getByRole("button", { name: "탐색 열기" }).click();
+  await expect(page.getByRole("dialog", { name: "Workspace navigation" })).toHaveClass(/overlay/);
+  await capture(page, "sidebar-narrow.png");
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  await page.getByRole("button", { name: "설정" }).click();
+  await page.getByLabel("테마").selectOption("dark");
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-theme", "dark");
+  await page.keyboard.press("Escape");
+  await capture(page, "dark-theme.png");
+});
+
 test("captures the single workspace route in its key states", async ({ page }) => {
   await mkdir(captureDirectory, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -61,7 +96,7 @@ test("renders a single overview contact sheet", async ({ page }) => {
   await page.goto(
     pathToFileURL(documentationCapturePath("index.html")).toString()
   );
-  await expect(page.locator("img")).toHaveCount(5);
+  await expect(page.locator("img")).toHaveCount(4);
   await expect(page.locator("img").last()).toBeVisible();
   await page.screenshot({
     path: documentationCapturePath("00-overview.png"),
@@ -69,6 +104,7 @@ test("renders a single overview contact sheet", async ({ page }) => {
     animations: "disabled"
   });
 });
+
 
 test("captures the focused desktop sidebar preference state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

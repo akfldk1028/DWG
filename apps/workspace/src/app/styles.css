@@ -353,6 +353,10 @@ button { cursor: pointer; }
 
 @media (min-width: 1280px) and (max-width: 1359px) {
   .artifact-version { display: none; }
+  .artifact-tabs { gap: 0; padding: 0 2px; }
+  .artifact-tabs button { gap: 3px; padding: 0 4px; font-size: 8px; }
+  .artifact-tabs button svg { width: 11px; height: 11px; }
+  .artifact-tabs b { min-width: 12px; padding: 1px 3px; }
 }
 
 @media (max-width: 1279px) {

@@ -58,10 +58,20 @@ service that should not import Node implementation code.
 | `POST` | `/api/edit/redo` | `CadEditHistoryRequest` -> `CadEditApplyResponse` |
 | `GET` | `/api/skills` | `SkillListResponse` |
 | `POST` | `/api/skills/run` | `SkillRunRequest` -> `SkillRunResponse` |
+| `GET` | `/api/export/capabilities` | `ExportCapabilitiesResponse` |
 
 The gateway binds to `127.0.0.1`, rejects malformed/oversized input, and passes
 browser cancellation through one `AbortSignal`. Do not expose it publicly
 without adding authentication and a separate threat-model review.
+
+#### Export capability contract
+
+`GET /api/export/capabilities` returns every supported report (`json`, `csv`,
+`pdf`, `svg`) and drawing (`dxf`, `dwg`) format as typed capability items. In
+the UI-shell phase all are unavailable with `EXPORT_MODULE_NOT_INSTALLED`;
+the endpoint does not create files or modify source drawings. Adding optional
+capability metadata is compatible. Enabling a format requires a coordinated
+Save and Export implementation that preserves source read-only behavior.
 
 #### Workspace edit proposal ingest
 

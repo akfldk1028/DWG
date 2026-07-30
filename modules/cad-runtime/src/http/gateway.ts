@@ -15,6 +15,7 @@ import {
   findRepositoryRoot
 } from "../platform/repositoryPaths.js";
 import { createDrawingWorkspace, resolveWorkspaceDrawingPath } from "./drawingWorkspace.js";
+import { createExportCapabilityRoutes } from "./exportCapabilityGateway.js";
 import { createProviderGateway } from "./providerGateway.js";
 import { createSkillGatewayRoutes } from "./skillGateway.js";
 
@@ -52,6 +53,7 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     capabilities: application.capabilities,
     capabilityVersion: options.capabilityVersion
   });
+  const exports = createExportCapabilityRoutes();
 
   return createProviderGateway({
     getDrawing: () => drawingWorkspace.getIndex(),
@@ -59,7 +61,10 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     getStatuses: () => getProviderStatuses(providers),
     chat: (request, signal) => chatService.chat(request, signal),
     edit: (name, input, signal) => application.capabilities.execute(name, input, signal),
-    additionalRoute: (request, response, pathname, signal) => skills.handle(request, response, pathname, signal)
+    additionalRoute: async (request, response, pathname, signal) => {
+      if (await exports.handle(request, response, pathname)) return true;
+      return skills.handle(request, response, pathname, signal);
+    }
   });
 }
 
