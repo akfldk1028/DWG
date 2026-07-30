@@ -129,3 +129,46 @@ test("workspace preference storage failures preserve usable defaults", () => {
   assert.deepEqual(store.load(), defaultWorkspacePreferences);
   assert.doesNotThrow(() => store.save(defaultWorkspacePreferences));
 });
+
+test("attempts a legacy migration only once when v2 persistence is blocked", () => {
+  let legacyReads = 0;
+  let writeAttempts = 0;
+  const legacy = JSON.stringify({
+    theme: "dark",
+    artifactWidth: 720,
+    sidebarSections: {
+      project: false,
+      drawing: true,
+      sessions: true
+    }
+  });
+  const store = createWorkspacePreferencesStore({
+    getItem(key) {
+      if (key === "dwg.workspace-preferences.v1") {
+        legacyReads += 1;
+        return legacy;
+      }
+      return null;
+    },
+    setItem() {
+      writeAttempts += 1;
+      throw new Error("blocked");
+    }
+  });
+  const expected = {
+    theme: "dark" as const,
+    artifactWidth: 720,
+    sidebarWidth: 320,
+    sidebarTab: "project" as const,
+    sidebarSections: {
+      project: false,
+      drawing: true,
+      sessions: true
+    }
+  };
+
+  assert.deepEqual(store.load(), expected);
+  assert.deepEqual(store.load(), expected);
+  assert.equal(legacyReads, 1);
+  assert.equal(writeAttempts, 1);
+});

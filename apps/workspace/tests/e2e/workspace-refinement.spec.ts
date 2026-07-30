@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -193,6 +193,57 @@ test("sidebar resizer uses 16px keyboard steps and clamps pointer resize at both
   await expect(resizer).toHaveAttribute("aria-valuenow", "280");
 });
 
+test("pointer cancellation clears resize state and permits a later pointer resize", async ({ page }) => {
+  await page.goto("/");
+  const resizer = page.getByRole("separator", { name: "Sidebar width" });
+  const first = await beginPointerResize(page, resizer);
+
+  await resizer.dispatchEvent("pointercancel", {
+    bubbles: true,
+    clientX: first.x,
+    pointerId: first.pointerId
+  });
+  await expect(page.locator("body")).not.toHaveClass(/resizing-sidebar/);
+  await page.mouse.move(first.x + 80, first.y);
+  await page.mouse.up();
+  await expect(resizer).toHaveAttribute("aria-valuenow", "320");
+
+  await resizeSidebarWithPointer(page, resizer, 32);
+  await expect(resizer).toHaveAttribute("aria-valuenow", "352");
+});
+
+test("lost capture and window blur clean resize state without stale width commits", async ({ page }) => {
+  await page.goto("/");
+  const resizer = page.getByRole("separator", { name: "Sidebar width" });
+  const lost = await beginPointerResize(page, resizer);
+
+  await expect.poll(() => resizer.evaluate(
+    (element, pointerId) => element.hasPointerCapture(pointerId),
+    lost.pointerId
+  )).toBe(true);
+  await resizer.dispatchEvent("lostpointercapture", {
+    pointerId: lost.pointerId
+  });
+  await expect(page.locator("body")).not.toHaveClass(/resizing-sidebar/);
+  expect(await resizer.evaluate(
+    (element, pointerId) => element.hasPointerCapture(pointerId),
+    lost.pointerId
+  )).toBe(false);
+  await page.mouse.move(lost.x + 80, lost.y);
+  await page.mouse.up();
+  await expect(resizer).toHaveAttribute("aria-valuenow", "320");
+
+  const blurred = await beginPointerResize(page, resizer);
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(page.locator("body")).not.toHaveClass(/resizing-sidebar/);
+  await page.mouse.move(blurred.x + 80, blurred.y);
+  await page.mouse.up();
+  await expect(resizer).toHaveAttribute("aria-valuenow", "320");
+
+  await resizeSidebarWithPointer(page, resizer, 16);
+  await expect(resizer).toHaveAttribute("aria-valuenow", "336");
+});
+
 test("invalid v2 sidebar storage falls back to usable defaults", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("dwg.workspace-preferences.v2", JSON.stringify({
@@ -269,4 +320,29 @@ async function mockInspection(page: Page) {
       })
     })
   );
+}
+
+async function beginPointerResize(page: Page, resizer: Locator) {
+  const box = await resizer.boundingBox();
+  expect(box).not.toBeNull();
+  await resizer.evaluate((element) => {
+    element.addEventListener("pointerdown", (event) => {
+      element.setAttribute("data-test-pointer-id", String(event.pointerId));
+    }, { once: true });
+  });
+  const x = box!.x + box!.width / 2;
+  const y = box!.y + box!.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  const pointerIdAttribute = await resizer.getAttribute("data-test-pointer-id");
+  expect(pointerIdAttribute).not.toBeNull();
+  const pointerId = Number(pointerIdAttribute);
+  expect(Number.isFinite(pointerId)).toBe(true);
+  return { pointerId, x, y };
+}
+
+async function resizeSidebarWithPointer(page: Page, resizer: Locator, delta: number) {
+  const start = await beginPointerResize(page, resizer);
+  await page.mouse.move(start.x + delta, start.y);
+  await page.mouse.up();
 }

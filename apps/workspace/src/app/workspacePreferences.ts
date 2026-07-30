@@ -72,6 +72,7 @@ export function clampSidebarWidth(desiredWidth: number) {
 
 export function createWorkspacePreferencesStore(storage: StorageLike) {
   let memoryValue = defaultWorkspacePreferences;
+  let legacyMigrationAttempted = false;
 
   return {
     load(): WorkspacePreferences {
@@ -82,6 +83,8 @@ export function createWorkspacePreferencesStore(storage: StorageLike) {
           return memoryValue;
         }
 
+        if (legacyMigrationAttempted) return memoryValue;
+        legacyMigrationAttempted = true;
         const legacyRaw = storage.getItem(legacyStorageKey);
         if (!legacyRaw) return memoryValue;
         const migrated = migrateLegacyPreferences(legacyRaw);
