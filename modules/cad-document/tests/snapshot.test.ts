@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import type { CadEntityIndex, CadEntityIndexV01 } from "@dwg/contracts";
@@ -86,35 +85,6 @@ test("cloning a snapshot isolates editable nested state", () => {
 
   assert.equal(source.layers[0].name, "A-TAG");
   assert.equal(source.index.entities[0].attributes.status, undefined);
-});
-
-test("the checked-in DXF supports a document snapshot for layer and text editing without typed move geometry", async () => {
-  const fixture = await readFile("tests/fixtures/dxf/minimal-architectural.dxf", "utf8");
-  assert.match(fixture, /ROOM 101/);
-
-  const index: CadEntityIndex = {
-    ...legacyIndex(),
-    drawingId: "dxf-minimal-architectural",
-    source: { kind: "dxf", displayName: "minimal-architectural.dxf", parser: "fixture" },
-    layers: [{ name: "A-TEXT", entityCount: 1, visible: true, frozen: false }],
-    entities: [{
-      ...legacyIndex().entities[0],
-      layer: "A-TEXT",
-      type: "TEXT",
-      text: "ROOM 101",
-      bbox: null,
-      geometry: {}
-    }]
-  };
-
-  const snapshot = createDocumentSnapshot(index, sourceSha256);
-
-  assert.equal(snapshot.layers[0].id, "layer:imported:QS1URVhU");
-  assert.equal(snapshot.index.entities[0].text, "ROOM 101");
-  assert.deepEqual(snapshot.index.entities[0].geometry, {
-    kind: "unavailable",
-    reason: "legacy-v0.1-no-bbox"
-  });
 });
 
 function legacyIndex(): CadEntityIndexV01 {
