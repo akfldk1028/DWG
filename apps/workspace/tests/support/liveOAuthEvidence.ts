@@ -1,4 +1,5 @@
 import { isProviderSessionId as isContractProviderSessionId } from "@dwg/contracts";
+import type { Locator } from "@playwright/test";
 
 export interface LiveOAuthEvidenceInput {
   provider: "codex" | "claude";
@@ -62,6 +63,26 @@ export async function installLiveOAuthFailureSafety(
   await page.addInitScript({
     content: createLiveOAuthFailureSafetyInitScript()
   });
+}
+
+export async function setSensitiveInputValue(
+  input: Locator,
+  value: string
+): Promise<void> {
+  await input.evaluate((element, nextValue) => {
+    if (!(element instanceof HTMLInputElement)) {
+      throw new Error("Sensitive input target is not an HTML input");
+    }
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value"
+    )?.set;
+    if (!valueSetter) {
+      throw new Error("Sensitive input value setter is unavailable");
+    }
+    valueSetter.call(element, nextValue);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }, value);
 }
 
 export function hasCadHandleEvidence(value: unknown): boolean {

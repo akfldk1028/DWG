@@ -24,7 +24,8 @@ test("live OAuth installs init redaction before navigation and avoids raw assert
     /expect\s*\(\s*resumed\.sessionId\s*\)\s*\.toBe/,
     /expect\s*\(\s*consoleErrors\s*\)\s*\.toEqual/,
     /getByRole\s*\(\s*["']textbox["']/,
-    /getByRole\s*\(\s*["']button["']/
+    /getByRole\s*\(\s*["']button["']/,
+    /\.(?:fill|type)\s*\(\s*message\b/
   ];
   for (const pattern of bannedPatterns) {
     assert.equal(pattern.test(source), false, `banned live pattern: ${pattern}`);

@@ -8,7 +8,8 @@ import {
   isSameProviderSession,
   LIVE_OAUTH_PROMPTS,
   LIVE_OAUTH_SENSITIVE_SELECTORS,
-  renderSafeLiveOAuthEvidence
+  renderSafeLiveOAuthEvidence,
+  setSensitiveInputValue
 } from "../support/liveOAuthEvidence.ts";
 import { oauthArtifactPath } from "../support/repositoryOutputPaths.ts";
 
@@ -102,7 +103,7 @@ for (const provider of selectedProviders) {
 
 async function submitAndReadSession(page: Page, message: string) {
   const composer = page.locator(".composer input").first();
-  await composer.fill(message);
+  await setSensitiveInputValue(composer, message);
   await page.locator(".composer").evaluate((form: HTMLFormElement) => {
     form.requestSubmit();
   });
