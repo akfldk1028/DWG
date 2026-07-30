@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createCadMcpServer } from "../../src/mcp/createServer.js";
+import { createCadCapabilityRuntime } from "../../src/application/cad-tools/runtime.js";
 import { CAD_TOOL_NAMES } from "../../src/mcp/toolDefinitions.js";
 
 test("lists the complete deterministic CAD tool surface", async (t) => {
@@ -124,6 +125,66 @@ test("runs the complete indexed DXF query loop through MCP", async (t) => {
     Array.isArray(
       (unsupported.structuredContent as { unsupported: unknown[] }).unsupported
     )
+  );
+});
+
+test("official DXF capability results preserve MCP drawing IDs and read summaries", async (t) => {
+  const runtime = createCadCapabilityRuntime();
+  const server = createCadMcpServer(runtime);
+  const client = new Client({ name: "capability-parity-client", version: "0.1.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+
+  const capabilityOpen = await runtime.execute("document.open", {
+    path: "tests/fixtures/dxf/minimal-architectural.dxf"
+  }) as { drawingId: string };
+  const mcpOpen = await client.callTool({
+    name: "cad.open_drawing",
+    arguments: { path: "tests/fixtures/dxf/minimal-architectural.dxf" }
+  });
+  const drawingId = (mcpOpen.structuredContent as { drawingId: string }).drawingId;
+  assert.equal(capabilityOpen.drawingId, drawingId);
+
+  const capabilityLayers = await runtime.execute("query.layers", {
+    drawingId: capabilityOpen.drawingId
+  }) as { layers: unknown[] };
+  const mcpLayers = await client.callTool({
+    name: "cad.get_layers",
+    arguments: { drawingId }
+  });
+  assert.equal(
+    capabilityLayers.layers.length,
+    (mcpLayers.structuredContent as { layers: unknown[] }).layers.length
+  );
+
+  const capabilityText = await runtime.execute("query.text", {
+    drawingId: capabilityOpen.drawingId,
+    query: "ROOM"
+  }) as { matches: Array<{ handle: string | null }> };
+  const mcpText = await client.callTool({
+    name: "cad.find_text",
+    arguments: { drawingId, query: "ROOM" }
+  });
+  assert.deepEqual(
+    capabilityText.matches.map((match) => match.handle),
+    (mcpText.structuredContent as { matches: Array<{ handle: string | null }> })
+      .matches.map((match) => match.handle)
+  );
+
+  const capabilityDescription = await runtime.execute("document.describe", {
+    drawingId: capabilityOpen.drawingId
+  }) as { unsupported: unknown[] };
+  const mcpUnsupported = await client.callTool({
+    name: "cad.list_unsupported",
+    arguments: { drawingId }
+  });
+  assert.deepEqual(
+    capabilityDescription.unsupported,
+    (mcpUnsupported.structuredContent as { unsupported: unknown[] }).unsupported
   );
 });
 

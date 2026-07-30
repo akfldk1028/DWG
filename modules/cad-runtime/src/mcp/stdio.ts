@@ -1,7 +1,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { resolve } from "node:path";
 
-import { createCadToolRuntime } from "../application/cad-tools/runtime.js";
+import { createCadCapabilityRuntime } from "../application/cad-tools/runtime.js";
 import { createCadMcpServer } from "./createServer.js";
 import {
   createRepositoryPaths,
@@ -10,7 +10,7 @@ import {
 
 const paths = createRepositoryPaths(findRepositoryRoot(import.meta.url));
 const server = createCadMcpServer(
-  createCadToolRuntime({
+  createCadCapabilityRuntime({
     workspaceRoot: resolve(process.env.DWG_WORKSPACE ?? paths.repositoryRoot)
   })
 );
