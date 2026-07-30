@@ -10,24 +10,10 @@ export async function resolveCliDocumentScope(
   input: unknown,
   declaredDocumentId: string | undefined,
   declaredRelatedDocumentIds: readonly string[],
-  capabilities: CadCapabilityRuntime
+  capabilities: CadCapabilityRuntime,
+  signal?: AbortSignal
 ): Promise<CliDocumentScope> {
   assertDeclaredRelated(declaredRelatedDocumentIds);
-  if (isRecord(input) && ("beforeDrawingId" in input || "afterDrawingId" in input)) {
-    const before = input.beforeDrawingId;
-    const after = input.afterDrawingId;
-    if (!validDocumentId(before) || !validDocumentId(after)) {
-      throw new Error("DOCUMENT_SCOPE_AMBIGUOUS");
-    }
-    const inferredRelated = before === after ? [] : [after];
-    if (
-      declaredDocumentId !== undefined && declaredDocumentId !== before ||
-      declaredRelatedDocumentIds.length > 0 &&
-        !sameArray(declaredRelatedDocumentIds, inferredRelated)
-    ) throw new Error("DOCUMENT_SCOPE_AMBIGUOUS");
-    return { documentId: before, relatedDocumentIds: inferredRelated };
-  }
-
   let documentId = declaredDocumentId;
   if (documentId === undefined && isRecord(input)) {
     if (validDocumentId(input.documentId)) {
@@ -35,7 +21,7 @@ export async function resolveCliDocumentScope(
     } else if (typeof input.path === "string") {
       const opened = await capabilities.execute("document.open", {
         path: input.path
-      }) as { drawingId?: unknown };
+      }, signal) as { drawingId?: unknown };
       if (validDocumentId(opened.drawingId)) documentId = opened.drawingId;
     }
   }
@@ -45,6 +31,33 @@ export async function resolveCliDocumentScope(
   return {
     documentId,
     relatedDocumentIds: [...declaredRelatedDocumentIds]
+  };
+}
+
+export async function preloadCliComparisonScope(
+  beforePath: string,
+  afterPath: string,
+  capabilities: CadCapabilityRuntime,
+  signal: AbortSignal
+): Promise<CliDocumentScope> {
+  const before = await capabilities.execute(
+    "document.open",
+    { path: beforePath },
+    signal
+  ) as { drawingId?: unknown };
+  const after = await capabilities.execute(
+    "document.open",
+    { path: afterPath },
+    signal
+  ) as { drawingId?: unknown };
+  if (
+    !validDocumentId(before.drawingId) ||
+    !validDocumentId(after.drawingId) ||
+    before.drawingId === after.drawingId
+  ) throw new Error("DOCUMENT_SCOPE_AMBIGUOUS");
+  return {
+    documentId: before.drawingId,
+    relatedDocumentIds: [after.drawingId]
   };
 }
 
@@ -67,11 +80,4 @@ function validDocumentId(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function sameArray(left: readonly string[], right: readonly string[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
 }

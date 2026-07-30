@@ -5,8 +5,6 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
-import { resolveCliDocumentScope } from "../../modules/cad-runtime/harness/skillRunScope.js";
-
 test("skill CLI runs a declared skill and prints only one bounded safe summary", async (context) => {
   const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
@@ -42,68 +40,115 @@ test("skill CLI returns a bounded failure for an explicit document mismatch", as
   assert.equal(result.stdout.trim().split(/\r?\n/).length, 1);
 });
 
-test("CLI derives an exact deterministic compare scope and rejects ambiguity", async () => {
-  const input = {
-    beforeDrawingId: "drawing-before",
-    afterDrawingId: "drawing-after"
-  };
-  assert.deepEqual(
-    await resolveCliDocumentScope(input, undefined, [], unusedCapabilities()),
-    { documentId: "drawing-before", relatedDocumentIds: ["drawing-after"] }
-  );
-  assert.deepEqual(
-    await resolveCliDocumentScope(
-      input,
-      "drawing-before",
-      ["drawing-after"],
-      unusedCapabilities()
-    ),
-    { documentId: "drawing-before", relatedDocumentIds: ["drawing-after"] }
-  );
-  await assert.rejects(
-    () => resolveCliDocumentScope(
-      input,
-      "drawing-after",
-      ["drawing-before"],
-      unusedCapabilities()
-    ),
-    /DOCUMENT_SCOPE_AMBIGUOUS/
-  );
-  await assert.rejects(
-    () => resolveCliDocumentScope(
-      input,
-      "drawing-before",
-      ["drawing-after", "drawing-third"],
-      unusedCapabilities()
-    ),
-    /DOCUMENT_SCOPE_AMBIGUOUS/
-  );
-});
-
-test("CLI accepts explicit primary and related compare scope without leaking it", async (context) => {
+test("CLI opens both comparison drawings and returns one bounded successful summary", async (context) => {
   const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-compare-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const input = resolve(directory, "input.json");
-  await writeFile(input, JSON.stringify({
-    beforeDrawingId: "drawing-before",
-    afterDrawingId: "drawing-after"
-  }));
+  await writeFile(input, "{}");
 
   const result = await invoke(
     "--skill", "compare-drawings",
     "--input", input,
-    "--document-id", "drawing-before",
-    "--related-document-id", "drawing-after"
+    "--before", "tests/fixtures/dxf/minimal-architectural.dxf",
+    "--after", "tests/fixtures/dwg/export_sample.dwg"
   );
-  assert.equal(result.code, 1);
+  assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), {
     skillId: "compare-drawings",
+    status: "passed",
+    changeCount: 0,
+    warningCount: 0,
+    hasPreview: false
+  });
+  assert.equal(result.stdout.trim().split(/\r?\n/).length, 1);
+  assert.doesNotMatch(result.stdout, /minimal-architectural|export_sample|drawingId|[A-Za-z]:[\\/]/i);
+});
+
+test("CLI rejects one-sided and duplicate comparison preload flags", async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-compare-flags-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = resolve(directory, "input.json");
+  await writeFile(input, "{}");
+
+  for (const args of [
+    ["--before", "tests/fixtures/dxf/minimal-architectural.dxf"],
+    [
+      "--before", "tests/fixtures/dxf/minimal-architectural.dxf",
+      "--before", "tests/fixtures/dwg/export_sample.dwg",
+      "--after", "tests/fixtures/dwg/export_sample.dwg"
+    ]
+  ]) {
+    const result = await invoke(
+      "--skill", "compare-drawings",
+      "--input", input,
+      ...args
+    );
+    assert.equal(result.code, 2);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      skillId: "unknown",
+      status: "failed",
+      changeCount: 0,
+      warningCount: 1,
+      hasPreview: false
+    });
+    assert.doesNotMatch(result.stdout + result.stderr, /minimal-architectural|export_sample|[A-Za-z]:[\\/]/i);
+  }
+});
+
+test("CLI rejects an oversized comparison preload path as a bounded usage error", async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-compare-bounds-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = resolve(directory, "input.json");
+  await writeFile(input, "{}");
+  const oversizedPath = "x".repeat(4_097);
+
+  const result = await invoke(
+    "--skill", "compare-drawings",
+    "--input", input,
+    "--before", oversizedPath,
+    "--after", "tests/fixtures/dwg/export_sample.dwg"
+  );
+  assert.equal(result.code, 2);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    skillId: "unknown",
     status: "failed",
     changeCount: 0,
     warningCount: 1,
     hasPreview: false
   });
-  assert.doesNotMatch(result.stdout, /drawing-before|drawing-after/);
+  assert.doesNotMatch(result.stdout + result.stderr, /x{64}/);
+});
+
+test("CLI rejects comparison preload flags for another skill or mixed caller IDs", async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), "skill-cli-compare-ambiguous-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = resolve(directory, "input.json");
+  await writeFile(input, "{}");
+  const preload = [
+    "--before", "tests/fixtures/dxf/minimal-architectural.dxf",
+    "--after", "tests/fixtures/dwg/export_sample.dwg"
+  ];
+
+  for (const args of [
+    ["--skill", "inspect-drawing", "--input", input, ...preload],
+    [
+      "--skill", "compare-drawings",
+      "--input", input,
+      ...preload,
+      "--document-id", "caller-before"
+    ]
+  ]) {
+    const result = await invoke(...args);
+    assert.equal(result.code, 2);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      skillId: "unknown",
+      status: "failed",
+      changeCount: 0,
+      warningCount: 1,
+      hasPreview: false
+    });
+    assert.doesNotMatch(result.stdout + result.stderr, /minimal-architectural|export_sample|caller-before|[A-Za-z]:[\\/]/i);
+  }
 });
 
 function invoke(...args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
@@ -116,12 +161,4 @@ function invoke(...args: string[]): Promise<{ code: number | null; stdout: strin
     child.on("error", reject);
     child.on("close", (code) => resolvePromise({ code, stdout, stderr }));
   });
-}
-
-function unusedCapabilities() {
-  return {
-    async execute(): Promise<never> {
-      throw new Error("must not open a drawing for compare scope derivation");
-    }
-  };
 }

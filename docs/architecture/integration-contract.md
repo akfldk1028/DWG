@@ -79,6 +79,23 @@ before drawing as `documentId` and the after drawing in `relatedDocumentIds`;
 missing authorization and any unrelated third drawing are rejected before the
 comparison capability runs.
 
+The standalone CLI preloads comparison sources by path because every invocation
+creates a fresh in-memory CAD application:
+
+```powershell
+npm run skill -- --skill compare-drawings --input <input.json> --before <before.dwg> --after <after.dwg>
+```
+
+`--before` and `--after` are required together, only for `compare-drawings`,
+and must identify distinct sources inside `DWG_WORKSPACE`. The CLI opens both
+through the root `document.open` capability, uses only the returned drawing IDs
+for workflow input and the exact primary/related allowlist, and forwards one
+`AbortSignal` through both opens and skill execution. Caller-supplied
+`--document-id` or `--related-document-id` cannot be combined with comparison
+preloads. One-sided, duplicate, mixed, and non-comparison preload flags are
+usage errors. Output remains the single bounded summary and never includes
+source paths or raw open results.
+
 #### CAD edit review contract
 
 The four edit routes use the strict shared `@dwg/contracts` validators for
