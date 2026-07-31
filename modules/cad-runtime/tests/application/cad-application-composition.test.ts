@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -12,6 +14,130 @@ import {
 import { createCadToolRuntime } from "../../src/application/cad-tools/runtime.js";
 import { createCadMcpServer } from "../../src/mcp/createServer.js";
 import { CAD_TOOL_NAMES } from "../../src/mcp/toolDefinitions.js";
+import { defaultProcessRunner } from "../../src/providers/cli/processRunner.js";
+
+test("first open establishes one document lineage for inspect edit report and verified Save As", async (t) => {
+  const exportRoot = await mkdtemp(join(tmpdir(), "cad-application-lineage-"));
+  t.after(() => rm(exportRoot, { force: true, recursive: true }));
+  const application = await createCadApplication({
+    workspaceRoot: process.cwd(),
+    exportRoot,
+    dwgVersionManifestPath: resolve(
+      "tests/fixtures/dwg/roundtrip-manifest.json"
+    ),
+    processRunner: {
+      async run(spec, signal) {
+        const result = await defaultProcessRunner.run({
+          command: spec.command,
+          args: spec.args,
+          cwd: spec.cwd,
+          env: process.env,
+          stdin: spec.stdin,
+          signal
+        });
+        return {
+          exitCode: result.exitCode ?? -1,
+          stdout: result.stdout,
+          stderr: result.stderr
+        };
+      }
+    }
+  });
+
+  const opened = await application.capabilities.execute("document.open", {
+    path: "tests/fixtures/dxf/minimal-architectural.dxf"
+  }) as { drawingId: string };
+  const described = await application.capabilities.execute("document.describe", {
+    drawingId: opened.drawingId
+  }) as { drawingId: string };
+  assert.equal(described.drawingId, opened.drawingId);
+
+  const preview = await application.capabilities.execute("edit.preview", {
+    batch: {
+      schemaVersion: "cad-edit/v1",
+      transactionId: "66666666-6666-4666-8666-666666666666",
+      documentId: opened.drawingId,
+      expectedRevision: 0,
+      commands: [{
+        commandId: "77777777-7777-4777-8777-777777777777",
+        expectedRevision: 0,
+        origin: { kind: "user", id: "lineage-test" },
+        preconditions: [{ target: "10", field: "exists", equals: true }],
+        operation: { kind: "entity.move", handles: ["10"], delta: [1, 0, 0] }
+      }]
+    }
+  }) as { previewId: string; documentId: string };
+  assert.equal(preview.documentId, opened.drawingId);
+  await application.capabilities.execute("edit.apply", {
+    previewId: preview.previewId,
+    documentId: opened.drawingId,
+    expectedRevision: 0,
+    approved: true
+  });
+  const secondPreview = await application.capabilities.execute("edit.preview", {
+    batch: {
+      schemaVersion: "cad-edit/v1",
+      transactionId: "88888888-8888-4888-8888-888888888888",
+      documentId: opened.drawingId,
+      expectedRevision: 1,
+      commands: [{
+        commandId: "99999999-9999-4999-8999-999999999999",
+        expectedRevision: 1,
+        origin: { kind: "user", id: "lineage-test" },
+        preconditions: [{ target: "10", field: "exists", equals: true }],
+        operation: { kind: "entity.move", handles: ["10"], delta: [0, 1, 0] }
+      }]
+    }
+  }) as { previewId: string };
+  await application.capabilities.execute("edit.apply", {
+    previewId: secondPreview.previewId,
+    documentId: opened.drawingId,
+    expectedRevision: 1,
+    approved: true
+  });
+
+  const report = await application.capabilities.execute("export.report", {
+    documentId: opened.drawingId,
+    revision: 2,
+    format: "json"
+  }) as { bytes: Uint8Array };
+  assert.ok(report.bytes.byteLength > 0);
+
+  const grant = await application.requestDestinationGrant();
+  assert.ok(grant);
+  const saved = await application.capabilities.execute("export.drawing", {
+    documentId: opened.drawingId,
+    expectedRevision: 2,
+    destinationGrantId: grant.grantId,
+    baseFilename: "same-lineage",
+    format: "dxf",
+    version: "AC1032"
+  }) as { status: string; id: string };
+  assert.equal(saved.status, "passed");
+  assert.equal((saved as { intendedChangeCount: number }).intendedChangeCount, 2);
+  assert.equal(
+    (await application.capabilities.execute("verification.get", { id: saved.id }) as { status: string }).status,
+    "passed"
+  );
+
+  const rejectedGrant = await application.requestDestinationGrant();
+  assert.ok(rejectedGrant);
+  await assert.rejects(
+    application.capabilities.execute("export.drawing", {
+      documentId: opened.drawingId,
+      expectedRevision: 2,
+      destinationGrantId: rejectedGrant.grantId,
+      baseFilename: "disallowed-version",
+      format: "dwg",
+      version: "AC9999"
+    }),
+    (error) => (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: unknown }).code === "CAD_SAVE_WRITE_FAILED"
+    )
+  );
+});
 
 test("root CAD application composes one named capability set for adapters and forwards cancellation", async (context) => {
   let receivedSignal: AbortSignal | undefined;

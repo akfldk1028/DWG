@@ -58,15 +58,17 @@ export function useExport() {
     try {
       const drawing = await loadDrawingIndex();
       const metadata = drawing.schemaVersion === "cad-index/v0.2" ? drawing.drawing : undefined;
+      const grantId = destination.grantId;
+      setDestination(null);
+      setStatus("Destination grant used — choose again for another copy");
       const result = await exportDrawing({
         documentId: drawing.drawingId,
         expectedRevision: metadata?.revision ?? 0,
-        destinationGrantId: destination.grantId,
+        destinationGrantId: grantId,
         baseFilename,
         format,
         version: metadata?.fileVersion ?? "AC1032"
       });
-      setDestination(null);
       setStatus(result.status === "passed" ? `Verified: ${result.verificationId}` : "Verification failed");
       setError(null);
     } catch (reason) {

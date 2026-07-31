@@ -1,24 +1,43 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  parseCadDrawingExportResponse,
+  parseCadReportExportResponse
+} from "@dwg/contracts";
 
 import { CAD_TOOL_NAMES } from "../../src/mcp/toolDefinitions.js";
 
 test("serves the CAD tool surface over a spawned stdio process", async (t) => {
+  const exportRoot = await mkdtemp(join(tmpdir(), "cad-mcp-stdio-export-"));
+  t.after(() => rm(exportRoot, { force: true, recursive: true }));
   const transport = new StdioClientTransport({
     command: process.platform === "win32" ? "npm.cmd" : "npm",
     args: ["run", "mcp", "--silent"],
     cwd: process.cwd(),
     env: {
       ...definedEnvironment(),
-      DWG_WORKSPACE: resolve("tests/fixtures/dwg")
+      DWG_WORKSPACE: resolve("."),
+      DWG_DRAWING_PATH: "tests/fixtures/dxf/minimal-architectural.dxf",
+      DWG_EXPORT_ROOT: exportRoot
     },
     stderr: "pipe"
   });
-  const client = new Client({ name: "stdio-smoke", version: "0.1.0" });
+  const client = new Client(
+    { name: "stdio-smoke", version: "0.1.0" },
+    { capabilities: { elicitation: { form: {} } } }
+  );
+  client.setRequestHandler(ElicitRequestSchema, async () => ({
+    action: "accept",
+    content: { confirm: true }
+  }));
 
   t.after(async () => {
     await client.close();
@@ -34,12 +53,38 @@ test("serves the CAD tool surface over a spawned stdio process", async (t) => {
 
   const opened = await client.callTool({
     name: "cad.open_drawing",
-    arguments: { path: "export_sample.dwg" }
+    arguments: { path: "tests/fixtures/dxf/minimal-architectural.dxf" }
   });
   assert.equal(opened.isError, undefined);
+  const drawingId = (opened.structuredContent as { drawingId?: unknown }).drawingId;
+  assert.equal(typeof drawingId, "string");
+
+  const report = await client.callTool({
+    name: "cad_export_report",
+    arguments: { documentId: drawingId, revision: 0, format: "json" }
+  });
+  parseCadReportExportResponse(report.structuredContent);
+  assert.equal(Object.hasOwn(report.structuredContent as object, "bytes"), false);
+
+  const grant = await client.callTool({
+    name: "cad_request_export_destination",
+    arguments: {}
+  });
+  const saved = await client.callTool({
+    name: "cad_export_drawing",
+    arguments: {
+      documentId: drawingId,
+      expectedRevision: 0,
+      destinationGrantId: (grant.structuredContent as { grantId: string }).grantId,
+      baseFilename: "stdio-verified",
+      format: "dxf",
+      version: "AC1032"
+    }
+  });
+  assert.equal(parseCadDrawingExportResponse(saved.structuredContent).status, "passed");
   assert.equal(
-    typeof (opened.structuredContent as { drawingId?: unknown }).drawingId,
-    "string"
+    await readFile(join(exportRoot, "stdio-verified.dxf")).then(() => true, () => false),
+    true
   );
 });
 

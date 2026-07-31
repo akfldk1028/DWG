@@ -35,3 +35,27 @@ test("keeps a 500 pixel conversation and exposes both keyboard resizers at 1280 
   await artifact.press("ArrowLeft");
   expect((await conversation.boundingBox())!.width).toBeGreaterThanOrEqual(500);
 });
+
+test("failed Save As consumes the selected grant and requires a new destination", async ({ page }) => {
+  let saveAttempts = 0;
+  await page.route("**/api/export/drawings", async (route) => {
+    saveAttempts += 1;
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "CAD_SAVE_FAILED", message: "forced failure" } })
+    });
+  });
+  await page.getByRole("tab", { name: "Export", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Export" });
+  await panel.getByRole("button", { name: "Choose destination" }).click();
+  const save = panel.getByRole("button", { name: "Save As DXF" });
+  await save.click();
+
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel.getByRole("status")).toContainText(
+    "Destination grant used — choose again for another copy"
+  );
+  await expect(save).toBeDisabled();
+  expect(saveAttempts).toBe(1);
+});

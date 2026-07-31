@@ -20,10 +20,15 @@ import {
   type CadProcessRunner
 } from "@dwg/cad-io-acadsharp";
 import { createDocumentSnapshot } from "@dwg/cad-document";
-import { createCadEditHistory, type CadCommittedTransactionStore } from "@dwg/cad-edit";
+import {
+  createCadEditHistory,
+  type CadCommittedTransactionStore,
+  type CadEditHistory
+} from "@dwg/cad-edit";
 import {
   parseCadReportExportRequest,
-  type CadEntityIndex
+  type CadEntityIndex,
+  type CadReportExportResponse
 } from "@dwg/contracts";
 
 import {
@@ -33,6 +38,7 @@ import {
 } from "./drawing-access/parsedDocumentEvidence.js";
 import { createConfiguredSourceDocumentResolver } from "./drawing-access/sourceDocumentResolver.js";
 import { resolveWorkspaceCadPath } from "./drawing-access/workspacePath.js";
+import { createCadReportDownloadStore } from "./reportDownloadStore.js";
 
 export const CAD_APPLICATION_CAPABILITY_NAMES = [
   "document.open",
@@ -79,6 +85,14 @@ export interface CadApplication {
     displayDirectory: string;
     expiresAt: number;
   } | null>;
+  createReportDownload(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
+  consumeReportDownload(downloadId: string): {
+    format: "json" | "csv" | "pdf" | "svg";
+    mediaType: string;
+    filename: string;
+    bytes: Uint8Array;
+    sha256: string;
+  } | null;
 }
 
 export interface CadApplicationOptions {
@@ -103,41 +117,80 @@ export async function createCadApplication(
     : options.drawingPath
       ? loadDefaultIndex(workspaceRoot, options.drawingPath)
       : createUnopenedIndex());
-  const activePath = options.drawingPath
+  let activePath = options.drawingPath
     ? resolveWorkspaceCadPath(workspaceRoot, options.drawingPath)
     : null;
   const sourceSha256 = options.sourceSha256 ??
     (activePath
       ? await readSourceSha256(activePath)
       : createHash("sha256").update(JSON.stringify(initialIndex)).digest("hex"));
-  const history = createCadEditHistory(createDocumentSnapshot(initialIndex, sourceSha256));
+  let activeHistory = createCadEditHistory(createDocumentSnapshot(initialIndex, sourceSha256));
+  const history = createSwitchableHistory(() => activeHistory);
   const edit = createEditCapabilityComposition(history);
   const currentIndex = () => projectCurrentIndex(history.current());
-  const read = createCurrentReadDependencies(
-    options.read ?? createDefaultReadDependencies(workspaceRoot),
-    initialIndex.drawingId,
-    currentIndex,
-    activePath,
-    workspaceRoot
-  );
+  const sourceRead = options.read ?? createDefaultReadDependencies(workspaceRoot);
+  let activeDrawingId = initialIndex.drawingId;
   const clock = options.clock ?? Date.now;
   const grants = createDestinationGrantStore({ now: clock });
-  const save = createSaveModule({
+  let drawingModule = createDrawingSaveModule({
     history,
     grants,
     activePath,
-    documentId: initialIndex.drawingId,
+    documentId: activeDrawingId,
     processRunner: options.processRunner,
     dwgVersionManifestPath: options.dwgVersionManifestPath,
     workspaceRoot
   });
+  const read: ReadCapabilityDependencies = {
+    async open(path, signal) {
+      if (signal?.aborted) throw signal.reason;
+      const resolvedPath = options.read && activePath === null
+        ? null
+        : resolveWorkspaceCadPath(workspaceRoot, path);
+      if (activePath !== null && resolvedPath === activePath) return currentIndex();
+      const opened = await sourceRead.open(path, signal);
+      if (activeDrawingId === "cad:unopened") {
+        if (signal?.aborted) throw signal.reason;
+        const openedSha256 = options.sourceSha256 ??
+          (resolvedPath
+            ? await readSourceSha256(resolvedPath, signal)
+            : createHash("sha256").update(JSON.stringify(opened)).digest("hex"));
+        activeHistory = createCadEditHistory(createDocumentSnapshot(opened, openedSha256));
+        activeDrawingId = opened.drawingId;
+        activePath = resolvedPath;
+        drawingModule = createDrawingSaveModule({
+          history,
+          grants,
+          activePath,
+          documentId: activeDrawingId,
+          processRunner: options.processRunner,
+          dwgVersionManifestPath: options.dwgVersionManifestPath,
+          workspaceRoot
+        });
+        return currentIndex();
+      }
+      return opened.drawingId === activeDrawingId ? currentIndex() : opened;
+    },
+    get(drawingId) {
+      return drawingId === activeDrawingId ? currentIndex() : sourceRead.get(drawingId);
+    }
+  };
+  const save = createSaveModule({
+    history,
+    drawingModule: () => drawingModule
+  });
+  const capabilities = composeCadCapabilityModules([
+    createReadCapabilityModule(read),
+    edit.module,
+    save
+  ]);
+  const reportDownloads = createCadReportDownloadStore({
+    generate: (input, signal) => capabilities.execute("export.report", input, signal),
+    clock
+  });
 
   return {
-    capabilities: composeCadCapabilityModules([
-      createReadCapabilityModule(read),
-      edit.module,
-      save
-    ]),
+    capabilities,
     transactions: edit.transactions,
     capabilityNames: CAD_APPLICATION_CAPABILITY_NAMES,
     currentIndex,
@@ -155,44 +208,16 @@ export async function createCadApplication(
       const expiresAt = clock() + 10 * 60 * 1000;
       const grantId = await grants.issue(selection.canonicalDirectory, expiresAt);
       return { grantId, displayDirectory: selection.displayDirectory, expiresAt };
-    }
+    },
+    createReportDownload: (input, signal) => reportDownloads.create(input, signal),
+    consumeReportDownload: (downloadId) => reportDownloads.consume(downloadId)
   };
 }
 
 function createSaveModule(options: {
-  history: ReturnType<typeof createCadEditHistory>;
-  grants: DestinationGrantStore;
-  activePath: string | null;
-  documentId: string;
-  processRunner?: CadProcessRunner;
-  dwgVersionManifestPath?: string;
-  workspaceRoot: string;
+  history: CadEditHistory;
+  drawingModule: () => CadCapabilityModule | null;
 }): CadCapabilityModule {
-  let drawingModule: CadCapabilityModule | null = null;
-  if (options.activePath && options.processRunner) {
-    const sources = createConfiguredSourceDocumentResolver({
-      documentId: options.documentId,
-      configuredPath: options.activePath,
-      readSha256: readSourceSha256,
-      readEvidence: readParsedDocumentEvidence
-    });
-    const coordinator = createSaveCoordinator({
-      cadIo: createAcadSharpCadIoClient({
-        projectPath: resolve(
-          options.workspaceRoot,
-          "modules/cad-io-acadsharp/src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj"
-        ),
-        processRunner: options.processRunner,
-        dwgVersionManifestPath: options.dwgVersionManifestPath
-      }),
-      sources,
-      readDocument: readParsedDocumentEvidence,
-      transactions: options.history,
-      grants: options.grants
-    });
-    drawingModule = createSaveCapabilityModule(coordinator, exportCadReport);
-  }
-
   return {
     names: ["export.report", "export.drawing", "verification.get"],
     async execute(name, input, signal) {
@@ -215,9 +240,58 @@ function createSaveModule(options: {
           verification: null
         }, request.format);
       }
+      const drawingModule = options.drawingModule();
       if (!drawingModule) throw new CadSaveError("CAD_SAVE_DESTINATION_UNSUPPORTED");
       return drawingModule.execute(name, input, signal);
     }
+  };
+}
+
+function createDrawingSaveModule(options: {
+  history: CadEditHistory;
+  grants: DestinationGrantStore;
+  activePath: string | null;
+  documentId: string;
+  processRunner?: CadProcessRunner;
+  dwgVersionManifestPath?: string;
+  workspaceRoot: string;
+}): CadCapabilityModule | null {
+  if (!options.activePath || !options.processRunner) return null;
+  const sources = createConfiguredSourceDocumentResolver({
+    documentId: options.documentId,
+    configuredPath: options.activePath,
+    readSha256: readSourceSha256,
+    readEvidence: readParsedDocumentEvidence
+  });
+  const coordinator = createSaveCoordinator({
+    cadIo: createAcadSharpCadIoClient({
+      projectPath: resolve(
+        options.workspaceRoot,
+        "modules/cad-io-acadsharp/src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj"
+      ),
+      processRunner: options.processRunner,
+      dwgVersionManifestPath: options.dwgVersionManifestPath
+    }),
+    sources,
+    readDocument: readParsedDocumentEvidence,
+    transactions: options.history,
+    grants: options.grants
+  });
+  return createSaveCapabilityModule(coordinator, exportCadReport);
+}
+
+function createSwitchableHistory(active: () => CadEditHistory): CadEditHistory {
+  return {
+    current: () => active().current(),
+    preview: (batch) => active().preview(batch),
+    apply: (preview) => active().apply(preview),
+    undo: (revision) => active().undo(revision),
+    redo: (revision) => active().redo(revision),
+    undoWithTransaction: (revision) => active().undoWithTransaction(revision),
+    redoWithTransaction: (revision) => active().redoWithTransaction(revision),
+    entries: () => active().entries(),
+    getCommittedTransaction: (transactionId) => active().getCommittedTransaction(transactionId),
+    getSaveState: (documentId, revision) => active().getSaveState(documentId, revision)
   };
 }
 
@@ -230,28 +304,6 @@ function projectCurrentIndex(
       fileVersion: current.drawingVersion,
       units: current.units,
       revision: current.revision
-    }
-  };
-}
-
-function createCurrentReadDependencies(
-  source: ReadCapabilityDependencies,
-  activeDrawingId: string,
-  currentIndex: () => CadEntityIndex,
-  activePath: string | null,
-  workspaceRoot: string
-): ReadCapabilityDependencies {
-  return {
-    async open(path, signal) {
-      if (signal?.aborted) throw signal.reason;
-      if (activePath !== null && resolveWorkspaceCadPath(workspaceRoot, path) === activePath) {
-        return currentIndex();
-      }
-      const opened = await source.open(path, signal);
-      return opened.drawingId === activeDrawingId ? currentIndex() : opened;
-    },
-    get(drawingId) {
-      return drawingId === activeDrawingId ? currentIndex() : source.get(drawingId);
     }
   };
 }

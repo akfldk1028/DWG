@@ -69,6 +69,28 @@ export interface CadDrawingExportResponse {
 export interface CadVerificationResponse {
   verification: CadOutputVerification;
 }
+export const CAD_EXPORT_ERROR_CODES = [
+  "EXPORT_REQUEST_INVALID",
+  "REPORT_DOWNLOAD_CAPACITY",
+  "REPORT_DOWNLOAD_UNKNOWN",
+  "OUTPUT_ALREADY_EXISTS",
+  "DESTINATION_GRANT_UNKNOWN",
+  "DESTINATION_GRANT_EXPIRED",
+  "DESTINATION_GRANT_REUSED",
+  "DESTINATION_GRANT_INVALID",
+  "REVISION_STALE",
+  "VERIFICATION_REQUEST_INVALID",
+  "VERIFICATION_UNKNOWN",
+  "EXPORT_UNSUPPORTED",
+  "EXPORT_FAILED"
+] as const;
+export type CadExportErrorCode = (typeof CAD_EXPORT_ERROR_CODES)[number];
+export interface CadExportErrorResponse {
+  error: {
+    code: CadExportErrorCode;
+    message: string;
+  };
+}
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const versionPattern = /^AC[0-9]{4}$/u;
@@ -131,6 +153,25 @@ export function parseCadDrawingExportResponse(value: unknown): CadDrawingExportR
     throw new Error("CAD_DRAWING_EXPORT_RESPONSE_INVALID");
   }
   return object as unknown as CadDrawingExportResponse;
+}
+
+export function parseCadExportErrorResponse(value: unknown): CadExportErrorResponse {
+  const object = exportRecord(value, "CAD_EXPORT_ERROR_RESPONSE_INVALID");
+  requireExportExactKeys(object, ["error"], "CAD_EXPORT_ERROR_RESPONSE_INVALID");
+  const error = exportRecord(object.error, "CAD_EXPORT_ERROR_RESPONSE_INVALID");
+  requireExportExactKeys(error, ["code", "message"], "CAD_EXPORT_ERROR_RESPONSE_INVALID");
+  if (
+    !CAD_EXPORT_ERROR_CODES.includes(error.code as CadExportErrorCode) ||
+    !isBoundedString(error.message, 256)
+  ) {
+    throw new Error("CAD_EXPORT_ERROR_RESPONSE_INVALID");
+  }
+  return {
+    error: {
+      code: error.code as CadExportErrorCode,
+      message: error.message
+    }
+  };
 }
 
 export function parseCadVerificationResponse(value: unknown): CadVerificationResponse {

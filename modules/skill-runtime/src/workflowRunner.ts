@@ -33,6 +33,7 @@ export interface RunCadSkillWorkflowOptions {
   skill: InstalledCadSkill;
   workflow: CadSkillWorkflow;
   input: unknown;
+  hostInput?: unknown;
   documentId?: string;
   relatedDocumentIds?: readonly string[];
   grantedPermissions: SkillPermission[];
@@ -50,8 +51,12 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
   }
   const result = createResult(manifest.id);
   let safeInput: unknown;
+  let safeHostInput: Record<string, unknown>;
   try {
     safeInput = cloneCadSkillJsonValue(options.input);
+    const hostInput = cloneCadSkillJsonValue(options.hostInput ?? {});
+    if (!isDataObject(hostInput)) throw new Error("HOST_INPUT_INVALID");
+    safeHostInput = hostInput;
   } catch {
     return failWithoutStep(result, "INPUT_VALUE_INVALID");
   }
@@ -104,7 +109,7 @@ export async function runCadSkillWorkflow(options: RunCadSkillWorkflowOptions): 
       return fail(result, step.id, "PERMISSION_DENIED");
     }
 
-    const boundInput = bindInput(step.input, safeInput, result.steps);
+    const boundInput = bindInput(step.input, safeInput, safeHostInput, result.steps);
     let output: unknown;
     try {
       output = await capabilities.execute(step.capability as never, boundInput, options.signal);
@@ -238,24 +243,49 @@ function sameStringArray(value: unknown, expected: readonly string[]): boolean {
   );
 }
 
-function bindInput(input: Record<string, unknown>, workflowInput: unknown, previousSteps: readonly CadSkillRunStepResult[]): Record<string, unknown> {
-  return cloneCadSkillJsonValue(resolveBindings(input, workflowInput, previousSteps)) as Record<string, unknown>;
+function bindInput(
+  input: Record<string, unknown>,
+  workflowInput: unknown,
+  hostInput: Record<string, unknown>,
+  previousSteps: readonly CadSkillRunStepResult[]
+): Record<string, unknown> {
+  return cloneCadSkillJsonValue(
+    resolveBindings(input, workflowInput, hostInput, previousSteps)
+  ) as Record<string, unknown>;
 }
 
-function resolveBindings(value: unknown, workflowInput: unknown, previousSteps: readonly CadSkillRunStepResult[]): unknown {
-  if (typeof value === "string" && value.startsWith("$")) return resolveBinding(value, workflowInput, previousSteps);
-  if (Array.isArray(value)) return value.map((item) => resolveBindings(item, workflowInput, previousSteps));
+function resolveBindings(
+  value: unknown,
+  workflowInput: unknown,
+  hostInput: Record<string, unknown>,
+  previousSteps: readonly CadSkillRunStepResult[]
+): unknown {
+  if (typeof value === "string" && value.startsWith("$")) {
+    return resolveBinding(value, workflowInput, hostInput, previousSteps);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveBindings(item, workflowInput, hostInput, previousSteps));
+  }
   if (value !== null && typeof value === "object") {
     const resolved: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) resolved[key] = resolveBindings(item, workflowInput, previousSteps);
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      resolved[key] = resolveBindings(item, workflowInput, hostInput, previousSteps);
+    }
     return resolved;
   }
   return value;
 }
 
-function resolveBinding(expression: string, workflowInput: unknown, previousSteps: readonly CadSkillRunStepResult[]): unknown {
+function resolveBinding(
+  expression: string,
+  workflowInput: unknown,
+  hostInput: Record<string, unknown>,
+  previousSteps: readonly CadSkillRunStepResult[]
+): unknown {
   const input = /^\$input((?:\.[a-zA-Z_$][a-zA-Z0-9_$-]*)*)$/.exec(expression);
   if (input) return readBindingPath(workflowInput, input[1]!);
+  const host = /^\$host((?:\.[a-zA-Z_$][a-zA-Z0-9_$-]*)*)$/.exec(expression);
+  if (host) return readBindingPath(hostInput, host[1]!);
   const step = /^\$steps\.([a-z][a-z0-9-]{0,63})\.output((?:\.[a-zA-Z_$][a-zA-Z0-9_$-]*)*)$/.exec(expression);
   if (!step) throw new Error("WORKFLOW_BINDING_INVALID");
   const previous = previousSteps.find((item) => item.id === step[1]);

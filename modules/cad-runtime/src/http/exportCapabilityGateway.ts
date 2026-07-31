@@ -1,17 +1,19 @@
-import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
   parseCadDrawingExportRequest,
   parseCadDrawingExportResponse,
+  parseCadExportErrorResponse,
   parseCadOutputVerification,
   parseCadReportExportRequest,
   parseExportCapabilitiesResponse,
+  type CadExportErrorCode,
   type ExportCapabilitiesResponse
 } from "@dwg/contracts";
-import type { ExportedReport } from "@dwg/cad-export";
+import { CadSaveError, type CadSaveErrorCode } from "@dwg/cad-capabilities";
 
 import type { CadApplication } from "../application/createCadApplication.js";
+import { CadReportDownloadStoreError } from "../application/reportDownloadStore.js";
 import { handleDestinationGrantRequest } from "./destinationGrantGateway.js";
 
 export interface ExportCapabilityRoutes {
@@ -32,12 +34,11 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const MAX_BODY_BYTES = 64 * 1024;
 
 export function createExportCapabilityRoutes(
-  application: CadApplication,
-  clock: () => number = Date.now
+  application: CadApplication
 ): ExportCapabilityRoutes {
-  const downloads = new Map<string, ExportedReport & { expiresAt: number }>();
   return {
     async handle(request, response, pathname, signal) {
+      try {
       if (request.method === "GET" && pathname === "/api/export/capabilities") {
         sendJson(response, 200, capabilities);
         return true;
@@ -47,26 +48,16 @@ export function createExportCapabilityRoutes(
       }
       if (request.method === "POST" && pathname === "/api/export/reports") {
         const input = parseCadReportExportRequest(await readJsonBody(request));
-        const report = await application.capabilities.execute("export.report", input, signal) as ExportedReport;
-        const downloadId = randomUUID();
-        downloads.set(downloadId, { ...report, expiresAt: clock() + 10 * 60 * 1000 });
-        sendJson(response, 200, {
-          downloadId,
-          filename: report.filename,
-          mediaType: report.mediaType,
-          sha256: report.sha256
-        });
+        sendJson(response, 200, await application.createReportDownload(input, signal));
         return true;
       }
       if (request.method === "GET" && pathname.startsWith("/api/export/reports/")) {
         const id = pathname.slice("/api/export/reports/".length);
-        const download = uuidPattern.test(id) ? downloads.get(id) : undefined;
-        if (!download || download.expiresAt <= clock()) {
-          downloads.delete(id);
-          sendJson(response, 404, { error: "EXPORT_DOWNLOAD_UNKNOWN" });
+        const download = uuidPattern.test(id) ? application.consumeReportDownload(id) : null;
+        if (!download) {
+          sendExportError(response, 404, "REPORT_DOWNLOAD_UNKNOWN", "Report download is unknown or expired.");
           return true;
         }
-        downloads.delete(id);
         response.statusCode = 200;
         response.setHeader("content-type", download.mediaType);
         response.setHeader("content-disposition", `attachment; filename="${download.filename}"`);
@@ -88,20 +79,96 @@ export function createExportCapabilityRoutes(
       if (request.method === "GET" && pathname.startsWith("/api/export/verifications/")) {
         const id = pathname.slice("/api/export/verifications/".length);
         if (!uuidPattern.test(id)) {
-          sendJson(response, 400, { error: "CAD_VERIFICATION_REQUEST_INVALID" });
+          sendExportError(response, 400, "VERIFICATION_REQUEST_INVALID", "Invalid verification request.");
           return true;
         }
         const verification = await application.capabilities.execute("verification.get", { id }, signal);
         if (!verification) {
-          sendJson(response, 404, { error: "CAD_VERIFICATION_UNKNOWN" });
+          sendExportError(response, 404, "VERIFICATION_UNKNOWN", "Export verification is unknown.");
         } else {
           sendJson(response, 200, { verification: parseCadOutputVerification(verification) });
         }
         return true;
       }
       return false;
+      } catch (error) {
+        if (!isExportRoute(pathname)) throw error;
+        const failure = toExportGatewayFailure(error);
+        sendJson(response, failure.status, parseCadExportErrorResponse({
+          error: {
+            code: failure.code,
+            message: failure.message
+          }
+        }));
+        return true;
+      }
     }
   };
+}
+
+function isExportRoute(pathname: string): boolean {
+  return pathname === "/api/export/capabilities" ||
+    pathname === "/api/export/destination-grants" ||
+    pathname === "/api/export/reports" ||
+    pathname === "/api/export/drawings" ||
+    pathname.startsWith("/api/export/reports/") ||
+    pathname.startsWith("/api/export/verifications/");
+}
+
+function toExportGatewayFailure(error: unknown): {
+  status: number;
+  code: CadExportErrorCode;
+  message: string;
+} {
+  if (error instanceof CadReportDownloadStoreError) {
+    return {
+      status: 503,
+      code: "REPORT_DOWNLOAD_CAPACITY",
+      message: "Report download capacity is temporarily unavailable."
+    };
+  }
+  if (error instanceof CadSaveError) return mapCadSaveError(error.code);
+  return {
+    status: isRequestError(error) ? 400 : 500,
+    code: isRequestError(error) ? "EXPORT_REQUEST_INVALID" : "EXPORT_FAILED",
+    message: isRequestError(error)
+      ? "Invalid export request."
+      : "Export operation failed."
+  };
+}
+
+function mapCadSaveError(code: CadSaveErrorCode): {
+  status: number;
+  code: CadExportErrorCode;
+  message: string;
+} {
+  switch (code) {
+    case "CAD_SAVE_OUTPUT_EXISTS":
+      return { status: 409, code: "OUTPUT_ALREADY_EXISTS", message: "An output with that filename already exists." };
+    case "DESTINATION_GRANT_UNKNOWN":
+      return { status: 404, code, message: "Destination grant is unknown." };
+    case "DESTINATION_GRANT_EXPIRED":
+      return { status: 410, code, message: "Destination grant has expired." };
+    case "DESTINATION_GRANT_REUSED":
+      return { status: 409, code, message: "Destination grant has already been used." };
+    case "DESTINATION_GRANT_INVALID":
+      return { status: 400, code, message: "Destination grant is invalid." };
+    case "CAD_SAVE_STALE":
+      return { status: 409, code: "REVISION_STALE", message: "Drawing revision is stale." };
+    case "CAD_SAVE_DESTINATION_UNSUPPORTED":
+      return { status: 409, code: "EXPORT_UNSUPPORTED", message: "Drawing export is unavailable." };
+    case "CAD_SAVE_INPUT_INVALID":
+    case "CAD_SAVE_DESTINATION_INVALID":
+    case "CAD_SAVE_SOURCE_OUTPUT_EQUAL":
+      return { status: 400, code: "EXPORT_REQUEST_INVALID", message: "Invalid drawing export request." };
+    default:
+      return { status: 500, code: "EXPORT_FAILED", message: "Drawing export failed." };
+  }
+}
+
+function isRequestError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /(?:_REQUEST_INVALID|_INPUT_INVALID|REQUEST_TOO_LARGE|Unexpected end of JSON|JSON)/u.test(message);
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
@@ -121,4 +188,15 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(JSON.stringify(value));
+}
+
+function sendExportError(
+  response: ServerResponse,
+  status: number,
+  code: CadExportErrorCode,
+  message: string
+): void {
+  sendJson(response, status, parseCadExportErrorResponse({
+    error: { code, message }
+  }));
 }

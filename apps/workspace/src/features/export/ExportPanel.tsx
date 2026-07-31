@@ -20,7 +20,7 @@ export function ExportPanel() {
   const reports = capabilities?.capabilities.filter((item) => item.kind === "report") ?? [];
   const drawings = capabilities?.capabilities.filter((item) => item.kind === "drawing") ?? [];
   const destinationLabel = destination?.displayDirectory ??
-    (status.startsWith("Verified:")
+    (status.startsWith("Verified:") || status.startsWith("Destination grant used")
       ? "Destination grant used — choose again for another copy"
       : "No destination selected");
 

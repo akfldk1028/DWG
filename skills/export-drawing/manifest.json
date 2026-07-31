@@ -11,11 +11,9 @@
   "limitationCodes": ["SOURCE_DRAWING_UNCHANGED", "HOST_DESTINATION_ONLY"],
   "inputSchema": {
     "type": "object",
-    "required": ["documentId", "expectedRevision", "destinationGrantId", "baseFilename", "format", "version"],
+    "required": ["expectedRevision", "baseFilename", "format", "version"],
     "properties": {
-      "documentId": { "type": "string", "minLength": 1 },
       "expectedRevision": { "type": "integer", "minimum": 0 },
-      "destinationGrantId": { "type": "string", "format": "uuid" },
       "baseFilename": { "type": "string", "minLength": 1, "maxLength": 255 },
       "format": { "enum": ["dxf", "dwg"] },
       "version": { "type": "string", "pattern": "^AC[0-9]{4}$" }

@@ -46,5 +46,10 @@ async function stabilize(page: Page) {
 }
 
 async function capture(page: Page, fileName: string) {
+  await stabilize(page);
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    (document.activeElement as HTMLElement | null)?.blur();
+  });
   await page.screenshot({ path: documentationCapturePath(fileName), fullPage: true, animations: "disabled" });
 }

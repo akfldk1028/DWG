@@ -5,9 +5,9 @@
       "id": "save",
       "capability": "export.drawing",
       "input": {
-        "documentId": "$input.documentId",
+        "documentId": "$host.documentId",
         "expectedRevision": "$input.expectedRevision",
-        "destinationGrantId": "$input.destinationGrantId",
+        "destinationGrantId": "$host.destinationGrantId",
         "baseFilename": "$input.baseFilename",
         "format": "$input.format",
         "version": "$input.version"

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dirname, resolve } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
   documentationCaptureDirectory,
@@ -64,6 +65,20 @@ test("owned output paths reject traversal and absolute filenames", () => {
     assert.throws(
       () => resolveOwnedFile(root, fileName),
       /owned output directory/i
+    );
+  }
+});
+
+test("actual E2E specs cannot write tracked documentation captures", async () => {
+  const e2eDirectory = resolve(repositoryRoot, "apps/workspace/tests/e2e");
+  const specFiles = (await readdir(e2eDirectory))
+    .filter((fileName) => fileName.endsWith(".spec.ts"));
+  for (const fileName of specFiles) {
+    const source = await readFile(resolve(e2eDirectory, fileName), "utf8");
+    assert.doesNotMatch(
+      source,
+      /\bdocumentationCapturePath\b/u,
+      `${fileName} must use Playwright testInfo.outputPath for actual-run artifacts`
     );
   }
 });

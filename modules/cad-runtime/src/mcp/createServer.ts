@@ -1,6 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { CadCapabilityRuntime } from "@dwg/cad-capabilities";
+import {
+  parseCadDrawingExportResponse,
+  parseCadOutputVerification,
+  parseCadReportExportResponse,
+  type CadReportExportResponse
+} from "@dwg/contracts";
 
 import { executeCadTool } from "../application/cad-tools/runtime.js";
 import { CAD_TOOL_DEFINITIONS } from "./toolDefinitions.js";
@@ -11,6 +17,7 @@ export function createCadMcpServer(
   runtime: CadCapabilityRuntime,
   services: {
     requestDestinationGrant?(signal?: AbortSignal): Promise<unknown>;
+    createReportDownload?(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
     displayDirectory?: string;
   } = {}
 ): McpServer {
@@ -34,14 +41,24 @@ export function createCadMcpServer(
           openWorldHint: false
         }
       },
-      async (args) => {
+      async (args, extra) => {
         try {
           const result = definition.name === "cad_request_export_destination"
-            ? await requestExportDestination(server, services)
-            : await executeCadTool(
+            ? await requestExportDestination(server, services, extra.signal)
+            : definition.name === "cad_export_report"
+              ? await requestReportDownload(services, args, extra.signal)
+              : definition.name === "cad_export_drawing"
+                ? publicDrawingResponse(await executeCadTool(
+                    runtime,
+                    definition.name,
+                    args as ToolArguments,
+                    extra.signal
+                  ))
+                : await executeCadTool(
                 runtime,
                 definition.name,
-                args as ToolArguments
+                args as ToolArguments,
+                extra.signal
               );
           const structuredContent = asStructuredContent(result);
 
@@ -84,8 +101,10 @@ async function requestExportDestination(
   server: McpServer,
   services: {
     requestDestinationGrant?(signal?: AbortSignal): Promise<unknown>;
+    createReportDownload?(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
     displayDirectory?: string;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<unknown> {
   if (
     !services.requestDestinationGrant ||
@@ -104,19 +123,44 @@ async function requestExportDestination(
           title: "Confirm export destination"
         }
       },
-      required: ["confirm"]
+      required: ["confirm"],
+      additionalProperties: false
     }
-  });
+  } as Parameters<typeof server.server.elicitInput>[0], { signal });
   if (
     elicitation.action !== "accept" ||
     !elicitation.content ||
-    elicitation.content.confirm !== true
+    !isExactConfirmation(elicitation.content)
   ) {
     throw new Error("DESTINATION_SELECTION_CANCELLED");
   }
-  const grant = await services.requestDestinationGrant();
+  const grant = await services.requestDestinationGrant(signal);
   if (!grant) throw new Error("DESTINATION_SELECTION_CANCELLED");
   return grant;
+}
+
+async function requestReportDownload(
+  services: {
+    createReportDownload?(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
+  },
+  input: unknown,
+  signal?: AbortSignal
+): Promise<CadReportExportResponse> {
+  if (!services.createReportDownload) throw new Error("MCP_REPORT_DOWNLOAD_UNSUPPORTED");
+  return parseCadReportExportResponse(await services.createReportDownload(input, signal));
+}
+
+function publicDrawingResponse(value: unknown) {
+  const verification = parseCadOutputVerification(value);
+  return parseCadDrawingExportResponse({
+    verificationId: verification.id,
+    status: verification.status
+  });
+}
+
+function isExactConfirmation(value: Record<string, unknown>): boolean {
+  const keys = Object.keys(value);
+  return keys.length === 1 && keys[0] === "confirm" && value.confirm === true;
 }
 
 function asStructuredContent(value: unknown): Record<string, unknown> {

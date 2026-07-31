@@ -115,11 +115,31 @@ function normalizeEntity(entity: DxfEntity, index: number): CadEntityIndexItem {
     text: getEntityText(entity),
     blockName: type === "INSERT" ? entity.name ?? null : null,
     attributes: {},
-    geometry: bbox === null
-      ? { kind: "unavailable", reason: "dxf-geometry-unavailable" }
-      : { kind: "bbox", reason: "dxf-parser-bbox" },
+    geometry: dxfGeometry(entity, bbox),
     warnings
   };
+}
+
+function dxfGeometry(entity: DxfEntity, bbox: CadPointBox | null): CadEntityIndexItem["geometry"] {
+  if (entity.type === "LINE") {
+    const points = entity.startPoint && entity.endPoint
+      ? [entity.startPoint, entity.endPoint]
+      : entity.vertices?.slice(0, 2);
+    if (points?.length === 2) {
+      return {
+        kind: "line",
+        start: point3(points[0]!),
+        end: point3(points[1]!)
+      };
+    }
+  }
+  return bbox === null
+    ? { kind: "unavailable", reason: "dxf-geometry-unavailable" }
+    : { kind: "bbox", reason: "dxf-parser-bbox" };
+}
+
+function point3(point: DxfPoint): [number, number, number] {
+  return [point.x ?? 0, point.y ?? 0, point.z ?? 0];
 }
 
 function dxfUnits(value: unknown): string | null {
