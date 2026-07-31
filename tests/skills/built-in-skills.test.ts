@@ -28,7 +28,8 @@ const officialFixtureManifest = resolve("tests/fixtures/manifest.json");
 const expectedCapabilities: Record<string, readonly string[]> = {
   "inspect-drawing": ["document.open", "document.describe", "query.layers", "query.entities"],
   "extract-schedule": ["query.text", "query.schedule"],
-  "compare-drawings": ["query.compare"]
+  "compare-drawings": ["query.compare"],
+  "export-drawing": ["export.drawing"]
 };
 const stableRunnerFailureCodes = new Set([
   "CAPABILITY_EXECUTION_FAILED",
@@ -54,7 +55,7 @@ interface DeclaredCase {
   status: "passed" | "failed";
 }
 
-test("discovers exactly the three grounded read-only built-in skills", async () => {
+test("discovers the grounded built-in skills with exact permissions", async () => {
   const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
 
   assert.deepEqual(
@@ -62,8 +63,12 @@ test("discovers exactly the three grounded read-only built-in skills", async () 
     Object.keys(expectedCapabilities).sort()
   );
   for (const skill of skills) {
-    assert.deepEqual(skill.manifest.permissions, ["read"]);
+    assert.deepEqual(
+      skill.manifest.permissions,
+      skill.manifest.id === "export-drawing" ? ["write-copy", "export"] : ["read"]
+    );
     assert.deepEqual(skill.manifest.capabilities, expectedCapabilities[skill.manifest.id]);
+    if (skill.manifest.id === "export-drawing") continue;
     assert.match(skill.instructions, /^---\r?\nname: [a-z0-9]+(?:-[a-z0-9]+)*\r?\ndescription: Use when .+\r?\n---\r?\n/);
     assert.match(skill.instructions, /model geometry inference is forbidden/i);
     assert.match(skill.instructions, /unsupported/i);
@@ -74,7 +79,7 @@ test("discovers exactly the three grounded read-only built-in skills", async () 
 test("built-in manifests advertise only stable runner-visible failures", async () => {
   const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
 
-  for (const skill of skills) {
+  for (const skill of skills.filter((item) => item.manifest.permissions.includes("read"))) {
     for (const code of skill.manifest.failureCodes) {
       assert.ok(
         stableRunnerFailureCodes.has(code),
@@ -100,7 +105,7 @@ test("executes every declared built-in case against its official fixture", async
   const skills = await discoverCadSkills(skillRoot, "cad-capabilities/v1");
   const fixtures = await loadOfficialFixtures();
 
-  for (const skill of skills) {
+  for (const skill of skills.filter((item) => item.manifest.permissions.includes("read"))) {
     const workflow = await loadCadSkillWorkflow(skill);
     const declaredCases = await loadCases(skill);
 

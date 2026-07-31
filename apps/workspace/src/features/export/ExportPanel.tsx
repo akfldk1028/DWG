@@ -1,51 +1,63 @@
-import { Download, Save } from "lucide-react";
-import { useState } from "react";
+import { Download, FolderOpen, Save } from "lucide-react";
 
-import type { ExportCapabilityItem, ReportFormat } from "@dwg/contracts";
+import type { DrawingFormat, ReportFormat } from "@dwg/contracts";
 
 import { useExport } from "./useExport";
 import "./styles.css";
 
 export function ExportPanel() {
-  const { capabilities, error } = useExport();
-  const [destination, setDestination] = useState("");
+  const {
+    capabilities,
+    destination,
+    baseFilename,
+    setBaseFilename,
+    status,
+    error,
+    chooseDestination,
+    saveDrawing,
+    downloadReport
+  } = useExport();
   const reports = capabilities?.capabilities.filter((item) => item.kind === "report") ?? [];
   const drawings = capabilities?.capabilities.filter((item) => item.kind === "drawing") ?? [];
-  const destinationStatus = destination.trim() ? "Destination selected; Save As is unavailable." : "Destination required";
+  const destinationLabel = destination?.displayDirectory ??
+    (status.startsWith("Verified:")
+      ? "Destination grant used — choose again for another copy"
+      : "No destination selected");
 
   return (
     <section aria-label="Export" className="export-panel" role="region">
-      <header><strong>Export</strong><span>Read-only workspace</span></header>
+      <header><strong>Export</strong><span>Verified copies</span></header>
       {error && <p className="export-error" role="alert">{error}</p>}
       {!capabilities && !error && <p className="export-loading" role="status">Loading export capabilities…</p>}
       <section aria-labelledby="report-export-heading" className="export-group">
         <h2 id="report-export-heading">Report export</h2>
-        <p>Download inspection reports only. These controls never write a drawing.</p>
+        <p>Download a bounded report from the active document revision.</p>
         <div className="export-actions">
-          {reports.map((item) => <ReportAction capability={item} key={item.format} />)}
+          {reports.map((item) => (
+            <button disabled={!item.available} key={item.format} onClick={() => void downloadReport(item.format as ReportFormat)}>
+              <Download size={13} />Download {item.format.toUpperCase()} report
+            </button>
+          ))}
         </div>
       </section>
       <section aria-labelledby="drawing-save-heading" className="export-group drawing-save">
         <h2 id="drawing-save-heading">Drawing Save As</h2>
-        <p>Source CAD files stay read-only. Save As will create a copy only when an export module is installed.</p>
+        <p>The source stays read-only. A one-use host grant selects the copy destination.</p>
+        <button onClick={() => void chooseDestination()}><FolderOpen size={13} />Choose destination</button>
+        <p>{destinationLabel}</p>
         <label>
-          <span>Save As destination</span>
-          <input aria-label="Save As destination" onChange={(event) => setDestination(event.target.value)} placeholder="Choose a destination" value={destination} />
+          <span>Base filename</span>
+          <input aria-label="Base filename" onChange={(event) => setBaseFilename(event.target.value)} value={baseFilename} />
         </label>
-        <p className="destination-status" role="status">{destinationStatus}</p>
+        <p className="destination-status" role="status">{status}</p>
         <div className="export-actions">
-          {drawings.map((item) => <DrawingAction capability={item} key={item.format} />)}
+          {drawings.map((item) => (
+            <button disabled={!item.available || !destination} key={item.format} onClick={() => void saveDrawing(item.format as DrawingFormat)}>
+              <Save size={13} />Save As {item.format.toUpperCase()}
+            </button>
+          ))}
         </div>
       </section>
     </section>
   );
-}
-
-function ReportAction({ capability }: { capability: ExportCapabilityItem }) {
-  const label = `Download ${capability.format.toUpperCase() as Uppercase<ReportFormat>} report`;
-  return <button disabled={!capability.available} title={capability.reason ?? undefined}><Download size={13} />{label}<small>{capability.reason}</small></button>;
-}
-
-function DrawingAction({ capability }: { capability: ExportCapabilityItem }) {
-  return <button disabled={!capability.available} title={capability.reason ?? undefined}><Save size={13} />Save As {capability.format.toUpperCase()}<small>{capability.reason}</small></button>;
 }

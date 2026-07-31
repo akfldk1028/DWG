@@ -220,3 +220,10 @@ test("returns a stable structured MCP error for an unknown drawing", async (t) =
     }
   });
 });
+
+test("registers grant report drawing and verification MCP tools", () => {
+  assert.ok((CAD_TOOL_NAMES as readonly string[]).includes("cad_request_export_destination"));
+  assert.ok((CAD_TOOL_NAMES as readonly string[]).includes("cad_export_report"));
+  assert.ok((CAD_TOOL_NAMES as readonly string[]).includes("cad_export_drawing"));
+  assert.ok((CAD_TOOL_NAMES as readonly string[]).includes("cad_get_export_verification"));
+});

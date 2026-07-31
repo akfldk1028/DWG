@@ -9,6 +9,13 @@ export const documentationCaptureDirectory = resolve(
   "docs/ui-captures"
 );
 
+const exportRootsDirectory = resolve(
+  repositoryRoot,
+  "tests/visual/test-results/export-roots"
+);
+export const e2eExportRoot = resolve(exportRootsDirectory, `e2e-${process.pid}`);
+export const docsExportRoot = resolve(exportRootsDirectory, `docs-${process.pid}`);
+
 export function resolveOwnedFile(rootDirectory: string, fileName: string) {
   const root = resolve(rootDirectory);
   const pathSegments = fileName.split(/[\\/]+/);

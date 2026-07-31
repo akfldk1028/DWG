@@ -105,6 +105,57 @@ test("renders a single overview contact sheet", async ({ page }) => {
   });
 });
 
+test("captures verified Save As and report download through visible controls", async ({ page }) => {
+  await mkdir(captureDirectory, { recursive: true });
+  await page.route("**/api/export/destination-grants", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      grantId: "11111111-1111-4111-8111-111111111111",
+      displayDirectory: "Documentation exports",
+      expiresAt: 4_102_444_800_000
+    })
+  }));
+  await page.route("**/api/export/drawings", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      verificationId: "22222222-2222-4222-8222-222222222222",
+      status: "passed"
+    })
+  }));
+  await page.route("**/api/export/reports", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      downloadId: "33333333-3333-4333-8333-333333333333",
+      filename: "export-sample-rev-0-report.json",
+      mediaType: "application/json; charset=utf-8",
+      sha256: "A".repeat(64)
+    })
+  }));
+  await page.route("**/api/export/reports/33333333-3333-4333-8333-333333333333", (route) =>
+    route.fulfill({
+      contentType: "application/json; charset=utf-8",
+      headers: { "content-disposition": 'attachment; filename="export-sample-rev-0-report.json"' },
+      body: JSON.stringify({ documentId: "capture" })
+    })
+  );
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Export", exact: true }).click();
+  await page.getByRole("button", { name: "Choose destination" }).click();
+  await page.getByLabel("Base filename").fill("verified-copy");
+  await page.getByRole("button", { name: "Save As DXF" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified");
+  await expect(page.getByText("Destination grant used — choose again for another copy")).toBeVisible();
+  await capture(page, "save-verified.png");
+
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download JSON report" }).click();
+  expect((await download).suggestedFilename()).toBe("export-sample-rev-0-report.json");
+  await expect(page.getByRole("status")).toContainText("export-sample-rev-0-report.json");
+  await capture(page, "export-report.png");
+});
+
 
 test("captures the focused desktop sidebar preference state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -16,6 +16,7 @@ import {
   createRepositoryPaths,
   findRepositoryRoot
 } from "../src/platform/repositoryPaths.js";
+import { defaultProcessRunner } from "../src/providers/cli/processRunner.js";
 import {
   preloadCliComparisonScope,
   resolveCliDocumentScope
@@ -64,7 +65,34 @@ async function run(parsed: SkillCliArguments): Promise<void> {
     const inputText = await readFile(resolve(inputPath), "utf8");
     if (new TextEncoder().encode(inputText).byteLength > MAX_SKILL_JSON_BYTES) throw new Error("INPUT_TOO_LARGE");
     const suppliedInput = JSON.parse(inputText) as unknown;
-    const application = await createCadApplication({ workspaceRoot: paths.repositoryRoot });
+    const exportRoot = resolve(
+      paths.repositoryRoot,
+      `tests/visual/test-results/export-roots/cli-${process.pid}`
+    );
+    await mkdir(exportRoot, { recursive: true });
+    const application = await createCadApplication({
+      workspaceRoot: paths.repositoryRoot,
+      exportRoot,
+      dwgVersionManifestPath: paths.dwgVersionManifest,
+      processRunner: {
+        async run(spec, signal) {
+          const result = await defaultProcessRunner.run({
+            command: spec.command,
+            args: spec.args,
+            cwd: spec.cwd,
+            env: process.env,
+            stdin: spec.stdin,
+            signal
+          });
+          return {
+            exitCode: result.exitCode ?? -1,
+            stdout: result.stdout,
+            stderr: result.stderr
+          };
+        }
+      },
+      clock: Date.now
+    });
     const controller = new AbortController();
     const signal = controller.signal;
     const isComparisonPreload = beforePath !== undefined && afterPath !== undefined;

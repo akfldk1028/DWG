@@ -3,8 +3,9 @@ import type {
   InspectionCheck,
   InspectionRun
 } from "@dwg/contracts";
+import type { CadCapabilityRuntime } from "@dwg/cad-capabilities";
 
-import { buildCadIndexForPath } from "../application/cad-tools/runtime.js";
+import { buildCadIndexForPath, executeCadTool } from "../application/cad-tools/runtime.js";
 import { resolveWorkspaceCadPath } from "../application/drawing-access/workspacePath.js";
 import {
   createInspectionOrchestrator,
@@ -22,11 +23,14 @@ export interface DrawingWorkspace {
 export function createDrawingWorkspace(
   workspaceRoot: string,
   configuredPath: string,
-  runtime: OrchestrationCadRuntime,
+  capabilities: CadCapabilityRuntime,
   getCurrentIndex?: () => CadEntityIndex
 ): DrawingWorkspace {
   const drawingPath = resolveWorkspaceCadPath(workspaceRoot, configuredPath);
 
+  const runtime: OrchestrationCadRuntime = {
+    call: (name, args, signal) => executeCadTool(capabilities, name, args, signal)
+  };
   const orchestrator = createInspectionOrchestrator(runtime);
   return {
     getIndex: async () => getCurrentIndex ? getCurrentIndex() : buildCadIndexForPath(drawingPath),

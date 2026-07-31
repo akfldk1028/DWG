@@ -39,7 +39,7 @@ test("parses the retained DXF into an editable document without inventing move g
   assert.equal(textEntity.layer, "A-TEXT");
   assert.deepEqual(textEntity.geometry, {
     kind: "bbox",
-    reason: "legacy-v0.1"
+    reason: "dxf-parser-bbox"
   });
 
   textLayer.name = "A-TEXT-EDITED";

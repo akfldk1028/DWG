@@ -1,13 +1,16 @@
 import { defineConfig } from "@playwright/test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { e2eExportRoot } from "./tests/support/repositoryOutputPaths.js";
 
 const workspaceRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(workspaceRoot, "../..");
 const frontendPort = Number(process.env.DWG_FRONTEND_PORT ?? 4173);
 const gatewayPort = Number(process.env.DWG_GATEWAY_PORT ?? 4317);
+process.env.DWG_EXPORT_MODE = "e2e";
 
 export default defineConfig({
+  globalSetup: "./tests/support/exportRootGlobalSetup.ts",
   testDir: "./tests/e2e",
   testIgnore: "**/live-oauth-cli.spec.ts",
   outputDir: resolve(repositoryRoot, "tests/visual/test-results"),
@@ -25,7 +28,10 @@ export default defineConfig({
       cwd: repositoryRoot,
       env: {
         ...process.env,
-        DWG_GATEWAY_PORT: String(gatewayPort)
+        DWG_GATEWAY_PORT: String(gatewayPort),
+        DWG_EXPORT_MODE: "e2e",
+        DWG_EXPORT_ROOT: e2eExportRoot,
+        DWG_DRAWING_PATH: process.env.DWG_DRAWING_PATH ?? "tests/fixtures/dxf/minimal-architectural.dxf"
       },
       url: `http://127.0.0.1:${gatewayPort}/api/health`,
       reuseExistingServer: false,

@@ -8,7 +8,11 @@ import { CAD_TOOL_DEFINITIONS } from "./toolDefinitions.js";
 type ToolArguments = Record<string, unknown>;
 
 export function createCadMcpServer(
-  runtime: CadCapabilityRuntime
+  runtime: CadCapabilityRuntime,
+  services: {
+    requestDestinationGrant?(signal?: AbortSignal): Promise<unknown>;
+    displayDirectory?: string;
+  } = {}
 ): McpServer {
   const server = new McpServer({
     name: "dwg-intelligence",
@@ -22,19 +26,23 @@ export function createCadMcpServer(
         description: definition.description,
         inputSchema: definition.inputSchema,
         annotations: {
-          readOnlyHint: true,
+          readOnlyHint: !definition.name.includes("export_drawing")
+            && definition.name !== "cad_request_export_destination",
           destructiveHint: false,
-          idempotentHint: true,
+          idempotentHint: !definition.name.includes("export_drawing")
+            && definition.name !== "cad_request_export_destination",
           openWorldHint: false
         }
       },
       async (args) => {
         try {
-          const result = await executeCadTool(
-            runtime,
-            definition.name,
-            args as ToolArguments
-          );
+          const result = definition.name === "cad_request_export_destination"
+            ? await requestExportDestination(server, services)
+            : await executeCadTool(
+                runtime,
+                definition.name,
+                args as ToolArguments
+              );
           const structuredContent = asStructuredContent(result);
 
           return {
@@ -70,6 +78,45 @@ export function createCadMcpServer(
   }
 
   return server;
+}
+
+async function requestExportDestination(
+  server: McpServer,
+  services: {
+    requestDestinationGrant?(signal?: AbortSignal): Promise<unknown>;
+    displayDirectory?: string;
+  }
+): Promise<unknown> {
+  if (
+    !services.requestDestinationGrant ||
+    !server.server.getClientCapabilities()?.elicitation?.form
+  ) {
+    throw new Error("MCP_ELICITATION_UNSUPPORTED");
+  }
+  const elicitation = await server.server.elicitInput({
+    mode: "form",
+    message: `Create a one-use export grant for ${services.displayDirectory ?? "the host export directory"}?`,
+    requestedSchema: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          title: "Confirm export destination"
+        }
+      },
+      required: ["confirm"]
+    }
+  });
+  if (
+    elicitation.action !== "accept" ||
+    !elicitation.content ||
+    elicitation.content.confirm !== true
+  ) {
+    throw new Error("DESTINATION_SELECTION_CANCELLED");
+  }
+  const grant = await services.requestDestinationGrant();
+  if (!grant) throw new Error("DESTINATION_SELECTION_CANCELLED");
+  return grant;
 }
 
 function asStructuredContent(value: unknown): Record<string, unknown> {

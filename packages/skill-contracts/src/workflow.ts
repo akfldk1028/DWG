@@ -20,7 +20,7 @@ const workflowSchema = z.object({
   schemaVersion: z.literal("cad-skill-workflow/v1"),
   steps: z.array(z.object({
     id: z.string().regex(identifier),
-    capability: z.string().regex(/^(?:document|query|edit)\.[a-z][a-z0-9-]*$/),
+    capability: z.string().regex(/^(?:document|query|edit|export|verification)\.[a-z][a-z0-9-]*$/),
     input: z.record(z.unknown())
   }).strict()).min(1).max(MAX_CAD_SKILL_WORKFLOW_STEPS)
 }).strict();

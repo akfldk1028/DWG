@@ -1,13 +1,12 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { mkdir } from "node:fs/promises";
 
 import type { CadApplication } from "../application/createCadApplication.js";
-import {
-  createCadToolRuntime
-} from "../application/cad-tools/runtime.js";
 import { createCadApplication } from "../application/createCadApplication.js";
 import { createChatService } from "../application/chat/chatService.js";
 import { createProviderRegistry, getProviderStatuses } from "../providers/providerRegistry.js";
+import { defaultProcessRunner } from "../providers/cli/processRunner.js";
 import {
   createRepositoryPaths,
   createRuntimePaths,
@@ -31,14 +30,38 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
   const runtimePaths = createRuntimePaths(paths, process.env.DWG_WORKSPACE, process.env.DWG_DRAWING_PATH);
   const workspace = options.workspaceRoot ?? runtimePaths.workspace;
   const drawingPath = options.drawingPath ?? runtimePaths.drawingPath;
+  const exportRoot = resolve(
+    process.env.DWG_EXPORT_ROOT ??
+      resolve(paths.repositoryRoot, `tests/visual/test-results/export-roots/gateway-${process.pid}`)
+  );
+  await mkdir(exportRoot, { recursive: true });
   const application = options.application ?? await createCadApplication({
     workspaceRoot: workspace,
-    drawingPath
+    drawingPath,
+    exportRoot,
+    dwgVersionManifestPath: paths.dwgVersionManifest,
+    processRunner: {
+      async run(spec, signal) {
+        const result = await defaultProcessRunner.run({
+          command: spec.command,
+          args: spec.args,
+          cwd: spec.cwd,
+          env: process.env,
+          stdin: spec.stdin,
+          signal
+        });
+        return {
+          exitCode: result.exitCode ?? -1,
+          stdout: result.stdout,
+          stderr: result.stderr
+        };
+      }
+    }
   });
   const drawingWorkspace = createDrawingWorkspace(
     workspace,
     drawingPath,
-    createCadToolRuntime(application.capabilities),
+    application.capabilities,
     () => application.currentIndex()
   );
   const providers = createProviderRegistry(workspace);
@@ -51,7 +74,7 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     capabilities: application.capabilities,
     capabilityVersion: options.capabilityVersion
   });
-  const exports = createExportCapabilityRoutes();
+  const exports = createExportCapabilityRoutes(application);
 
   return createProviderGateway({
     getDrawing: () => drawingWorkspace.getIndex(),
@@ -60,7 +83,7 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     chat: (request, signal) => chatService.chat(request, signal),
     edit: (name, input, signal) => application.capabilities.execute(name, input, signal),
     additionalRoute: async (request, response, pathname, signal) => {
-      if (await exports.handle(request, response, pathname)) return true;
+      if (await exports.handle(request, response, pathname, signal)) return true;
       return skills.handle(request, response, pathname, signal);
     }
   });

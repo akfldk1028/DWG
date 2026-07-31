@@ -37,6 +37,12 @@ interface DxfEntity {
   shape?: boolean;
 }
 
+interface ParsedDxf {
+  entities?: DxfEntity[];
+  tables?: { layer?: { layers?: Record<string, { name?: string; visible?: boolean; frozen?: boolean }> } };
+  header?: { $ACADVER?: unknown; $INSUNITS?: unknown };
+}
+
 const supportedTypes = new Set([
   "LINE",
   "LWPOLYLINE",
@@ -50,19 +56,23 @@ const supportedTypes = new Set([
 
 export function buildIndexFromDxfText(dxfText: string, options: BuildIndexOptions = {}): CadEntityIndex {
   const parser = new DxfParser();
-  const parsed = parser.parseSync(dxfText);
+  const parsed = parser.parseSync(dxfText) as ParsedDxf;
   const rawEntities: DxfEntity[] = Array.isArray(parsed.entities) ? parsed.entities : [];
   const entities = rawEntities.map((entity, index) => normalizeEntity(entity, index));
   const unsupported = summarizeUnsupported(rawEntities);
   const layers = buildLayers(parsed.tables?.layer?.layers ?? {}, entities);
 
   return {
-    schemaVersion: "cad-index/v0.1",
+    schemaVersion: "cad-index/v0.2",
     drawingId: createHash("sha256").update(dxfText).digest("hex").slice(0, 16),
     source: {
       kind: "dxf",
       displayName: options.displayName ?? "drawing.dxf",
       parser: "dxf-parser"
+    },
+    drawing: {
+      fileVersion: typeof parsed.header?.$ACADVER === "string" ? parsed.header.$ACADVER : null,
+      units: dxfUnits(parsed.header?.$INSUNITS)
     },
     summary: {
       entityCount: entities.length,
@@ -105,11 +115,37 @@ function normalizeEntity(entity: DxfEntity, index: number): CadEntityIndexItem {
     text: getEntityText(entity),
     blockName: type === "INSERT" ? entity.name ?? null : null,
     attributes: {},
-    geometry: {
-      closed: Boolean(entity.shape)
-    },
+    geometry: bbox === null
+      ? { kind: "unavailable", reason: "dxf-geometry-unavailable" }
+      : { kind: "bbox", reason: "dxf-parser-bbox" },
     warnings
   };
+}
+
+function dxfUnits(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) return null;
+  return ({
+    1: "Inches",
+    2: "Feet",
+    3: "Miles",
+    4: "Millimeters",
+    5: "Centimeters",
+    6: "Meters",
+    7: "Kilometers",
+    8: "Microinches",
+    9: "Mils",
+    10: "Yards",
+    11: "Angstroms",
+    12: "Nanometers",
+    13: "Microns",
+    14: "Decimeters",
+    15: "Decameters",
+    16: "Hectometers",
+    17: "Gigameters",
+    18: "AstronomicalUnits",
+    19: "LightYears",
+    20: "Parsecs"
+  } as Record<number, string>)[value] ?? null;
 }
 
 function buildLayers(rawLayers: Record<string, { name?: string; visible?: boolean; frozen?: boolean }>, entities: CadEntityIndexItem[]) {
@@ -150,6 +186,12 @@ function getEntityBbox(entity: DxfEntity): CadPointBox | null {
   if (Array.isArray(entity.vertices) && entity.vertices.length > 0) {
     return bboxFromPoints(entity.vertices);
   }
+  if (entity.position && (entity.type === "TEXT" || entity.type === "MTEXT" || entity.type === "INSERT")) {
+    return bboxFromPoints([entity.position]);
+  }
+  if ((entity.type === "TEXT" || entity.type === "MTEXT") && entity.startPoint) {
+    return bboxFromPoints([entity.startPoint]);
+  }
   if (entity.startPoint || entity.endPoint) {
     return bboxFromPoints([entity.startPoint, entity.endPoint].filter(Boolean) as DxfPoint[]);
   }
@@ -162,9 +204,6 @@ function getEntityBbox(entity: DxfEntity): CadPointBox | null {
       min: [x - entity.radius, y - entity.radius, z],
       max: [x + entity.radius, y + entity.radius, z]
     };
-  }
-  if (entity.startPoint) {
-    return bboxFromPoints([entity.startPoint]);
   }
   return null;
 }

@@ -30,7 +30,7 @@ test("assembled gateway lists visible skills and runs a selected compatible work
   const listed = await fetch(`${baseUrl}/api/skills`);
   assert.equal(listed.status, 200);
   const list = await listed.json() as { skills: Array<{ id: string; compatible: boolean; recentStatus: string }> };
-  assert.deepEqual(list.skills.map((skill) => skill.id), ["compare-drawings", "extract-schedule", "inspect-drawing"]);
+  assert.deepEqual(list.skills.map((skill) => skill.id), ["compare-drawings", "export-drawing", "extract-schedule", "inspect-drawing"]);
   assert.ok(list.skills.every((skill) => skill.compatible && skill.recentStatus === "idle"));
 
   const run = await post(baseUrl, {

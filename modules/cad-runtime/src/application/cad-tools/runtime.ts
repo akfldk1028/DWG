@@ -59,6 +59,14 @@ export async function executeCadTool(
       };
       return { unsupported: description.unsupported };
     }
+    case "cad_export_report":
+      return runtime.execute("export.report", args, signal);
+    case "cad_export_drawing":
+      return runtime.execute("export.drawing", args, signal);
+    case "cad_get_export_verification":
+      return runtime.execute("verification.get", args, signal);
+    case "cad_request_export_destination":
+      throw new Error("MCP_ELICITATION_UNSUPPORTED");
     default:
       throw new Error(`Unknown CAD tool: ${name}`);
   }

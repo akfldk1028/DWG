@@ -4,6 +4,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   documentationCaptureDirectory,
+  docsExportRoot,
+  e2eExportRoot,
   e2eArtifactPath,
   oauthArtifactPath,
   resolveOwnedFile
@@ -30,6 +32,13 @@ test("workspace-generated visual outputs resolve from the repository root", () =
       "tests/visual/test-results/e2e-artifacts/loaded-1440x900.png"
     )
   );
+});
+
+test("browser export roots are isolated process-owned children", () => {
+  const root = resolve(repositoryRoot, "tests/visual/test-results/export-roots");
+  assert.equal(e2eExportRoot, resolve(root, `e2e-${process.pid}`));
+  assert.equal(docsExportRoot, resolve(root, `docs-${process.pid}`));
+  assert.notEqual(e2eExportRoot, docsExportRoot);
 });
 
 test("owned output paths allow normal and nested filenames", () => {

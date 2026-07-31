@@ -16,9 +16,9 @@ test("uses the assembled export capability endpoint and separates report export 
   const panel = page.getByRole("region", { name: "Export" });
   await expect(panel.getByRole("heading", { name: "Report export" })).toBeVisible();
   await expect(panel.getByRole("heading", { name: "Drawing Save As" })).toBeVisible();
-  await expect(panel.getByText("EXPORT_MODULE_NOT_INSTALLED").first()).toBeVisible();
   await expect(panel.getByRole("button", { name: /Download.*DWG/i })).toHaveCount(0);
-  await expect(panel.getByLabel("Save As destination")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Choose destination" })).toBeVisible();
+  await expect(panel.getByLabel("Base filename")).toBeVisible();
   await expect(panel.getByRole("status")).toContainText("Destination required");
 });
 

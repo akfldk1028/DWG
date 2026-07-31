@@ -7,6 +7,8 @@ export interface RepositoryPaths {
   parserProject: string;
   fixturesRoot: string;
   defaultDrawing: string;
+  cadIoHostProject: string;
+  dwgVersionManifest: string;
 }
 
 export interface RuntimePaths {
@@ -40,6 +42,12 @@ export function createRepositoryPaths(repositoryRoot: string): RepositoryPaths {
     ),
     fixturesRoot: resolve(root, "tests/fixtures"),
     defaultDrawing: resolve(root, "tests/fixtures/dwg/export_sample.dwg")
+    ,
+    cadIoHostProject: resolve(
+      root,
+      "modules/cad-io-acadsharp/src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj"
+    ),
+    dwgVersionManifest: resolve(root, "tests/fixtures/dwg/roundtrip-manifest.json")
   };
 }
 

@@ -37,6 +37,108 @@ export interface ExportCapabilitiesResponse {
   capabilities: ExportCapabilityItem[];
 }
 
+export interface DestinationGrantRequest {}
+export interface DestinationGrantResponse {
+  grantId: string;
+  displayDirectory: string;
+  expiresAt: number;
+}
+export interface CadReportExportRequest {
+  documentId: string;
+  revision: number;
+  format: ReportFormat;
+}
+export interface CadReportExportResponse {
+  downloadId: string;
+  filename: string;
+  mediaType: string;
+  sha256: string;
+}
+export interface CadDrawingExportRequest {
+  documentId: string;
+  expectedRevision: number;
+  destinationGrantId: string;
+  baseFilename: string;
+  format: DrawingFormat;
+  version: string;
+}
+export interface CadDrawingExportResponse {
+  verificationId: string;
+  status: "passed" | "failed";
+}
+export interface CadVerificationResponse {
+  verification: CadOutputVerification;
+}
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const versionPattern = /^AC[0-9]{4}$/u;
+
+export function parseDestinationGrantRequest(value: unknown): DestinationGrantRequest {
+  const object = exportRecord(value, "DESTINATION_GRANT_REQUEST_INVALID");
+  requireExportExactKeys(object, [], "DESTINATION_GRANT_REQUEST_INVALID");
+  return {};
+}
+
+export function parseDestinationGrantResponse(value: unknown): DestinationGrantResponse {
+  const object = exportRecord(value, "DESTINATION_GRANT_RESPONSE_INVALID");
+  requireExportExactKeys(object, ["grantId", "displayDirectory", "expiresAt"], "DESTINATION_GRANT_RESPONSE_INVALID");
+  if (!isUuid(object.grantId) || !isBoundedString(object.displayDirectory, 512) ||
+      !Number.isSafeInteger(object.expiresAt) || (object.expiresAt as number) < 0) {
+    throw new Error("DESTINATION_GRANT_RESPONSE_INVALID");
+  }
+  return object as unknown as DestinationGrantResponse;
+}
+
+export function parseCadReportExportRequest(value: unknown): CadReportExportRequest {
+  const object = exportRecord(value, "CAD_REPORT_EXPORT_REQUEST_INVALID");
+  requireExportExactKeys(object, ["documentId", "revision", "format"], "CAD_REPORT_EXPORT_REQUEST_INVALID");
+  if (!isBoundedString(object.documentId, 512) || !isSafeCount(object.revision) ||
+      !REPORT_FORMATS.includes(object.format as ReportFormat)) {
+    throw new Error("CAD_REPORT_EXPORT_REQUEST_INVALID");
+  }
+  return object as unknown as CadReportExportRequest;
+}
+
+export function parseCadReportExportResponse(value: unknown): CadReportExportResponse {
+  const object = exportRecord(value, "CAD_REPORT_EXPORT_RESPONSE_INVALID");
+  requireExportExactKeys(object, ["downloadId", "filename", "mediaType", "sha256"], "CAD_REPORT_EXPORT_RESPONSE_INVALID");
+  if (!isUuid(object.downloadId) || !isSafeFilename(object.filename) ||
+      !isBoundedString(object.mediaType, 128) || !isSha256(object.sha256)) {
+    throw new Error("CAD_REPORT_EXPORT_RESPONSE_INVALID");
+  }
+  return {
+    ...(object as unknown as CadReportExportResponse),
+    sha256: (object.sha256 as string).toUpperCase()
+  };
+}
+
+export function parseCadDrawingExportRequest(value: unknown): CadDrawingExportRequest {
+  const object = exportRecord(value, "CAD_DRAWING_EXPORT_REQUEST_INVALID");
+  requireExportExactKeys(object, ["documentId", "expectedRevision", "destinationGrantId", "baseFilename", "format", "version"], "CAD_DRAWING_EXPORT_REQUEST_INVALID");
+  if (!isBoundedString(object.documentId, 512) || !isSafeCount(object.expectedRevision) ||
+      !isUuid(object.destinationGrantId) || !isSafeFilename(object.baseFilename) ||
+      !DRAWING_FORMATS.includes(object.format as DrawingFormat) ||
+      typeof object.version !== "string" || !versionPattern.test(object.version)) {
+    throw new Error("CAD_DRAWING_EXPORT_REQUEST_INVALID");
+  }
+  return object as unknown as CadDrawingExportRequest;
+}
+
+export function parseCadDrawingExportResponse(value: unknown): CadDrawingExportResponse {
+  const object = exportRecord(value, "CAD_DRAWING_EXPORT_RESPONSE_INVALID");
+  requireExportExactKeys(object, ["verificationId", "status"], "CAD_DRAWING_EXPORT_RESPONSE_INVALID");
+  if (!isUuid(object.verificationId) || (object.status !== "passed" && object.status !== "failed")) {
+    throw new Error("CAD_DRAWING_EXPORT_RESPONSE_INVALID");
+  }
+  return object as unknown as CadDrawingExportResponse;
+}
+
+export function parseCadVerificationResponse(value: unknown): CadVerificationResponse {
+  const object = exportRecord(value, "CAD_VERIFICATION_RESPONSE_INVALID");
+  requireExportExactKeys(object, ["verification"], "CAD_VERIFICATION_RESPONSE_INVALID");
+  return { verification: parseCadOutputVerification(object.verification) };
+}
+
 const formats = new Set<ExportFormat>([...REPORT_FORMATS, ...DRAWING_FORMATS]);
 const exportKinds = new Set<ExportKind>(["report", "drawing"]);
 
@@ -129,6 +231,26 @@ function record(value: unknown): Record<string, unknown> {
     throw new Error("EXPORT_CAPABILITIES_RESPONSE_INVALID");
   }
   return value as Record<string, unknown>;
+}
+
+function exportRecord(value: unknown, code: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(code);
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) throw new Error(code);
+  return value as Record<string, unknown>;
+}
+
+function requireExportExactKeys(value: Record<string, unknown>, expected: string[], code: string) {
+  if (!hasExactKeys(value, expected)) throw new Error(code);
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && uuidPattern.test(value);
+}
+
+function isSafeFilename(value: unknown): value is string {
+  return isBoundedString(value, 255) && value === value.normalize("NFKC") &&
+    !/[\\/:<>|?*\u0000-\u001f]/u.test(value) && value !== "." && value !== "..";
 }
 
 function cadOutputRecord(value: unknown): Record<string, unknown> {

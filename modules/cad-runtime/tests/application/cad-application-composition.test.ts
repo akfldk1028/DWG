@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -207,3 +208,24 @@ function fakeIndex() {
     unsupported: []
   };
 }
+
+test("application composes export capabilities into the transaction owner", async () => {
+  const application = await createCadApplication();
+  assert.deepEqual(application.capabilityNames.slice(-3), [
+    "export.report",
+    "export.drawing",
+    "verification.get"
+  ]);
+});
+
+test("gateway MCP stdio and CLI stay thin over the same application factory", async () => {
+  for (const path of [
+    "modules/cad-runtime/src/http/gateway.ts",
+    "modules/cad-runtime/src/mcp/stdio.ts",
+    "modules/cad-runtime/harness/run-skill.ts"
+  ]) {
+    const source = await readFile(path, "utf8");
+    assert.match(source, /createCadApplication\s*\(/u, path);
+    assert.doesNotMatch(source, /createCadToolRuntime\s*\(/u, path);
+  }
+});
