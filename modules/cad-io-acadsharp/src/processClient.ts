@@ -132,6 +132,7 @@ export function createAcadSharpCadIoClient(options: {
         "run",
         "--project",
         projectPath,
+        "--no-build",
         "--no-launch-profile",
         "--"
       ];

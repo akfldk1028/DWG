@@ -44,6 +44,7 @@ test("maps save lineage to the exact strict wire DTO without snapshots or unknow
     "run",
     "--project",
     "C:\\repo\\CadIo.Host.csproj",
+    "--no-build",
     "--no-launch-profile",
     "--"
   ]);
