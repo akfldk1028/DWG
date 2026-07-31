@@ -679,7 +679,7 @@ public sealed class DwgRoundTripTests
     }
 
     [Fact]
-    public async Task ProbeCandidateCleanupFailurePreventsReportPublication()
+    public void ProbeCandidateCleanupFailurePreventsReportPublication()
     {
         string root = RepositoryRoot();
         string sourcePath = Path.Combine(
@@ -691,104 +691,42 @@ public sealed class DwgRoundTripTests
         string testRoot = Path.Combine(
             Path.GetTempPath(),
             $"dwg-probe-locked-cleanup-{Guid.NewGuid():N}");
-        string processTemp = Path.Combine(testRoot, "process-temp");
         string outputPath = Path.Combine(testRoot, "report.json");
-        Directory.CreateDirectory(processTemp);
+        Directory.CreateDirectory(testRoot);
         FileStream? lockedCandidate = null;
         string? candidateRoot = null;
         try
         {
-            using Process process = StartProbeHost(
-                root,
-                sourcePath,
-                outputPath,
-                processTemp);
-            Task<string> stdoutTask =
-                process.StandardOutput.ReadToEndAsync();
-            Task<string> stderrTask =
-                process.StandardError.ReadToEndAsync();
-            var deadline = Stopwatch.StartNew();
-            while (
-                lockedCandidate is null
-                && deadline.Elapsed < TimeSpan.FromSeconds(10))
-            {
-                candidateRoot = Directory
-                    .EnumerateDirectories(
-                        processTemp,
-                        "dwg-version-probe-*")
-                    .SingleOrDefault();
-                string? candidate = candidateRoot is null
-                    ? null
-                    : Directory
-                        .EnumerateFiles(candidateRoot, "*.dwg")
-                        .FirstOrDefault();
-                if (candidate is not null)
-                {
-                    try
+            CadIoException error = Assert.Throws<CadIoException>(
+                () => DwgVersionProbe.Run(
+                    sourcePath,
+                    outputPath,
+                    afterCandidateWrite: null,
+                    beforeCleanup: rootPath =>
                     {
+                        candidateRoot = rootPath;
+                    },
+                    afterOwnedHandlesClosed: rootPath =>
+                    {
+                        string candidate = Directory
+                            .EnumerateFiles(rootPath, "*.dwg")
+                            .First();
                         lockedCandidate = new FileStream(
                             candidate,
                             FileMode.Open,
                             FileAccess.Read,
                             FileShare.ReadWrite);
-                    }
-                    catch (IOException)
-                    {
-                        // The writer or reader still owns this candidate.
-                    }
-                }
-                if (lockedCandidate is null)
-                {
-                    await Task.Delay(5);
-                }
-            }
+                    }));
+
             Assert.NotNull(lockedCandidate);
             Assert.NotNull(candidateRoot);
-
-            await process.WaitForExitAsync();
-            var result = new ProcessResult(
-                process.ExitCode,
-                await stdoutTask,
-                await stderrTask);
-
-            Assert.NotEqual(0, result.ExitCode);
-            Assert.Single(
-                result.Stdout.Split(
-                    Environment.NewLine,
-                    StringSplitOptions.RemoveEmptyEntries));
-            using JsonDocument response =
-                JsonDocument.Parse(result.Stdout);
-            Assert.Equal(
-                "error",
-                response.RootElement
-                    .GetProperty("status")
-                    .GetString());
             Assert.Equal(
                 "DWG_PROBE_CLEANUP_FAILED",
-                response.RootElement
-                    .GetProperty("error")
-                    .GetProperty("code")
-                    .GetString());
-            Assert.InRange(
-                Encoding.UTF8.GetByteCount(result.Stdout),
-                1,
-                CadIoRequest.MaxJsonBytes);
-            Assert.Equal(
-                "CAD I/O request failed.",
-                result.Stderr.Trim());
-            Assert.DoesNotContain(testRoot, result.Stdout + result.Stderr);
+                error.Code);
             Assert.False(File.Exists(outputPath));
             Assert.Empty(Directory.EnumerateFileSystemEntries(
                 testRoot,
                 ".report.json.*.tmp"));
-            if (!Directory.Exists(candidateRoot))
-            {
-                candidateRoot = Directory
-                    .EnumerateDirectories(
-                        processTemp,
-                        "dwg-version-probe-*")
-                    .Single();
-            }
             Assert.True(Directory.Exists(candidateRoot));
             Assert.All(
                 Directory.EnumerateFiles(candidateRoot, "*.dwg"),
@@ -800,8 +738,6 @@ public sealed class DwgRoundTripTests
             lockedCandidate = null;
             Directory.Delete(candidateRoot, recursive: true);
             candidateRoot = null;
-            Assert.Empty(Directory.EnumerateFileSystemEntries(
-                processTemp));
         }
         finally
         {

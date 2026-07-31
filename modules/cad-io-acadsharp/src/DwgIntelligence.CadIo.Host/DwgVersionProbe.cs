@@ -32,7 +32,8 @@ public static class DwgVersionProbe
         Action<string>? afterCandidateWrite,
         Action<string>? beforeCleanup,
         Action<string>? afterDeleteIdentityVerified = null,
-        Action<string>? beforeReportTempCleanup = null)
+        Action<string>? beforeReportTempCleanup = null,
+        Action<string>? afterOwnedHandlesClosed = null)
     {
         string source = Path.GetFullPath(sourcePath);
         string output = Path.GetFullPath(outputPath);
@@ -108,7 +109,8 @@ public static class DwgVersionProbe
                 tempRoot,
                 ownerToken,
                 ownedFiles,
-                afterDeleteIdentityVerified);
+                afterDeleteIdentityVerified,
+                afterOwnedHandlesClosed);
         }
 
         var report = new DwgVersionProbeReport(
@@ -202,7 +204,8 @@ public static class DwgVersionProbe
                 originalPath,
                 ownerToken,
                 ownedFiles,
-                afterDeleteIdentityVerified: null);
+                afterDeleteIdentityVerified: null,
+                afterOwnedHandlesClosed: null);
         }
         finally
         {
@@ -214,13 +217,15 @@ public static class DwgVersionProbe
         string originalPath,
         string ownerToken,
         ICollection<OwnedProbeFile> ownedFiles,
-        Action<string>? afterDeleteIdentityVerified)
+        Action<string>? afterDeleteIdentityVerified,
+        Action<string>? afterOwnedHandlesClosed)
     {
         Exception? closeFailure = NeutralizeAndClose(ownedFiles);
         if (closeFailure is not null)
         {
             throw CleanupFailed(closeFailure);
         }
+        afterOwnedHandlesClosed?.Invoke(originalPath);
         string quarantinePath = Path.Combine(
             Path.GetDirectoryName(originalPath)
                 ?? Path.GetTempPath(),
