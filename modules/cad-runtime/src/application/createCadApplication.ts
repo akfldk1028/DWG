@@ -62,6 +62,15 @@ export interface DestinationSelectionProvider {
   } | null>;
 }
 
+export class CadActiveDocumentError extends Error {
+  readonly code = "ACTIVE_DOCUMENT_CONFLICT";
+
+  constructor() {
+    super("Another CAD document is already active.");
+    this.name = "CadActiveDocumentError";
+  }
+}
+
 export interface CadApplicationConfig {
   workspaceRoot: string;
   drawingPath: string;
@@ -120,6 +129,7 @@ export async function createCadApplication(
   let activePath = options.drawingPath
     ? resolveWorkspaceCadPath(workspaceRoot, options.drawingPath)
     : null;
+  let activePathKey: string | null = activePath;
   const sourceSha256 = options.sourceSha256 ??
     (activePath
       ? await readSourceSha256(activePath)
@@ -147,7 +157,11 @@ export async function createCadApplication(
       const resolvedPath = options.read && activePath === null
         ? null
         : resolveWorkspaceCadPath(workspaceRoot, path);
-      if (activePath !== null && resolvedPath === activePath) return currentIndex();
+      const pathKey = resolvedPath ?? path;
+      if (activePathKey !== null) {
+        if (pathKey === activePathKey) return currentIndex();
+        throw new CadActiveDocumentError();
+      }
       const opened = await sourceRead.open(path, signal);
       if (activeDrawingId === "cad:unopened") {
         if (signal?.aborted) throw signal.reason;
@@ -158,6 +172,7 @@ export async function createCadApplication(
         activeHistory = createCadEditHistory(createDocumentSnapshot(opened, openedSha256));
         activeDrawingId = opened.drawingId;
         activePath = resolvedPath;
+        activePathKey = pathKey;
         drawingModule = createDrawingSaveModule({
           history,
           grants,
@@ -169,7 +184,11 @@ export async function createCadApplication(
         });
         return currentIndex();
       }
-      return opened.drawingId === activeDrawingId ? currentIndex() : opened;
+      if (opened.drawingId !== activeDrawingId) {
+        throw new CadActiveDocumentError();
+      }
+      activePathKey = pathKey;
+      return currentIndex();
     },
     get(drawingId) {
       return drawingId === activeDrawingId ? currentIndex() : sourceRead.get(drawingId);
@@ -194,7 +213,18 @@ export async function createCadApplication(
     transactions: edit.transactions,
     capabilityNames: CAD_APPLICATION_CAPABILITY_NAMES,
     currentIndex,
-    readIndex: (path, signal) => read.open(path, signal),
+    async readIndex(path, signal) {
+      if (signal?.aborted) throw signal.reason;
+      const resolvedPath = options.read && activePath === null
+        ? null
+        : resolveWorkspaceCadPath(workspaceRoot, path);
+      const pathKey = resolvedPath ?? path;
+      if (activePathKey !== null && pathKey === activePathKey) {
+        return currentIndex();
+      }
+      const opened = await sourceRead.open(path, signal);
+      return opened.drawingId === activeDrawingId ? currentIndex() : opened;
+    },
     async requestDestinationGrant(signal) {
       const selection = options.destinationSelector
         ? await options.destinationSelector.request(signal)

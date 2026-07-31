@@ -1,8 +1,9 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
   MAX_SKILL_JSON_BYTES,
+  parseCadReportExportResponse,
   parseSkillRunRequest
 } from "@dwg/contracts";
 import {
@@ -28,6 +29,11 @@ interface SkillSummary {
   changeCount: number;
   warningCount: number;
   hasPreview: boolean;
+  artifact?: {
+    filename: string;
+    mediaType: string;
+    sha256: string;
+  };
 }
 
 const MAX_CLI_DRAWING_PATH_CHARS = 4_096;
@@ -102,7 +108,7 @@ async function run(parsed: SkillCliArguments): Promise<void> {
     const controller = new AbortController();
     const signal = controller.signal;
     const isComparisonPreload = beforePath !== undefined && afterPath !== undefined;
-    const scope = skillId === "export-drawing"
+    const scope = skillId === "export-drawing" || skillId === "export-report"
       ? {
           documentId: application.currentIndex().drawingId,
           relatedDocumentIds: [] as string[]
@@ -111,7 +117,7 @@ async function run(parsed: SkillCliArguments): Promise<void> {
       ? await preloadCliComparisonScope(
         beforePath,
         afterPath,
-        application.capabilities,
+        (path, readSignal) => application.readIndex(path, readSignal),
         signal
       )
       : await resolveCliDocumentScope(
@@ -142,8 +148,13 @@ async function run(parsed: SkillCliArguments): Promise<void> {
     if (!skill || !skill.compatible) throw new Error("SKILL_UNAVAILABLE");
     const workflow = await loadCadSkillWorkflow(skill);
     const hostInput = skillId === "export-drawing"
-      ? await createExportHostInput(application, scope.documentId, signal)
-      : {};
+      ? await createDrawingExportHostInput(application, scope.documentId, signal)
+      : skillId === "export-report"
+        ? createReportExportHostInput(application, scope.documentId)
+        : {};
+    const skillCapabilities = skillId === "export-report"
+      ? createReportSkillRuntime(application)
+      : application.capabilities;
     const result = await runCadSkillWorkflow({
       skill,
       workflow,
@@ -152,17 +163,21 @@ async function run(parsed: SkillCliArguments): Promise<void> {
       documentId: request.documentId,
       relatedDocumentIds: request.relatedDocumentIds,
       grantedPermissions: skill.manifest.permissions,
-      capabilities: application.capabilities,
+      capabilities: skillCapabilities,
       signal
     });
     const final = result.status === "passed" ? result.steps.at(-1)?.output : null;
+    const artifact = skillId === "export-report" && result.status === "passed"
+      ? await retainCliReport(application, exportRoot, final)
+      : undefined;
     const warningCount = result.status === "passed" ? result.warnings.length : failureCount(result);
     writeSummary({
       skillId: request.skillId,
       status: result.status === "passed" ? "passed" : "failed",
       changeCount: countOf(final),
       warningCount,
-      hasPreview: previewOf(final)
+      hasPreview: previewOf(final),
+      artifact
     });
     process.exitCode = result.status === "passed" ? 0 : 1;
   } catch {
@@ -209,7 +224,10 @@ function parseArguments(args: string[]): SkillCliArguments | null {
     )
   ) return null;
   if (args[1] === "compare-drawings" && !hasComparisonPreload) return null;
-  if (args[1] === "export-drawing" && drawingPath === undefined) return null;
+  if (
+    (args[1] === "export-drawing" || args[1] === "export-report") &&
+    drawingPath === undefined
+  ) return null;
   return {
     skillId: args[1],
     inputPath: args[3],
@@ -230,7 +248,7 @@ function drawingPathFromInput(value: unknown): string | undefined {
     : undefined;
 }
 
-async function createExportHostInput(
+async function createDrawingExportHostInput(
   application: Awaited<ReturnType<typeof createCadApplication>>,
   documentId: string,
   signal: AbortSignal
@@ -240,6 +258,47 @@ async function createExportHostInput(
   return {
     documentId,
     destinationGrantId: grant.grantId
+  };
+}
+
+function createReportExportHostInput(
+  application: Awaited<ReturnType<typeof createCadApplication>>,
+  documentId: string
+): { documentId: string; revision: number } {
+  const index = application.currentIndex();
+  return {
+    documentId,
+    revision: index.schemaVersion === "cad-index/v0.2"
+      ? index.drawing?.revision ?? 0
+      : 0
+  };
+}
+
+function createReportSkillRuntime(
+  application: Awaited<ReturnType<typeof createCadApplication>>
+): typeof application.capabilities {
+  return {
+    execute(name, input, signal) {
+      return name === "export.report"
+        ? application.createReportDownload(input, signal)
+        : application.capabilities.execute(name, input, signal);
+    }
+  };
+}
+
+async function retainCliReport(
+  application: Awaited<ReturnType<typeof createCadApplication>>,
+  exportRoot: string,
+  value: unknown
+): Promise<NonNullable<SkillSummary["artifact"]>> {
+  const reference = parseCadReportExportResponse(value);
+  const report = application.consumeReportDownload(reference.downloadId);
+  if (!report) throw new Error("REPORT_DOWNLOAD_UNKNOWN");
+  await writeFile(resolve(exportRoot, reference.filename), report.bytes);
+  return {
+    filename: reference.filename,
+    mediaType: reference.mediaType,
+    sha256: reference.sha256
   };
 }
 

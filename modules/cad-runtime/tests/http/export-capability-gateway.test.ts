@@ -7,6 +7,7 @@ import test from "node:test";
 import { createCadApplication } from "../../src/application/createCadApplication.js";
 import { createCadGatewayServer } from "../../src/http/gateway.js";
 import { defaultProcessRunner } from "../../src/providers/cli/processRunner.js";
+import { parseCadExportErrorResponse } from "@dwg/contracts";
 
 test("assembled gateway publishes every available report and drawing export capability", async (context) => {
   const server = await createCadGatewayServer({
@@ -97,6 +98,34 @@ test("assembled gateway issues path-free grants and serves report downloads once
   );
   assert.equal(unknownVerification.status, 404);
   assert.equal(exportErrorCode(await unknownVerification.json()), "VERIFICATION_UNKNOWN");
+});
+
+test("destination picker cancellation returns the strict public export error DTO", async (context) => {
+  const application = await createCadApplication({
+    workspaceRoot: process.cwd(),
+    drawingPath: "tests/fixtures/dxf/minimal-architectural.dxf",
+    destinationSelector: {
+      async request() {
+        return null;
+      }
+    }
+  });
+  const server = await createCadGatewayServer({ application });
+  const base = await listen(server, context);
+
+  const response = await fetch(`${base}/api/export/destination-grants`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(parseCadExportErrorResponse(await response.json()), {
+    error: {
+      code: "DESTINATION_SELECTION_CANCELLED",
+      message: "Destination selection was cancelled."
+    }
+  });
 });
 
 test("unclaimed report downloads are count bounded and consuming one releases capacity", async (context) => {

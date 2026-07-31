@@ -1,5 +1,8 @@
 import type { CadCapabilityRuntime } from "@dwg/cad-capabilities";
-import { MAX_SKILL_RELATED_DOCUMENT_IDS } from "@dwg/contracts";
+import {
+  MAX_SKILL_RELATED_DOCUMENT_IDS,
+  type CadEntityIndex
+} from "@dwg/contracts";
 
 export interface CliDocumentScope {
   documentId: string;
@@ -37,19 +40,11 @@ export async function resolveCliDocumentScope(
 export async function preloadCliComparisonScope(
   beforePath: string,
   afterPath: string,
-  capabilities: CadCapabilityRuntime,
+  readIndex: (path: string, signal?: AbortSignal) => Promise<CadEntityIndex>,
   signal: AbortSignal
 ): Promise<CliDocumentScope> {
-  const before = await capabilities.execute(
-    "document.open",
-    { path: beforePath },
-    signal
-  ) as { drawingId?: unknown };
-  const after = await capabilities.execute(
-    "document.open",
-    { path: afterPath },
-    signal
-  ) as { drawingId?: unknown };
+  const before = await readIndex(beforePath, signal);
+  const after = await readIndex(afterPath, signal);
   if (
     !validDocumentId(before.drawingId) ||
     !validDocumentId(after.drawingId) ||

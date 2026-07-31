@@ -1,4 +1,7 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  ResourceTemplate
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { CadCapabilityRuntime } from "@dwg/cad-capabilities";
 import {
@@ -12,19 +15,40 @@ import { executeCadTool } from "../application/cad-tools/runtime.js";
 import { CAD_TOOL_DEFINITIONS } from "./toolDefinitions.js";
 
 type ToolArguments = Record<string, unknown>;
+type ReportToolContent =
+  | { type: "text"; text: string }
+  | {
+      type: "resource_link";
+      uri: string;
+      name: string;
+      mimeType: string;
+    };
+type ReportResource = {
+  format: "json" | "csv" | "pdf" | "svg";
+  mediaType: string;
+  filename: string;
+  bytes: Uint8Array;
+  sha256: string;
+};
+type McpExportServices = {
+  requestDestinationGrant?(signal?: AbortSignal): Promise<unknown>;
+  createReportDownload?(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
+  consumeReportDownload?(downloadId: string): ReportResource | null;
+  displayDirectory?: string;
+};
+const reportResourceIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function createCadMcpServer(
   runtime: CadCapabilityRuntime,
-  services: {
-    requestDestinationGrant?(signal?: AbortSignal): Promise<unknown>;
-    createReportDownload?(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
-    displayDirectory?: string;
-  } = {}
+  services: McpExportServices = {}
 ): McpServer {
   const server = new McpServer({
     name: "dwg-intelligence",
     version: "0.1.0"
   });
+
+  registerReportResource(server, services);
 
   for (const definition of CAD_TOOL_DEFINITIONS) {
     server.registerTool(
@@ -62,13 +86,21 @@ export function createCadMcpServer(
               );
           const structuredContent = asStructuredContent(result);
 
+          const content: ReportToolContent[] = [{
+            type: "text" as const,
+            text: JSON.stringify(structuredContent)
+          }];
+          if (definition.name === "cad_export_report") {
+            const report = parseCadReportExportResponse(structuredContent);
+            content.push({
+              type: "resource_link" as const,
+              uri: reportResourceUri(report.downloadId),
+              name: report.filename,
+              mimeType: report.mediaType
+            });
+          }
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(structuredContent)
-              }
-            ],
+            content,
             structuredContent
           };
         } catch (error) {
@@ -99,11 +131,7 @@ export function createCadMcpServer(
 
 async function requestExportDestination(
   server: McpServer,
-  services: {
-    requestDestinationGrant?(signal?: AbortSignal): Promise<unknown>;
-    createReportDownload?(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
-    displayDirectory?: string;
-  },
+  services: McpExportServices,
   signal?: AbortSignal
 ): Promise<unknown> {
   if (
@@ -139,6 +167,10 @@ async function requestExportDestination(
   return grant;
 }
 
+function reportResourceUri(downloadId: string): string {
+  return `cad-report://reports/${downloadId}`;
+}
+
 async function requestReportDownload(
   services: {
     createReportDownload?(input: unknown, signal?: AbortSignal): Promise<CadReportExportResponse>;
@@ -156,6 +188,51 @@ function publicDrawingResponse(value: unknown) {
     verificationId: verification.id,
     status: verification.status
   });
+}
+
+function registerReportResource(
+  server: McpServer,
+  services: McpExportServices
+): void {
+  server.registerResource(
+    "cad-export-report",
+    new ResourceTemplate("cad-report://reports/{downloadId}", {
+      list: undefined
+    }),
+    {
+      title: "CAD export report",
+      description: "Single-use bounded report generated from the active CAD document."
+    },
+    async (uri, variables) => {
+      const downloadId = variables.downloadId;
+      if (
+        typeof downloadId !== "string" ||
+        !reportResourceIdPattern.test(downloadId) ||
+        !services.consumeReportDownload
+      ) {
+        throw new Error("REPORT_RESOURCE_UNKNOWN");
+      }
+      const report = services.consumeReportDownload(downloadId);
+      if (!report) throw new Error("REPORT_RESOURCE_UNKNOWN");
+      const common = {
+        uri: uri.href,
+        mimeType: report.mediaType
+      };
+      return {
+        contents: [
+          report.format === "pdf"
+            ? {
+                ...common,
+                blob: Buffer.from(report.bytes).toString("base64")
+              }
+            : {
+                ...common,
+                text: new TextDecoder("utf-8", { fatal: true }).decode(report.bytes)
+              }
+        ]
+      };
+    }
+  );
 }
 
 function isExactConfirmation(value: Record<string, unknown>): boolean {

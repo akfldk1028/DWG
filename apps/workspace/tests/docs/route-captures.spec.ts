@@ -98,11 +98,12 @@ test("renders a single overview contact sheet", async ({ page }) => {
   );
   await expect(page.locator("img")).toHaveCount(4);
   await expect(page.locator("img").last()).toBeVisible();
-  await page.screenshot({
-    path: documentationCapturePath("00-overview.png"),
-    fullPage: true,
-    animations: "disabled"
+  await page.evaluate(async () => {
+    await Promise.all(
+      [...document.images].map((image) => image.decode())
+    );
   });
+  await capture(page, "00-overview.png");
 });
 
 test("captures verified Save As and report download through visible controls", async ({ page }) => {

@@ -139,6 +139,67 @@ test("first open establishes one document lineage for inspect edit report and ve
   );
 });
 
+test("active document rejects a different open while comparison reads remain available", async () => {
+  const before = editableIndex();
+  const after = {
+    ...editableIndex(),
+    drawingId: "dwg:comparison",
+    entities: editableIndex().entities.map((entity) => ({
+      ...entity,
+      bbox: {
+        min: [10, 0, 0] as [number, number, number],
+        max: [11, 1, 0] as [number, number, number]
+      },
+      geometry: {
+        kind: "line" as const,
+        start: [10, 0, 0] as [number, number, number],
+        end: [11, 1, 0] as [number, number, number]
+      }
+    }))
+  };
+  const opened = new Map<string, typeof before>();
+  const application = await createCadApplication({
+    read: {
+      async open(path) {
+        const index = path === "active.dxf" ? before : after;
+        opened.set(index.drawingId, index);
+        return index;
+      },
+      get: (drawingId) => opened.get(drawingId) ?? null
+    },
+    sourceSha256: "a".repeat(64)
+  });
+
+  const first = await application.capabilities.execute("document.open", {
+    path: "active.dxf"
+  }) as { drawingId: string };
+  const same = await application.capabilities.execute("document.open", {
+    path: "active.dxf"
+  }) as { drawingId: string };
+  assert.equal(first.drawingId, before.drawingId);
+  assert.equal(same.drawingId, before.drawingId);
+  await assert.rejects(
+    application.capabilities.execute("document.open", {
+      path: "comparison.dxf"
+    }),
+    (error) => (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: unknown }).code === "ACTIVE_DOCUMENT_CONFLICT" &&
+      error.message === "Another CAD document is already active."
+    )
+  );
+
+  const comparison = await application.readIndex("comparison.dxf");
+  assert.equal(comparison.drawingId, after.drawingId);
+  const result = await application.capabilities.execute("query.compare", {
+    beforeDrawingId: before.drawingId,
+    afterDrawingId: after.drawingId
+  }) as { changed: unknown[] };
+  assert.equal(result.changed.length, 1);
+  assert.equal(application.currentIndex().drawingId, before.drawingId);
+});
+
 test("root CAD application composes one named capability set for adapters and forwards cancellation", async (context) => {
   let receivedSignal: AbortSignal | undefined;
   const index = fakeIndex();

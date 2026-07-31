@@ -29,7 +29,8 @@ const expectedCapabilities: Record<string, readonly string[]> = {
   "inspect-drawing": ["document.open", "document.describe", "query.layers", "query.entities"],
   "extract-schedule": ["query.text", "query.schedule"],
   "compare-drawings": ["query.compare"],
-  "export-drawing": ["export.drawing"]
+  "export-drawing": ["export.drawing"],
+  "export-report": ["export.report"]
 };
 const stableRunnerFailureCodes = new Set([
   "CAPABILITY_EXECUTION_FAILED",
@@ -65,10 +66,14 @@ test("discovers the grounded built-in skills with exact permissions", async () =
   for (const skill of skills) {
     assert.deepEqual(
       skill.manifest.permissions,
-      skill.manifest.id === "export-drawing" ? ["write-copy", "export"] : ["read"]
+      skill.manifest.id === "export-drawing"
+        ? ["write-copy", "export"]
+        : skill.manifest.id === "export-report"
+          ? ["export"]
+          : ["read"]
     );
     assert.deepEqual(skill.manifest.capabilities, expectedCapabilities[skill.manifest.id]);
-    if (skill.manifest.id === "export-drawing") continue;
+    if (skill.manifest.id.startsWith("export-")) continue;
     assert.match(skill.instructions, /^---\r?\nname: [a-z0-9]+(?:-[a-z0-9]+)*\r?\ndescription: Use when .+\r?\n---\r?\n/);
     assert.match(skill.instructions, /model geometry inference is forbidden/i);
     assert.match(skill.instructions, /unsupported/i);

@@ -59,3 +59,34 @@ test("failed Save As consumes the selected grant and requires a new destination"
   await expect(save).toBeDisabled();
   expect(saveAttempts).toBe(1);
 });
+
+test("disables every export control while a destination action is in flight", async ({ page }) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/export/destination-grants", async (route) => {
+    await pending;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        grantId: "11111111-1111-4111-8111-111111111111",
+        displayDirectory: "Exports",
+        expiresAt: Date.now() + 60_000
+      })
+    });
+  });
+  await page.getByRole("tab", { name: "Export", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Export" });
+  await panel.getByRole("button", { name: "Choose destination" }).click();
+
+  await expect(panel.getByRole("button", { name: "Choose destination" })).toBeDisabled();
+  await expect(panel.getByLabel("Base filename")).toBeDisabled();
+  for (const button of await panel.getByRole("button").all()) {
+    await expect(button).toBeDisabled();
+  }
+
+  release();
+  await expect(panel.getByRole("status")).toContainText("Destination selected: Exports");
+  await expect(panel.getByRole("button", { name: "Choose destination" })).toBeEnabled();
+  await expect(panel.getByLabel("Base filename")).toBeEnabled();
+});

@@ -26,6 +26,36 @@ test("export-drawing declares exact write-copy and export permissions", async ()
   assert.deepEqual(workflow.steps.map((step) => step.capability), ["export.drawing"]);
 });
 
+test("export-report binds only host document state and declares export permission", async () => {
+  const root = resolve("skills/export-report");
+  const manifest = parseCadSkillManifest(
+    JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"))
+  );
+  assert.deepEqual(manifest.permissions, ["export"]);
+  assert.deepEqual(manifest.capabilities, ["export.report"]);
+  assert.deepEqual(manifest.inputSchema, {
+    type: "object",
+    required: ["format"],
+    properties: {
+      format: { enum: ["json", "csv", "pdf", "svg"] }
+    },
+    additionalProperties: false
+  });
+  const workflow = JSON.parse(
+    await readFile(resolve(root, "workflows/default.json"), "utf8")
+  ) as { steps: Array<{ capability: string; input: Record<string, unknown> }> };
+  assert.deepEqual(workflow.steps, [{
+    id: "report",
+    capability: "export.report",
+    input: {
+      documentId: "$host.documentId",
+      revision: "$host.revision",
+      format: "$input.format"
+    }
+  }]);
+  assert.doesNotMatch(JSON.stringify({ manifest, workflow }), /path|grant/iu);
+});
+
 test("CLI injects a real host grant and executes export-drawing without a grant or path in skill input", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "cad-export-skill-cli-"));
   t.after(() => rm(root, { force: true, recursive: true }));
@@ -73,6 +103,62 @@ test("CLI injects a real host grant and executes export-drawing without a grant 
     await readFile(resolve(exportRoot, "cli-host-grant.dxf")).then(() => true, () => false),
     true
   );
+});
+
+test("CLI executes export-report with host-only scope and retains accessible bounded content", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cad-report-skill-cli-"));
+  t.after(() => rm(root, { force: true, recursive: true }));
+  const inputPath = join(root, "input.json");
+  await writeFile(inputPath, JSON.stringify({ format: "json" }));
+  const child = spawn(process.execPath, [
+    "--import",
+    "tsx",
+    "modules/cad-runtime/harness/run-skill.ts",
+    "--skill",
+    "export-report",
+    "--input",
+    inputPath,
+    "--drawing",
+    "tests/fixtures/dxf/minimal-architectural.dxf"
+  ], {
+    cwd: resolve("."),
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const exportRoot = resolve(`tests/visual/test-results/export-roots/cli-${child.pid}`);
+  t.after(() => rm(exportRoot, { force: true, recursive: true }));
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+  const exitCode = await new Promise<number | null>((resolveExit, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolveExit);
+  });
+
+  assert.equal(exitCode, 0, stderr);
+  const summary = JSON.parse(stdout.trim()) as {
+    skillId: string;
+    status: string;
+    artifact: {
+      filename: string;
+      mediaType: string;
+      sha256: string;
+    };
+  };
+  assert.equal(summary.skillId, "export-report");
+  assert.equal(summary.status, "passed");
+  assert.deepEqual(Object.keys(summary.artifact).sort(), [
+    "filename",
+    "mediaType",
+    "sha256"
+  ]);
+  assert.match(summary.artifact.mediaType, /^application\/json/u);
+  assert.match(summary.artifact.sha256, /^[0-9A-F]{64}$/u);
+  const report = JSON.parse(
+    await readFile(resolve(exportRoot, summary.artifact.filename), "utf8")
+  );
+  assert.equal(report.document.documentId, "86be7bbdf2ca52e4");
+  assert.doesNotMatch(stdout + stderr, /destinationGrantId|[A-Za-z]:[\\/]/u);
 });
 
 test("export-drawing denies missing write-copy permission and honors pre-execution cancellation", async (t) => {

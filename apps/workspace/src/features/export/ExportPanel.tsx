@@ -13,6 +13,7 @@ export function ExportPanel() {
     setBaseFilename,
     status,
     error,
+    busy,
     chooseDestination,
     saveDrawing,
     downloadReport
@@ -34,7 +35,7 @@ export function ExportPanel() {
         <p>Download a bounded report from the active document revision.</p>
         <div className="export-actions">
           {reports.map((item) => (
-            <button disabled={!item.available} key={item.format} onClick={() => void downloadReport(item.format as ReportFormat)}>
+            <button disabled={busy || !item.available} key={item.format} onClick={() => void downloadReport(item.format as ReportFormat)}>
               <Download size={13} />Download {item.format.toUpperCase()} report
             </button>
           ))}
@@ -43,16 +44,16 @@ export function ExportPanel() {
       <section aria-labelledby="drawing-save-heading" className="export-group drawing-save">
         <h2 id="drawing-save-heading">Drawing Save As</h2>
         <p>The source stays read-only. A one-use host grant selects the copy destination.</p>
-        <button onClick={() => void chooseDestination()}><FolderOpen size={13} />Choose destination</button>
+        <button disabled={busy} onClick={() => void chooseDestination()}><FolderOpen size={13} />Choose destination</button>
         <p>{destinationLabel}</p>
         <label>
           <span>Base filename</span>
-          <input aria-label="Base filename" onChange={(event) => setBaseFilename(event.target.value)} value={baseFilename} />
+          <input aria-label="Base filename" disabled={busy} onChange={(event) => setBaseFilename(event.target.value)} value={baseFilename} />
         </label>
         <p className="destination-status" role="status">{status}</p>
         <div className="export-actions">
           {drawings.map((item) => (
-            <button disabled={!item.available || !destination} key={item.format} onClick={() => void saveDrawing(item.format as DrawingFormat)}>
+            <button disabled={busy || !item.available || !destination} key={item.format} onClick={() => void saveDrawing(item.format as DrawingFormat)}>
               <Save size={13} />Save As {item.format.toUpperCase()}
             </button>
           ))}

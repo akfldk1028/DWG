@@ -360,13 +360,14 @@ test("forwards MCP cancellation to destination grant selection", async (t) => {
   assert.equal(receivedSignal.aborted, true);
 });
 
-test("MCP report export returns only the bounded public download reference", async (t) => {
+test("MCP report export links one single-use application-local resource", async (t) => {
   const application = await createCadApplication({
     workspaceRoot: process.cwd(),
     drawingPath: "tests/fixtures/dxf/minimal-architectural.dxf"
   });
   const server = createCadMcpServer(application.capabilities, {
-    createReportDownload: (input, signal) => application.createReportDownload(input, signal)
+    createReportDownload: (input, signal) => application.createReportDownload(input, signal),
+    consumeReportDownload: (downloadId) => application.consumeReportDownload(downloadId)
   });
   const client = new Client({ name: "cad-report-client", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -389,6 +390,28 @@ test("MCP report export returns only the bounded public download reference", asy
   assert.match(response.filename, /\.json$/u);
   assert.equal(Object.hasOwn(result.structuredContent as object, "bytes"), false);
   assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 2_048);
+  const link = (result.content as Array<{
+    type: string;
+    uri?: string;
+    mimeType?: string;
+    name?: string;
+  }>).find((item) => item.type === "resource_link");
+  assert.ok(link && link.type === "resource_link");
+  assert.equal(link.mimeType, response.mediaType);
+  assert.equal(link.name, response.filename);
+  assert.equal(link.uri, `cad-report://reports/${response.downloadId}`);
+
+  const resource = await client.readResource({ uri: link.uri });
+  assert.equal(resource.contents.length, 1);
+  const content = resource.contents[0]!;
+  assert.equal(content.uri, link.uri);
+  assert.equal(content.mimeType, response.mediaType);
+  assert.ok("text" in content);
+  assert.equal(
+    JSON.parse(content.text).document.documentId,
+    application.currentIndex().drawingId
+  );
+  await assert.rejects(client.readResource({ uri: link.uri }));
 });
 
 test("MCP obtains a real one-use grant and saves a verified drawing copy", async (t) => {

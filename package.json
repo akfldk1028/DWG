@@ -27,7 +27,7 @@
     "verify:all": "npm run verify && npm run test:e2e",
     "verify:foundation": "npm test && npm run test:dotnet && npm run build:frontend && npm run test:e2e",
     "harness": "tsx modules/cad-runtime/harness/run-case.ts",
-    "preskill": "npm run build:parser && npm run build:cad-io-host",
+    "preskill": "dotnet build modules/dwg-parser/src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj --nologo --verbosity quiet && dotnet build modules/cad-io-acadsharp/src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj --nologo --verbosity quiet",
     "skill": "tsx modules/cad-runtime/harness/run-skill.ts",
     "premcp": "npm run build:parser && npm run build:cad-io-host",
     "mcp": "tsx modules/cad-runtime/src/mcp/stdio.ts",

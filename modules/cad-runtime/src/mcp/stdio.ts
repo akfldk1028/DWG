@@ -44,6 +44,7 @@ const application = await createCadApplication({
 const server = createCadMcpServer(application.capabilities, {
   requestDestinationGrant: (signal) => application.requestDestinationGrant(signal),
   createReportDownload: (input, signal) => application.createReportDownload(input, signal),
+  consumeReportDownload: (downloadId) => application.consumeReportDownload(downloadId),
   displayDirectory: "Exports"
 });
 await server.connect(new StdioServerTransport());

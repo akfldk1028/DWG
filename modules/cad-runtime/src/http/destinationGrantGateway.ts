@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
+  parseCadExportErrorResponse,
   parseDestinationGrantRequest,
   parseDestinationGrantResponse
 } from "@dwg/contracts";
@@ -20,7 +21,12 @@ export async function handleDestinationGrantRequest(
   response.setHeader("content-type", "application/json; charset=utf-8");
   if (!grant) {
     response.statusCode = 409;
-    response.end(JSON.stringify({ error: "DESTINATION_SELECTION_CANCELLED" }));
+    response.end(JSON.stringify(parseCadExportErrorResponse({
+      error: {
+        code: "DESTINATION_SELECTION_CANCELLED",
+        message: "Destination selection was cancelled."
+      }
+    })));
   } else {
     response.statusCode = 200;
     response.end(JSON.stringify(parseDestinationGrantResponse(grant)));

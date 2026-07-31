@@ -30,7 +30,7 @@ test("assembled gateway lists visible skills and runs a selected compatible work
   const listed = await fetch(`${baseUrl}/api/skills`);
   assert.equal(listed.status, 200);
   const list = await listed.json() as { skills: Array<{ id: string; compatible: boolean; recentStatus: string }> };
-  assert.deepEqual(list.skills.map((skill) => skill.id), ["compare-drawings", "export-drawing", "extract-schedule", "inspect-drawing"]);
+  assert.deepEqual(list.skills.map((skill) => skill.id), ["compare-drawings", "export-drawing", "export-report", "extract-schedule", "inspect-drawing"]);
   assert.ok(list.skills.every((skill) => skill.compatible && skill.recentStatus === "idle"));
 
   const run = await post(baseUrl, {
@@ -210,7 +210,6 @@ test("assembled gateway keeps the latest concurrent status and clears cancelled 
       open: async (_path, signal) => new Promise((resolve) => {
         const complete = () => resolve(index);
         pending.push({ resolve: complete, signal });
-        signal?.addEventListener("abort", complete, { once: true });
       }),
       get: () => index
     }
@@ -230,13 +229,33 @@ test("assembled gateway keeps the latest concurrent status and clears cancelled 
   assert.equal((await second).status, 200);
   assert.equal((await (await fetch(`${baseUrl}/api/skills`)).json() as { skills: Array<{ recentStatus: string }> }).skills[0]!.recentStatus, "passed");
 
+  const cancellationPending: Array<{ resolve(): void; signal: AbortSignal | undefined }> = [];
+  const cancellationApplication = await createCadApplication({
+    loadInitialIndex: async () => index,
+    read: {
+      open: async (_path, signal) => new Promise((resolve) => {
+        cancellationPending.push({ resolve: () => resolve(index), signal });
+      }),
+      get: () => index
+    }
+  });
+  const cancellationServer = await createCadGatewayServer({
+    workspaceRoot: process.cwd(),
+    skillRoot: skills,
+    application: cancellationApplication
+  });
+  const cancellationBaseUrl = await listen(cancellationServer, context);
   const controller = new AbortController();
-  const cancelled = fetch(`${baseUrl}/api/skills/run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
-  await waitFor(() => pending.length === 3);
+  const cancelled = fetch(`${cancellationBaseUrl}/api/skills/run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+  await waitFor(() => cancellationPending.length === 1);
   controller.abort();
   await assert.rejects(cancelled, /abort/i);
-  await waitFor(() => pending[2]!.signal?.aborted === true);
-  assert.equal((await (await fetch(`${baseUrl}/api/skills`)).json() as { skills: Array<{ recentStatus: string }> }).skills[0]!.recentStatus, "failed");
+  await waitFor(() => cancellationPending[0]!.signal?.aborted === true);
+  cancellationPending[0]!.resolve();
+  await waitFor(async () =>
+    (await (await fetch(`${cancellationBaseUrl}/api/skills`)).json() as { skills: Array<{ recentStatus: string }> }).skills[0]!.recentStatus === "failed"
+  );
+  assert.equal((await (await fetch(`${cancellationBaseUrl}/api/skills`)).json() as { skills: Array<{ recentStatus: string }> }).skills[0]!.recentStatus, "failed");
 });
 
 function nested(depth: number): JsonValue { return depth === 0 ? null : { value: nested(depth - 1) }; }
@@ -264,9 +283,9 @@ function post(baseUrl: string, body: unknown): Promise<Response> {
   return fetch(`${baseUrl}/api/skills/run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 }
 
-async function waitFor(predicate: () => boolean, timeout = 1_000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeout = 1_000): Promise<void> {
   const until = Date.now() + timeout;
-  while (!predicate()) {
+  while (!await predicate()) {
     if (Date.now() > until) throw new Error("condition timed out");
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
