@@ -49,7 +49,7 @@ test("failed Save As consumes the selected grant and requires a new destination"
   await page.getByRole("tab", { name: "Export", exact: true }).click();
   const panel = page.getByRole("region", { name: "Export" });
   await panel.getByRole("button", { name: "Choose destination" }).click();
-  const save = panel.getByRole("button", { name: "Save As DXF" });
+  const save = panel.getByRole("button", { name: "Save As DWG" });
   await save.click();
 
   await expect(panel.getByRole("alert")).toBeVisible();

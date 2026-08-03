@@ -34,11 +34,14 @@ suite chooses a drawing; the configuration never pins one. Browser fixtures
 assert against the repository default drawing, so a different drawing is for
 targeted runs rather than a full green suite.
 
-Known defect: Save As is verified only against a trivial DXF source. Against
-the repository default DWG the source index, the ACadSharp writer, and the
-reopened output disagree on the entity count, so drawing export raises
-`CAD_SAVE_VERIFICATION_FAILED` (`dwg` output raises `CAD_SAVE_REOPEN_FAILED`).
-`tests/e2e/save-as.spec.ts` is marked `test.fixme` until that is closed.
+Save As writes a copy and then proves the copy matches the active document.
+That proof only holds when both sides come from one parser, so drawing export
+is offered for the format the source was read as and withheld for the other:
+a DWG opens as `cad-index/v0.2` through ACadSharp, a DXF as `cad-index/v0.1`
+through the legacy indexer, and the two entity models cannot be compared.
+`GET /api/export/capabilities` reports the withheld format with a reason, and
+`export.drawing` rejects it with `EXPORT_UNSUPPORTED` regardless of what the
+capability list advertised. Report export is available for every format.
 
 Run the local application in two terminals:
 

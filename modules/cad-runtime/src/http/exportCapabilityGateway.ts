@@ -13,6 +13,10 @@ import {
 import { CadSaveError, type CadSaveErrorCode } from "@dwg/cad-capabilities";
 
 import type { CadApplication } from "../application/createCadApplication.js";
+import {
+  drawingExportUnavailableReason,
+  isDrawingExportAvailable
+} from "../application/drawingExportPolicy.js";
 import { CadReportDownloadStoreError } from "../application/reportDownloadStore.js";
 import { handleDestinationGrantRequest } from "./destinationGrantGateway.js";
 
@@ -20,16 +24,27 @@ export interface ExportCapabilityRoutes {
   handle(request: IncomingMessage, response: ServerResponse, pathname: string, signal?: AbortSignal): Promise<boolean>;
 }
 
-const capabilities: ExportCapabilitiesResponse = parseExportCapabilitiesResponse({
-  capabilities: [
-    { format: "json", kind: "report", available: true, reason: null },
-    { format: "csv", kind: "report", available: true, reason: null },
-    { format: "pdf", kind: "report", available: true, reason: null },
-    { format: "svg", kind: "report", available: true, reason: null },
-    { format: "dxf", kind: "drawing", available: true, reason: null },
-    { format: "dwg", kind: "drawing", available: true, reason: null }
-  ]
-});
+function describeCapabilities(
+  application: CadApplication
+): ExportCapabilitiesResponse {
+  const sourceFormat = application.activeDrawingFormat();
+  const drawing = (format: "dxf" | "dwg") => ({
+    format,
+    kind: "drawing" as const,
+    available: isDrawingExportAvailable(sourceFormat, format),
+    reason: drawingExportUnavailableReason(sourceFormat, format)
+  });
+  return parseExportCapabilitiesResponse({
+    capabilities: [
+      { format: "json", kind: "report", available: true, reason: null },
+      { format: "csv", kind: "report", available: true, reason: null },
+      { format: "pdf", kind: "report", available: true, reason: null },
+      { format: "svg", kind: "report", available: true, reason: null },
+      drawing("dxf"),
+      drawing("dwg")
+    ]
+  });
+}
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -40,7 +55,7 @@ export function createExportCapabilityRoutes(
     async handle(request, response, pathname, signal) {
       try {
       if (request.method === "GET" && pathname === "/api/export/capabilities") {
-        sendJson(response, 200, capabilities);
+        sendJson(response, 200, describeCapabilities(application));
         return true;
       }
       if (request.method === "POST" && pathname === "/api/export/destination-grants") {

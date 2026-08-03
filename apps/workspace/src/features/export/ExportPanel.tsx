@@ -53,7 +53,7 @@ export function ExportPanel() {
         <p className="destination-status" role="status">{status}</p>
         <div className="export-actions">
           {drawings.map((item) => (
-            <button disabled={busy || !item.available || !destination} key={item.format} onClick={() => void saveDrawing(item.format as DrawingFormat)}>
+            <button disabled={busy || !item.available || !destination} key={item.format} onClick={() => void saveDrawing(item.format as DrawingFormat)} title={item.reason ?? undefined}>
               <Save size={13} />Save As {item.format.toUpperCase()}
             </button>
           ))}

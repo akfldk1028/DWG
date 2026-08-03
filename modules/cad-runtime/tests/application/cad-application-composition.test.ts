@@ -128,13 +128,33 @@ test("first open establishes one document lineage for inspect edit report and ve
       expectedRevision: 2,
       destinationGrantId: rejectedGrant.grantId,
       baseFilename: "disallowed-version",
-      format: "dwg",
+      format: "dxf",
       version: "AC9999"
     }),
     (error) => (
       error instanceof Error &&
       "code" in error &&
       (error as { code: unknown }).code === "CAD_SAVE_WRITE_FAILED"
+    )
+  );
+
+  // A copy can only be proven against the active document when both come from
+  // one parser, so a DXF source cannot be exported as DWG.
+  const mismatchedGrant = await application.requestDestinationGrant();
+  assert.ok(mismatchedGrant);
+  await assert.rejects(
+    application.capabilities.execute("export.drawing", {
+      documentId: opened.drawingId,
+      expectedRevision: 2,
+      destinationGrantId: mismatchedGrant.grantId,
+      baseFilename: "mismatched-format",
+      format: "dwg",
+      version: "AC1032"
+    }),
+    (error) => (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: unknown }).code === "CAD_SAVE_DESTINATION_UNSUPPORTED"
     )
   );
 });

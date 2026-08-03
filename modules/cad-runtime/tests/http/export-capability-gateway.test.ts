@@ -29,7 +29,12 @@ test("assembled gateway publishes every available report and drawing export capa
       { format: "pdf", kind: "report", available: true, reason: null },
       { format: "svg", kind: "report", available: true, reason: null },
       { format: "dxf", kind: "drawing", available: true, reason: null },
-      { format: "dwg", kind: "drawing", available: true, reason: null }
+      {
+        format: "dwg",
+        kind: "drawing",
+        available: false,
+        reason: "DWG drawing export is withheld for a DXF source because the copy cannot be verified against it."
+      }
     ]
   });
 });

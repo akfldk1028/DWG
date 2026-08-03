@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { extname, resolve } from "node:path";
 
 import {
   composeCadCapabilityModules,
@@ -26,9 +26,11 @@ import {
   type CadEditHistory
 } from "@dwg/cad-edit";
 import {
+  parseCadDrawingExportRequest,
   parseCadReportExportRequest,
   type CadEntityIndex,
-  type CadReportExportResponse
+  type CadReportExportResponse,
+  type DrawingFormat
 } from "@dwg/contracts";
 
 import {
@@ -37,6 +39,7 @@ import {
   readParsedDocumentEvidence,
   readSourceSha256
 } from "./drawing-access/parsedDocumentEvidence.js";
+import { isDrawingExportAvailable } from "./drawingExportPolicy.js";
 import { createConfiguredSourceDocumentResolver } from "./drawing-access/sourceDocumentResolver.js";
 import { resolveWorkspaceCadPath } from "./drawing-access/workspacePath.js";
 import { createCadReportDownloadStore } from "./reportDownloadStore.js";
@@ -90,6 +93,8 @@ export interface CadApplication {
   currentIndex(): CadEntityIndex;
   /** Opens a drawing through the application read port, preserving the active snapshot. */
   readIndex(path: string, signal?: AbortSignal): Promise<CadEntityIndex>;
+  /** The format the active drawing was read as, or null when none is open. */
+  activeDrawingFormat(): DrawingFormat | null;
   requestDestinationGrant(signal?: AbortSignal): Promise<{
     grantId: string;
     displayDirectory: string;
@@ -197,6 +202,7 @@ export async function createCadApplication(
   };
   const save = createSaveModule({
     history,
+    sourceFormat: () => activeDrawingFormat(activePath),
     drawingModule: () => drawingModule
   });
   const capabilities = composeCadCapabilityModules([
@@ -214,6 +220,7 @@ export async function createCadApplication(
     transactions: edit.transactions,
     capabilityNames: CAD_APPLICATION_CAPABILITY_NAMES,
     currentIndex,
+    activeDrawingFormat: () => activeDrawingFormat(activePath),
     async readIndex(path, signal) {
       if (signal?.aborted) throw signal.reason;
       const resolvedPath = options.read && activePath === null
@@ -245,8 +252,17 @@ export async function createCadApplication(
   };
 }
 
+function activeDrawingFormat(path: string | null): DrawingFormat | null {
+  if (path === null) return null;
+  const extension = extname(path).toLowerCase();
+  if (extension === ".dwg") return "dwg";
+  if (extension === ".dxf") return "dxf";
+  return null;
+}
+
 function createSaveModule(options: {
   history: CadEditHistory;
+  sourceFormat: () => DrawingFormat | null;
   drawingModule: () => CadCapabilityModule | null;
 }): CadCapabilityModule {
   return {
@@ -270,6 +286,14 @@ function createSaveModule(options: {
           changeSet,
           verification: null
         }, request.format);
+      }
+      // The advertised capability list is not a boundary on its own; a caller
+      // can reach this capability directly over loopback or MCP.
+      if (name === "export.drawing") {
+        const requested = parseCadDrawingExportRequest(input);
+        if (!isDrawingExportAvailable(options.sourceFormat(), requested.format)) {
+          throw new CadSaveError("CAD_SAVE_DESTINATION_UNSUPPORTED");
+        }
       }
       const drawingModule = options.drawingModule();
       if (!drawingModule) throw new CadSaveError("CAD_SAVE_DESTINATION_UNSUPPORTED");
