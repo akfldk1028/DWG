@@ -69,7 +69,17 @@ bounded summary without paths or raw CAD output.
 | Path | Owner | Cross-repository access |
 |---|---|---|
 | `packages/contracts` | Runtime-neutral DTOs and validators | Public: `@dwg/contracts` |
+| `packages/skill-contracts` | Skill manifest DTOs and validators | Public: `@dwg/skill-contracts` |
+| `packages/test-kit` | Shared CAD fixture kit | Tests only |
 | `modules/dwg-parser` | ACadSharp DWG parsing and normalized geometry extraction | Internal parser implementation |
+| `modules/cad-io-acadsharp` | ACadSharp writer host and typed process bridge | Internal; writes verified copies |
+| `modules/cad-document` | Engine-neutral CAD document snapshot | Internal module boundary |
+| `modules/cad-edit` | Deterministic edit commands, previews, undo/redo | Internal module boundary |
+| `modules/cad-query` | Deterministic reads over a document snapshot | Internal module boundary |
+| `modules/cad-export` | Deterministic report and drawing export shapes | Internal module boundary |
+| `modules/cad-capabilities` | Permissioned capabilities, save coordination, output verification | Internal module boundary |
+| `modules/skill-runtime` | Skill discovery, manifest validation, bounded execution | Internal module boundary |
+| `skills` | Built-in skill roots (`SKILL.md` + `manifest.json`) | Loaded by the skill runtime |
 | `modules/cad-runtime/src/parsers` | DWG/DXF adapters | Internal; returns contract DTOs |
 | `modules/cad-runtime/src/application` | Deterministic CAD tools and grounded chat use cases | Internal application boundary |
 | `modules/cad-runtime/src/http` | Loopback gateway | Public process boundary: loopback `/api` |
@@ -78,10 +88,12 @@ bounded summary without paths or raw CAD output.
 | `apps/workspace/src/app` | Three-panel composition and workspace controls | Public only as the whole apps/workspace composition |
 | `apps/workspace/src/features` | Drawing, viewer, chat, and inspection feature owners | Internal feature modules |
 
-Supported reuse surfaces are `@dwg/contracts`, loopback `/api`, MCP stdio, and
-whole apps/workspace composition. Do not deep-import
-`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, or parser
-internals.
+Supported reuse surfaces are `@dwg/contracts`, `@dwg/skill-contracts`, loopback
+`/api`, MCP stdio, and whole apps/workspace composition. Do not deep-import
+`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, the CAD
+capability modules, or parser internals. Taking a package surface into another
+repository means taking its declared dependencies with it; see
+[AI clone and cross-repository handoff](docs/architecture/ai-clone-handoff.md).
 
 ## Architecture and handoff
 

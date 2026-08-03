@@ -24,7 +24,18 @@ retain `handle`, `layer`, `type`, and `bbox` when available.
 
 ```text
 packages/contracts/              PUBLIC runtime-neutral DTOs, validators, limits
+packages/skill-contracts/        PUBLIC skill manifest DTOs and validators
+packages/test-kit/               Shared CAD fixture kit; tests only
 modules/dwg-parser/              PRIVATE .NET/ACadSharp DWG extraction
+modules/cad-io-acadsharp/        PRIVATE .NET writer host and process bridge
+modules/cad-document/            engine-neutral CAD document snapshot
+modules/cad-edit/                deterministic edit commands, preview, undo/redo
+modules/cad-query/               deterministic reads over a document snapshot
+modules/cad-export/              deterministic report and drawing export shapes
+modules/cad-capabilities/        permissioned capabilities, save coordination,
+                                 destination grants, output verification
+modules/skill-runtime/           skill discovery, validation, bounded execution
+skills/                          built-in skill roots (SKILL.md + manifest.json)
 modules/cad-runtime/src/
   parsers/                       PRIVATE DWG/DXF adapters
   application/                   PRIVATE deterministic CAD and chat use cases
@@ -51,13 +62,22 @@ cross-feature composition.
 | Need in the host repository | Supported boundary |
 |---|---|
 | Shared CAD/provider types | `@dwg/contracts` |
+| Shared skill manifest types | `@dwg/skill-contracts` |
 | Local service calls | loopback `/api` |
 | Agent-accessible CAD queries | MCP stdio via `npm run mcp` |
 | Complete product UI | whole apps/workspace composition |
 
-`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, and parser
-internals are not deep-import APIs. Do not copy DTOs into the host repository.
-Resolve conflicts at the owner folder listed above.
+`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, the CAD
+capability modules, and parser internals are not deep-import APIs. Do not copy
+DTOs into the host repository. Resolve conflicts at the owner folder listed
+above.
+
+Taking a `packages/**` surface on its own means taking its declared
+dependencies with it. `@dwg/contracts` requires `zod`, and
+`@dwg/skill-contracts` requires `zod` plus `@dwg/contracts`. Do not rely on the
+host repository hoisting them:
+`scripts/package-external-dependencies.test.mjs` fails any surface that imports
+what it does not declare.
 
 ## Clone boot sequence
 
@@ -68,6 +88,20 @@ npm install
 npm run verify
 npm run test:e2e
 ```
+
+`npm run test:e2e` uses the repository default drawing. Point it at another
+drawing, or forward any Playwright argument, from the command line:
+
+```powershell
+npm run test:e2e -- --drawing tests/fixtures/dxf/minimal-architectural.dxf
+```
+
+A fresh clone must check out LF. `.gitattributes` pins `* text=auto eol=lf`
+because retained fixtures are hashed byte for byte and skill instructions are
+compared as exact strings; a CRLF checkout fails fixture integrity, skill
+discovery, and the fixture migration baseline while passing in the clone that
+produced them. If a host repository imports this history without the attribute
+file, run `git add --renormalize .` before trusting a green suite.
 
 For local runtime:
 
@@ -114,6 +148,13 @@ These locations are ownership navigation, not cross-repository import APIs.
 - OAuth integration uses existing Codex/Claude CLI login state. No API-key
   fallback is supported or stored.
 - The HTTP gateway is loopback-only and has no public-network authentication.
+- Save As is verified only against a trivial DXF source. Against the repository
+  default DWG the source index, the ACadSharp writer, and the reopened output
+  report different entity counts, so `export.drawing` raises
+  `CAD_SAVE_VERIFICATION_FAILED`, and `dwg` output raises
+  `CAD_SAVE_REOPEN_FAILED`. `apps/workspace/tests/e2e/save-as.spec.ts` is
+  `test.fixme` until the three entity models agree. Report export, drawing read,
+  inspection, edit review, and skill execution are unaffected.
 
 ## AI change protocol
 

@@ -201,6 +201,13 @@ read-only and exposes no edit tools.
 | `DWG_DRAWING_PATH` | Drawing path relative to the workspace | Test DWG fixture |
 | `DWG_GATEWAY_PORT` | Loopback gateway port | `4317` |
 | `DWG_FRONTEND_PORT` | Workspace Vite port | `4173` |
+| `DWG_EXPORT_ROOT` | Directory that verified copies and report downloads are written into | `tests/visual/test-results/export-roots/gateway-<pid>` |
+
+A host repository must set `DWG_EXPORT_ROOT`. The default resolves inside this
+repository's local test-results directory, which is gitignored and per-process,
+so an unset value silently scatters exports into test output.
+`DWG_EXPORT_MODE` is not part of this contract; it selects which export root
+the Playwright harness prepares and is read only by the browser test setup.
 
 ### 3. MCP stdio
 
