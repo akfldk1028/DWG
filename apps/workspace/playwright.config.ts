@@ -30,8 +30,11 @@ export default defineConfig({
         ...process.env,
         DWG_GATEWAY_PORT: String(gatewayPort),
         DWG_EXPORT_MODE: "e2e",
-        DWG_EXPORT_ROOT: e2eExportRoot,
-        DWG_DRAWING_PATH: process.env.DWG_DRAWING_PATH ?? "tests/fixtures/dxf/minimal-architectural.dxf"
+        // DWG_DRAWING_PATH is inherited from the environment only. Unset, the
+        // gateway resolves the repository default drawing that the browser
+        // fixtures assert against; select another drawing from the CLI with
+        // npm run test:e2e -- --drawing <repository-relative path>
+        DWG_EXPORT_ROOT: e2eExportRoot
       },
       url: `http://127.0.0.1:${gatewayPort}/api/health`,
       reuseExistingServer: false,

@@ -20,6 +20,26 @@ npm run test:e2e
 The default `npm test` suite includes fixture hash integrity checks.
 `npm run test:fixtures` remains available for a targeted fixture-only run.
 
+`npm run test:e2e` drives the browser suite against the repository default
+drawing. Select another drawing, or forward any Playwright argument, from the
+command line:
+
+```powershell
+npm run test:e2e -- --drawing tests/fixtures/dxf/minimal-architectural.dxf
+npm run test:e2e -- --drawing tests/fixtures/dwg/export_sample.dwg save-as --headed
+```
+
+`--drawing` takes a repository-relative path and is the only way the browser
+suite chooses a drawing; the configuration never pins one. Browser fixtures
+assert against the repository default drawing, so a different drawing is for
+targeted runs rather than a full green suite.
+
+Known defect: Save As is verified only against a trivial DXF source. Against
+the repository default DWG the source index, the ACadSharp writer, and the
+reopened output disagree on the entity count, so drawing export raises
+`CAD_SAVE_VERIFICATION_FAILED` (`dwg` output raises `CAD_SAVE_REOPEN_FAILED`).
+`tests/e2e/save-as.spec.ts` is marked `test.fixme` until that is closed.
+
 Run the local application in two terminals:
 
 ```powershell
