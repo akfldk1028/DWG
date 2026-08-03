@@ -38,8 +38,7 @@
 - Produces:
   - `HostDialogProcessRunner.run(spec: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal }): Promise<{ exitCode: number | null; stdout: string; stderr: string }>`
   - `HostDirectorySelection { canonicalDirectory: string; displayDirectory: string }`
-  - `HostDrawingSelection { canonicalPath: string; displayName: string }`
-  - `HostDialogProvider.chooseDirectory(signal?: AbortSignal): Promise<HostDirectorySelection | null>` and `.openDrawingFile(signal?: AbortSignal): Promise<HostDrawingSelection | null>`
+  - `HostDialogProvider.chooseDirectory(signal?: AbortSignal): Promise<HostDirectorySelection | null>` — Task 2 adds `openDrawingFile` to this same interface
   - `class HostDialogError extends Error { readonly code: "HOST_DIALOG_FAILED" }`
   - `createWindowsHostDialogProvider(options: { runner: HostDialogProcessRunner; cwd?: string }): HostDialogProvider`
 
@@ -196,13 +195,7 @@ export interface HostDirectorySelection {
   displayDirectory: string;
 }
 
-export interface HostDrawingSelection {
-  canonicalPath: string;
-  displayName: string;
-}
-
 export interface HostDialogProvider {
-  openDrawingFile(signal?: AbortSignal): Promise<HostDrawingSelection | null>;
   chooseDirectory(signal?: AbortSignal): Promise<HostDirectorySelection | null>;
 }
 
@@ -230,8 +223,7 @@ import {
   HostDialogError,
   type HostDialogProcessRunner,
   type HostDialogProvider,
-  type HostDirectorySelection,
-  type HostDrawingSelection
+  type HostDirectorySelection
 } from "./contracts.js";
 
 const FOLDER_SCRIPT = [
@@ -239,15 +231,6 @@ const FOLDER_SCRIPT = [
   "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;",
   "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)",
   "{ [Console]::Out.Write($dialog.SelectedPath) }"
-].join(" ");
-
-const FILE_SCRIPT = [
-  "Add-Type -AssemblyName System.Windows.Forms;",
-  "$dialog = New-Object System.Windows.Forms.OpenFileDialog;",
-  "$dialog.Filter = 'CAD drawings|*.dwg;*.dxf';",
-  "$dialog.Multiselect = $false;",
-  "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)",
-  "{ [Console]::Out.Write($dialog.FileName) }"
 ].join(" ");
 
 export function createWindowsHostDialogProvider(options: {
@@ -280,15 +263,6 @@ export function createWindowsHostDialogProvider(options: {
         canonicalDirectory,
         displayDirectory: basename(canonicalDirectory)
       };
-    },
-    async openDrawingFile(signal): Promise<HostDrawingSelection | null> {
-      const selected = await selectPath(FILE_SCRIPT, signal);
-      if (selected === null) return null;
-      const canonicalPath = await canonicalize(selected, "file");
-      if (canonicalPath === null) return null;
-      const extension = canonicalPath.slice(canonicalPath.lastIndexOf(".")).toLowerCase();
-      if (extension !== ".dwg" && extension !== ".dxf") return null;
-      return { canonicalPath, displayName: basename(canonicalPath) };
     }
   };
 }
@@ -315,8 +289,7 @@ export {
   HostDialogError,
   type HostDialogProcessRunner,
   type HostDialogProvider,
-  type HostDirectorySelection,
-  type HostDrawingSelection
+  type HostDirectorySelection
 } from "./contracts.js";
 export { createWindowsHostDialogProvider } from "./windowsDialogs.js";
 ```
@@ -345,10 +318,15 @@ git commit -m "feat: add a host folder dialog module"
 
 **Files:**
 - Modify: `modules/host-dialogs/tests/windows-dialogs.test.ts` (append)
+- Modify: `modules/host-dialogs/src/contracts.ts`
+- Modify: `modules/host-dialogs/src/windowsDialogs.ts`
+- Modify: `modules/host-dialogs/src/index.ts`
 
 **Interfaces:**
-- Consumes: `createWindowsHostDialogProvider`, `HostDrawingSelection` from Task 1.
-- Produces: no new exports; proves `openDrawingFile` behaviour Task 3 relies on.
+- Consumes: `createWindowsHostDialogProvider`, `HostDialogProvider`, `HostDialogProcessRunner` from Task 1.
+- Produces:
+  - `HostDrawingSelection { canonicalPath: string; displayName: string }`
+  - `HostDialogProvider.openDrawingFile(signal?: AbortSignal): Promise<HostDrawingSelection | null>` — Task 3 consumes the provider but only calls `chooseDirectory`; the second plan calls this.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -392,16 +370,70 @@ Extend the existing import so `writeFile` is available:
 import { mkdtemp, realpath, writeFile } from "node:fs/promises";
 ```
 
-- [ ] **Step 2: Run the tests to verify they pass**
+- [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `node --import tsx --test modules/host-dialogs/tests/windows-dialogs.test.ts`
-Expected: PASS, 8 tests. `openDrawingFile` was written in Task 1, so these tests confirm rather than drive it; if any fails, fix `windowsDialogs.ts` rather than the test.
+Expected: FAIL — `openDrawingFile` is not a function on the provider.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Extend the contract**
+
+In `modules/host-dialogs/src/contracts.ts`, add the selection type above `HostDialogProvider` and the method to the interface:
+
+```ts
+export interface HostDrawingSelection {
+  canonicalPath: string;
+  displayName: string;
+}
+
+export interface HostDialogProvider {
+  openDrawingFile(signal?: AbortSignal): Promise<HostDrawingSelection | null>;
+  chooseDirectory(signal?: AbortSignal): Promise<HostDirectorySelection | null>;
+}
+```
+
+- [ ] **Step 4: Implement the drawing dialog**
+
+In `modules/host-dialogs/src/windowsDialogs.ts`, extend the contracts import with `type HostDrawingSelection`, add the script constant beside `FOLDER_SCRIPT`:
+
+```ts
+const FILE_SCRIPT = [
+  "Add-Type -AssemblyName System.Windows.Forms;",
+  "$dialog = New-Object System.Windows.Forms.OpenFileDialog;",
+  "$dialog.Filter = 'CAD drawings|*.dwg;*.dxf';",
+  "$dialog.Multiselect = $false;",
+  "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)",
+  "{ [Console]::Out.Write($dialog.FileName) }"
+].join(" ");
+```
+
+and add the method to the returned object, before `chooseDirectory`:
+
+```ts
+    async openDrawingFile(signal): Promise<HostDrawingSelection | null> {
+      const selected = await selectPath(FILE_SCRIPT, signal);
+      if (selected === null) return null;
+      const canonicalPath = await canonicalize(selected, "file");
+      if (canonicalPath === null) return null;
+      const extension = extname(canonicalPath).toLowerCase();
+      if (extension !== ".dwg" && extension !== ".dxf") return null;
+      return { canonicalPath, displayName: basename(canonicalPath) };
+    },
+```
+
+Extend the `node:path` import to `import { basename, extname } from "node:path";`.
+
+In `modules/host-dialogs/src/index.ts`, add `type HostDrawingSelection` to the contracts re-export.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `node --import tsx --test modules/host-dialogs/tests/windows-dialogs.test.ts`
+Expected: PASS, 8 tests.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add modules/host-dialogs/tests/windows-dialogs.test.ts
-git commit -m "test: cover host drawing selection"
+git add modules/host-dialogs
+git commit -m "feat: add a host drawing file dialog"
 ```
 
 ---
