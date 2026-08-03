@@ -68,8 +68,14 @@ public static class CadFileWriter
             throw new CadIoException("CAD_WRITE_FAILED", exception);
         }
 
-        int entityCount = document.BlockRecords.Sum(
-            record => record.Entities.Count);
+        // Count what the CAD index counts: entities reachable through layouts,
+        // deduplicated by handle. Summing every block record also counts block
+        // definition contents, which the index never reports, so verification
+        // could never match a real drawing.
+        int entityCount = LayoutEntityEnumerator
+            .Enumerate(document)
+            .Entities
+            .Count;
         return CadIoSuccessResponse.Create(
             request.Format,
             document.Header.VersionString,

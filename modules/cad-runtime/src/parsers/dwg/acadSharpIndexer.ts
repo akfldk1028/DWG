@@ -86,7 +86,13 @@ async function runDwgParser(
     throw new Error("DWG parser returned invalid JSON");
   }
 
-  if (!isCadEntityIndexV02(parsed) || parsed.source.kind !== "dwg") {
+  // The ACadSharp parser emits cad-index/v0.2 for both formats and reports the
+  // source extension it read. Save verification reopens written DXF copies
+  // through this parser, so a "dxf" source is expected here.
+  if (
+    !isCadEntityIndexV02(parsed)
+    || (parsed.source.kind !== "dwg" && parsed.source.kind !== "dxf")
+  ) {
     throw new Error("DWG parser returned an incompatible cad-index document");
   }
 

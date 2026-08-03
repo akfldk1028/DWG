@@ -19,9 +19,14 @@ public static class Program
             {
                 throw new FileNotFoundException("DWG file not found.", path);
             }
-            if (!Path.GetExtension(path).Equals(".dwg", StringComparison.OrdinalIgnoreCase))
+            string extension = Path.GetExtension(path);
+            if (
+                !extension.Equals(".dwg", StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".dxf", StringComparison.OrdinalIgnoreCase))
             {
-                throw new ArgumentException("Input must use the .dwg extension.", nameof(args));
+                throw new ArgumentException(
+                    "Input must use the .dwg or .dxf extension.",
+                    nameof(args));
             }
 
             CadIndex index = DwgIndexBuilder.Build(path);

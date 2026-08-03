@@ -33,6 +33,7 @@ import {
 
 import {
   buildIndexForPath,
+  createVerificationDocumentReader,
   readParsedDocumentEvidence,
   readSourceSha256
 } from "./drawing-access/parsedDocumentEvidence.js";
@@ -303,7 +304,7 @@ function createDrawingSaveModule(options: {
       dwgVersionManifestPath: options.dwgVersionManifestPath
     }),
     sources,
-    readDocument: readParsedDocumentEvidence,
+    readDocument: createVerificationDocumentReader(options.activePath ?? ""),
     transactions: options.history,
     grants: options.grants
   });

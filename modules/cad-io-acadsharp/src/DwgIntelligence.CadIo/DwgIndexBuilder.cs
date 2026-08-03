@@ -12,8 +12,17 @@ public static class DwgIndexBuilder
     public static CadIndex Build(string path)
     {
         string fullPath = Path.GetFullPath(path);
-        using FileStream stream = File.OpenRead(fullPath);
-        return Build(stream, fullPath);
+        // The save coordinator pins the written copy with its own open handle
+        // while it verifies the output, so indexing must tolerate other holders
+        // instead of demanding exclusive write access.
+        using FileStream stream = new(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        return Path.GetExtension(fullPath).Equals(".dxf", StringComparison.OrdinalIgnoreCase)
+            ? BuildDxf(stream, fullPath)
+            : Build(stream, fullPath);
     }
 
     internal static CadIndex Build(Stream stream, string sourceName)
@@ -21,7 +30,26 @@ public static class DwgIndexBuilder
         stream.Position = 0;
         string drawingId = CreateDrawingId(stream);
         stream.Position = 0;
-        CadDocument document = DwgReader.Read(stream);
+        return BuildFromDocument(DwgReader.Read(stream), drawingId, "dwg", sourceName);
+    }
+
+    // Save verification reopens a written DXF copy through the same ACadSharp
+    // layout enumeration the DWG path uses. Reading it with a different parser
+    // produces a different entity model, which verification can never match.
+    internal static CadIndex BuildDxf(Stream stream, string sourceName)
+    {
+        stream.Position = 0;
+        string drawingId = CreateDrawingId(stream);
+        stream.Position = 0;
+        return BuildFromDocument(DxfReader.Read(stream), drawingId, "dxf", sourceName);
+    }
+
+    private static CadIndex BuildFromDocument(
+        CadDocument document,
+        string drawingId,
+        string sourceKind,
+        string sourceName)
+    {
         var unsupported = new Dictionary<(string Type, string Reason), int>();
         var entities = new List<CadEntityItem>();
 
@@ -60,7 +88,7 @@ public static class DwgIndexBuilder
             "cad-index/v0.2",
             drawingId,
             new CadIndexSource(
-                "dwg",
+                sourceKind,
                 Path.GetFileName(sourceName),
                 "acadsharp@3.6.35"),
             new CadDrawingMetadata(
