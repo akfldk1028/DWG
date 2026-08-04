@@ -11,6 +11,8 @@ import { useProviderChat } from "../features/agent-chat/useProviderChat";
 import { useChangeReview } from "../features/change-review/useChangeReview";
 import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
 import { useLayerVisibility } from "../features/drawing-explorer/useLayerVisibility";
+import { DrawingSessionBar } from "../features/drawing-sessions/DrawingSessionBar";
+import { useDrawingSessions } from "../features/drawing-sessions/useDrawingSessions";
 import { useInspectionRun } from "../features/inspection-results/useInspectionRun";
 import { subscribeCadEditProposals } from "../shared/cadEditProposalInbox";
 import type { CadEditBatch } from "@dwg/contracts";
@@ -66,6 +68,12 @@ export function App() {
   const [sidebarQuery, setSidebarQuery] = useState("");
   const [pendingChangeBatch, setPendingChangeBatch] = useState<CadEditBatch | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
+  // Switching the active drawing changes every read surface, so the workspace
+  // reloads its index and drops a selection that belonged to the old drawing.
+  const drawingSessions = useDrawingSessions(useCallback(() => {
+    setSelectedHandle(null);
+    void refresh();
+  }, [refresh]));
   const refreshAfterMutation = useCallback(async () => {
     const refreshed = await refresh();
     if (!refreshed) return;
@@ -175,6 +183,16 @@ export function App() {
         {sidebarOpen && (
           <WorkspaceSidebar
             activeSessionId={chat.activeSessionId}
+            drawingSessions={(
+              <DrawingSessionBar
+                busy={drawingSessions.busy}
+                dialogAvailable={drawingSessions.dialogAvailable}
+                error={drawingSessions.error}
+                onActivate={drawingSessions.activate}
+                onOpen={drawingSessions.open}
+                sessions={drawingSessions.sessions}
+              />
+            )}
             hiddenLayers={layerVisibility.hiddenLayers}
             index={index}
             onClose={closeSidebar}

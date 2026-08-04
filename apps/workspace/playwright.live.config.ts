@@ -27,6 +27,7 @@ export default defineConfig({
       cwd: repositoryRoot,
       env: {
         ...process.env,
+        DWG_HOST_DIALOGS: "off",
         DWG_GATEWAY_PORT: String(gatewayPort)
       },
       url: `http://127.0.0.1:${gatewayPort}/api/health`,

@@ -1,8 +1,11 @@
-import { resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mkdir } from "node:fs/promises";
 
-import type { HostDialogProvider } from "@dwg/host-dialogs";
+import {
+  createWindowsHostDialogProvider,
+  type HostDialogProvider
+} from "@dwg/host-dialogs";
 
 import type { CadApplication } from "../application/createCadApplication.js";
 import { createCadApplication } from "../application/createCadApplication.js";
@@ -14,6 +17,11 @@ import {
   createRuntimePaths,
   findRepositoryRoot
 } from "../platform/repositoryPaths.js";
+import {
+  createActiveApplicationProxy,
+  createDrawingSessionRegistry
+} from "../application/sessions/sessionRegistry.js";
+import { createDrawingSessionRoutes } from "./drawingSessionGateway.js";
 import { createDrawingWorkspace } from "./drawingWorkspace.js";
 import { createExportCapabilityRoutes } from "./exportCapabilityGateway.js";
 import { createProviderGateway } from "./providerGateway.js";
@@ -39,6 +47,28 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
       resolve(paths.repositoryRoot, `tests/visual/test-results/export-roots/gateway-${process.pid}`)
   );
   await mkdir(exportRoot, { recursive: true });
+  const hostProcessRunner = {
+    async run(spec: {
+      command: string;
+      args: string[];
+      cwd: string;
+      stdin?: string;
+    }, signal?: AbortSignal) {
+      const result = await defaultProcessRunner.run({
+        command: spec.command,
+        args: spec.args,
+        cwd: spec.cwd,
+        env: process.env,
+        stdin: spec.stdin,
+        signal
+      });
+      return {
+        exitCode: result.exitCode ?? -1,
+        stdout: result.stdout,
+        stderr: result.stderr
+      };
+    }
+  };
   const application = options.application ?? await createCadApplication({
     workspaceRoot: workspace,
     drawingPath,
@@ -47,49 +77,61 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     destinationSelector: options.dialogs
       ? { request: (signal) => options.dialogs!.chooseDirectory(signal) }
       : undefined,
-    processRunner: {
-      async run(spec, signal) {
-        const result = await defaultProcessRunner.run({
-          command: spec.command,
-          args: spec.args,
-          cwd: spec.cwd,
-          env: process.env,
-          stdin: spec.stdin,
-          signal
-        });
-        return {
-          exitCode: result.exitCode ?? -1,
-          stdout: result.stdout,
-          stderr: result.stderr
-        };
-      }
-    }
+    processRunner: hostProcessRunner
   });
+  // Every route resolves through the active session rather than a captured
+  // application, so opening or switching a drawing needs no route rebuild.
+  const registry = createDrawingSessionRegistry({
+    first: { displayName: basename(drawingPath), application }
+  });
+  const active = createActiveApplicationProxy(registry);
   const drawingWorkspace = createDrawingWorkspace(
     workspace,
     drawingPath,
-    application.capabilities,
-    () => application.currentIndex()
+    active.capabilities,
+    () => active.currentIndex()
   );
   const providers = createProviderRegistry(workspace);
   const chatService = createChatService({
     providers,
-    loadIndex: (path) => application.readIndex(path)
+    loadIndex: (path) => active.readIndex(path)
   });
   const skills = createSkillGatewayRoutes({
     skillRoot: options.skillRoot ?? resolve(paths.repositoryRoot, "skills"),
-    capabilities: application.capabilities,
+    capabilities: active.capabilities,
     capabilityVersion: options.capabilityVersion
   });
-  const exports = createExportCapabilityRoutes(application);
+  const exports = createExportCapabilityRoutes(active);
+  const sessions = createDrawingSessionRoutes({
+    registry,
+    dialogs: options.dialogs,
+    async openSession(canonicalPath, displayName) {
+      // The dialog already produced a canonical path a person chose, so the
+      // opened drawing is its own workspace root: it may sit anywhere.
+      registry.add({
+        displayName,
+        application: await createCadApplication({
+          workspaceRoot: dirname(canonicalPath),
+          drawingPath: basename(canonicalPath),
+          exportRoot,
+          dwgVersionManifestPath: paths.dwgVersionManifest,
+          destinationSelector: options.dialogs
+            ? { request: (signal) => options.dialogs!.chooseDirectory(signal) }
+            : undefined,
+          processRunner: hostProcessRunner
+        })
+      });
+    }
+  });
 
   return createProviderGateway({
     getDrawing: () => drawingWorkspace.getIndex(),
     inspect: ({ checks }) => drawingWorkspace.inspect(checks),
     getStatuses: () => getProviderStatuses(providers),
     chat: (request, signal) => chatService.chat(request, signal),
-    edit: (name, input, signal) => application.capabilities.execute(name, input, signal),
+    edit: (name, input, signal) => active.capabilities.execute(name, input, signal),
     additionalRoute: async (request, response, pathname, signal) => {
+      if (await sessions.handle(request, response, pathname, signal)) return true;
       if (await exports.handle(request, response, pathname, signal)) return true;
       return skills.handle(request, response, pathname, signal);
     }
@@ -97,7 +139,14 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
 }
 
 if (isEntrypoint()) {
-  const server = await createCadGatewayServer();
+  // Only the long-running local gateway can show a dialog. Test and headless
+  // processes construct the server directly and supply none, which keeps the
+  // export root serving destinations and hides the open control.
+  const server = await createCadGatewayServer({
+    dialogs: process.platform === "win32" && process.env.DWG_HOST_DIALOGS !== "off"
+      ? createWindowsHostDialogProvider({ runner: defaultProcessRunner })
+      : undefined
+  });
   const port = Number(process.env.DWG_GATEWAY_PORT ?? 4317);
   server.listen(port, "127.0.0.1", () => {
     console.log(`DWG provider gateway listening on http://127.0.0.1:${port}`);

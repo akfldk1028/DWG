@@ -34,6 +34,8 @@ export default defineConfig({
         // gateway resolves the repository default drawing that the browser
         // fixtures assert against; select another drawing from the CLI with
         // npm run test:e2e -- --drawing <repository-relative path>
+        // A browser run must never block on a native dialog.
+        DWG_HOST_DIALOGS: "off",
         DWG_EXPORT_ROOT: e2eExportRoot
       },
       url: `http://127.0.0.1:${gatewayPort}/api/health`,

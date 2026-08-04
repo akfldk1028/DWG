@@ -31,6 +31,8 @@ export default defineConfig({
         ...process.env,
         DWG_GATEWAY_PORT: String(gatewayPort),
         DWG_EXPORT_MODE: "docs",
+        // A browser run must never block on a native dialog.
+        DWG_HOST_DIALOGS: "off",
         DWG_EXPORT_ROOT: docsExportRoot
       },
       url: `http://127.0.0.1:${gatewayPort}/api/health`,

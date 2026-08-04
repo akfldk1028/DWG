@@ -10,6 +10,8 @@ import { useModalOverlay } from "./useModalOverlay";
 
 interface Props {
   activeSessionId: string | null;
+  /** Composed by App: features never import one another. */
+  drawingSessions?: React.ReactNode;
   hiddenLayers: ReadonlySet<string>;
   index: CadIndex;
   overlay: boolean;
@@ -29,6 +31,7 @@ const tabs: readonly SidebarTab[] = ["project", "sessions", "skills"];
 
 export function WorkspaceSidebar({
   activeSessionId,
+  drawingSessions,
   hiddenLayers,
   index,
   overlay,
@@ -98,6 +101,8 @@ export function WorkspaceSidebar({
           type="button"
         >{candidate === "project" ? "Project" : candidate === "sessions" ? "Sessions" : "Skills"}</button>)}
       </div>
+
+      {drawingSessions}
 
       <label className="sidebar-search">
         <Search aria-hidden="true" size={13} />
