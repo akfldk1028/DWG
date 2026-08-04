@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, realpath } from "node:fs/promises";
+import { mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -90,4 +90,34 @@ test("an aborted signal is refused before the dialog is spawned", async () => {
     () => createWindowsHostDialogProvider({ runner }).chooseDirectory(controller.signal)
   );
   assert.equal(calls.length, 0);
+});
+
+test("a chosen drawing is returned canonically with its filename", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dwg-dialog-file-"));
+  const file = join(directory, "plan.dwg");
+  await writeFile(file, "not a real drawing");
+  const canonical = await realpath(file);
+  const { runner, calls } = recordingRunner({ exitCode: 0, stdout: file, stderr: "" });
+
+  const selection = await createWindowsHostDialogProvider({ runner }).openDrawingFile();
+
+  assert.deepEqual(selection, { canonicalPath: canonical, displayName: "plan.dwg" });
+  assert.ok(calls[0].args.at(-1)?.includes("OpenFileDialog"));
+  assert.ok(calls[0].args.at(-1)?.includes("*.dwg;*.dxf"));
+});
+
+test("a chosen file that is not a drawing reports no selection", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dwg-dialog-other-"));
+  const file = join(directory, "notes.txt");
+  await writeFile(file, "text");
+  const { runner } = recordingRunner({ exitCode: 0, stdout: file, stderr: "" });
+
+  assert.equal(await createWindowsHostDialogProvider({ runner }).openDrawingFile(), null);
+});
+
+test("a directory chosen where a drawing is expected reports no selection", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dwg-dialog-dir-"));
+  const { runner } = recordingRunner({ exitCode: 0, stdout: directory, stderr: "" });
+
+  assert.equal(await createWindowsHostDialogProvider({ runner }).openDrawingFile(), null);
 });

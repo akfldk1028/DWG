@@ -13,7 +13,13 @@ export interface HostDirectorySelection {
   displayDirectory: string;
 }
 
+export interface HostDrawingSelection {
+  canonicalPath: string;
+  displayName: string;
+}
+
 export interface HostDialogProvider {
+  openDrawingFile(signal?: AbortSignal): Promise<HostDrawingSelection | null>;
   chooseDirectory(signal?: AbortSignal): Promise<HostDirectorySelection | null>;
 }
 

@@ -1,11 +1,12 @@
 import { realpath, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, extname } from "node:path";
 
 import {
   HostDialogError,
   type HostDialogProcessRunner,
   type HostDialogProvider,
-  type HostDirectorySelection
+  type HostDirectorySelection,
+  type HostDrawingSelection
 } from "./contracts.js";
 
 const FOLDER_SCRIPT = [
@@ -13,6 +14,15 @@ const FOLDER_SCRIPT = [
   "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;",
   "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)",
   "{ [Console]::Out.Write($dialog.SelectedPath) }"
+].join(" ");
+
+const FILE_SCRIPT = [
+  "Add-Type -AssemblyName System.Windows.Forms;",
+  "$dialog = New-Object System.Windows.Forms.OpenFileDialog;",
+  "$dialog.Filter = 'CAD drawings|*.dwg;*.dxf';",
+  "$dialog.Multiselect = $false;",
+  "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)",
+  "{ [Console]::Out.Write($dialog.FileName) }"
 ].join(" ");
 
 export function createWindowsHostDialogProvider(options: {
@@ -36,6 +46,15 @@ export function createWindowsHostDialogProvider(options: {
   }
 
   return {
+    async openDrawingFile(signal): Promise<HostDrawingSelection | null> {
+      const selected = await selectPath(FILE_SCRIPT, signal);
+      if (selected === null) return null;
+      const canonicalPath = await canonicalize(selected, "file");
+      if (canonicalPath === null) return null;
+      const extension = extname(canonicalPath).toLowerCase();
+      if (extension !== ".dwg" && extension !== ".dxf") return null;
+      return { canonicalPath, displayName: basename(canonicalPath) };
+    },
     async chooseDirectory(signal): Promise<HostDirectorySelection | null> {
       const selected = await selectPath(FOLDER_SCRIPT, signal);
       if (selected === null) return null;
