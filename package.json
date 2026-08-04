@@ -43,6 +43,7 @@
     "@dwg/cad-export": "file:modules/cad-export",
     "@dwg/cad-io-acadsharp": "file:modules/cad-io-acadsharp",
     "@dwg/contracts": "file:packages/contracts",
+    "@dwg/host-dialogs": "file:modules/host-dialogs",
     "@dwg/skill-contracts": "file:packages/skill-contracts",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "ajv": "^8.17.1",

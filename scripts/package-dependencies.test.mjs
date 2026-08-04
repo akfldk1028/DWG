@@ -29,6 +29,7 @@ const allowedDependencies = {
     "@dwg/skill-contracts",
     "@dwg/cad-capabilities"
   ],
+  "modules/host-dialogs": [],
   "packages/test-kit": ["@dwg/contracts"],
   "packages/skill-contracts": ["@dwg/contracts"],
   "packages/contracts": []
