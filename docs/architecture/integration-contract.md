@@ -204,8 +204,10 @@ read-only and exposes no edit tools.
 | `DWG_EXPORT_ROOT` | Directory that verified copies and report downloads are written into | `tests/visual/test-results/export-roots/gateway-<pid>` |
 
 A host repository must set `DWG_EXPORT_ROOT`. The default resolves inside this
-repository's local test-results directory, which is gitignored and per-process,
-so an unset value silently scatters exports into test output.
+repository's local test-results directory, which is gitignored and per-process.
+It is the destination whenever no host dialog is supplied, which is every
+headless and test run; with a dialog the operator chooses the directory and
+`DWG_EXPORT_ROOT` is unused.
 `DWG_EXPORT_MODE` is not part of this contract; it selects which export root
 the Playwright harness prepares and is read only by the browser test setup.
 

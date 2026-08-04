@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mkdir } from "node:fs/promises";
 
+import type { HostDialogProvider } from "@dwg/host-dialogs";
+
 import type { CadApplication } from "../application/createCadApplication.js";
 import { createCadApplication } from "../application/createCadApplication.js";
 import { createChatService } from "../application/chat/chatService.js";
@@ -23,6 +25,8 @@ export interface CadGatewayServerOptions {
   skillRoot?: string;
   capabilityVersion?: string;
   application?: CadApplication;
+  /** Supplies host dialogs. Omitted in headless runs, where the export root serves destinations. */
+  dialogs?: HostDialogProvider;
 }
 
 export async function createCadGatewayServer(options: CadGatewayServerOptions = {}) {
@@ -40,6 +44,9 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     drawingPath,
     exportRoot,
     dwgVersionManifestPath: paths.dwgVersionManifest,
+    destinationSelector: options.dialogs
+      ? { request: (signal) => options.dialogs!.chooseDirectory(signal) }
+      : undefined,
     processRunner: {
       async run(spec, signal) {
         const result = await defaultProcessRunner.run({
