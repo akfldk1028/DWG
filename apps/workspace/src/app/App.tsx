@@ -4,13 +4,18 @@ import {
   PanelRight,
   Settings2
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AgentWorkspace } from "../features/agent-chat/AgentWorkspace";
 import { useProviderChat } from "../features/agent-chat/useProviderChat";
+import { useChangeReview } from "../features/change-review/useChangeReview";
 import { useDrawingIndex } from "../features/drawing-explorer/useDrawingIndex";
 import { useLayerVisibility } from "../features/drawing-explorer/useLayerVisibility";
+import { DrawingSessionBar } from "../features/drawing-sessions/DrawingSessionBar";
+import { useDrawingSessions } from "../features/drawing-sessions/useDrawingSessions";
 import { useInspectionRun } from "../features/inspection-results/useInspectionRun";
+import { subscribeCadEditProposals } from "../shared/cadEditProposalInbox";
+import type { CadEditBatch } from "@dwg/contracts";
 import { CadArtifactPanel } from "./CadArtifactPanel";
 import { useWorkspaceControls } from "./useWorkspaceControls";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
@@ -19,12 +24,13 @@ import { useWorkspacePreferences } from "./useWorkspacePreferences";
 import "./styles.css";
 
 export function App() {
-  const { index, error } = useDrawingIndex();
+  const { index, error, refresh } = useDrawingIndex();
   const chat = useProviderChat();
   const inspection = useInspectionRun();
   const workspace = useWorkspacePreferences();
   const {
     artifactMaximized,
+    artifactOverlay,
     artifactOpen,
     artifactWidth,
     desktop,
@@ -32,26 +38,63 @@ export function App() {
     notificationsOpen,
     searchQuery,
     searchRef,
+    menuButtonRef,
+    artifactButtonRef,
+    sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
+    closeSidebar,
+    closeArtifact,
+    openArtifact,
     resizeArtifactBy,
+    resizeSidebarBy,
     setArtifactMaximized,
     setArtifactOpen,
     setGridVisible,
     setNotificationsOpen,
     setSearchQuery,
     setSettingsOpen,
-    setSidebarOpen,
-    startArtifactResize
+    startArtifactResize,
+    startSidebarResize,
+    toggleSidebarFromMenu
   } = useWorkspaceControls({
     preferredArtifactWidth: workspace.preferences.artifactWidth,
-    setPreferredArtifactWidth: workspace.setArtifactWidth
+    preferredSidebarWidth: workspace.preferences.sidebarWidth,
+    setPreferredArtifactWidth: workspace.setArtifactWidth,
+    setPreferredSidebarWidth: workspace.setSidebarWidth
   });
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
+  const [sidebarQuery, setSidebarQuery] = useState("");
+  const [pendingChangeBatch, setPendingChangeBatch] = useState<CadEditBatch | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  // Switching the active drawing changes every read surface, so the workspace
+  // reloads its index and drops a selection that belonged to the old drawing.
+  const drawingSessions = useDrawingSessions(useCallback(() => {
+    setSelectedHandle(null);
+    void refresh();
+  }, [refresh]));
+  const refreshAfterMutation = useCallback(async () => {
+    const refreshed = await refresh();
+    if (!refreshed) return;
+    setSelectedHandle((handle) => handle && refreshed.entities.some((entity) => entity.handle === handle) ? handle : null);
+  }, [refresh]);
+  const changeReview = useChangeReview(pendingChangeBatch, refreshAfterMutation);
+
+  useEffect(() => subscribeCadEditProposals({
+    onProposal: (batch) => {
+      if (changeReview.isMutationInFlight()) {
+        setProposalError("Finish the current CAD mutation before proposing another change.");
+        return;
+      }
+      setProposalError(null);
+      setPendingChangeBatch(batch);
+    },
+    onInvalid: () => setProposalError("Invalid CAD edit proposal.")
+  }), [changeReview.isMutationInFlight]);
 
   const layerVisibility = useLayerVisibility(
-    index?.layers.map((layer) => layer.name) ?? []
+    index?.layers ?? []
   );
   const selected = index?.entities.find((entity) => entity.handle === selectedHandle) ?? null;
   const highlightedHandles = useMemo(() => new Set(
@@ -72,11 +115,12 @@ export function App() {
 
   return (
     <div className="app-shell" data-theme={workspace.resolvedTheme}>
-      <header className="topbar">
+      <header className="topbar" data-modal-background>
         <button
           aria-label="탐색 열기"
           className="icon-button menu-button"
-          onClick={() => setSidebarOpen((open) => !open)}
+          onClick={toggleSidebarFromMenu}
+          ref={menuButtonRef}
         >
           <Menu size={17} />
         </button>
@@ -88,7 +132,8 @@ export function App() {
           <button
             aria-label="CAD 아티팩트 열기"
             className="icon-button artifact-toggle"
-            onClick={() => setArtifactOpen(true)}
+            onClick={openArtifact}
+            ref={artifactButtonRef}
           >
             <PanelRight size={15} />
           </button>
@@ -130,24 +175,69 @@ export function App() {
 
       <div
         className={`workspace-grid ${artifactMaximized ? "artifact-maximized" : ""} ${artifactOpen ? "" : "artifact-closed"}`}
-        style={{ "--artifact-width": `${artifactWidth}px` } as React.CSSProperties}
+        style={{
+          "--artifact-width": `${artifactWidth}px`,
+          "--sidebar-width": `${sidebarWidth}px`
+        } as React.CSSProperties}
       >
         {sidebarOpen && (
           <WorkspaceSidebar
             activeSessionId={chat.activeSessionId}
+            drawingSessions={(
+              <DrawingSessionBar
+                busy={drawingSessions.busy}
+                dialogAvailable={drawingSessions.dialogAvailable}
+                error={drawingSessions.error}
+                onActivate={drawingSessions.activate}
+                onOpen={drawingSessions.open}
+                sessions={drawingSessions.sessions}
+              />
+            )}
             hiddenLayers={layerVisibility.hiddenLayers}
             index={index}
-            onClose={() => setSidebarOpen(false)}
+            onClose={closeSidebar}
             onNewSession={chat.reset}
+            onQueryChange={setSidebarQuery}
             onSelectSession={chat.selectSession}
+            onSelectTab={workspace.setSidebarTab}
             onToggleLayer={layerVisibility.toggleLayer}
-            onToggleSection={workspace.toggleSection}
             overlay={!desktop}
-            sections={workspace.preferences.sidebarSections}
+            query={sidebarQuery}
+            restoreFocusRef={menuButtonRef}
             sessions={chat.sessions}
+            tab={workspace.preferences.sidebarTab}
           />
         )}
-        {!desktop && sidebarOpen && <button aria-label="탐색 닫기" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
+        {!desktop && sidebarOpen && <button aria-label="탐색 닫기" className="sidebar-scrim" onClick={closeSidebar} />}
+
+        {desktop && sidebarOpen && (
+          <div
+            aria-label="Sidebar width"
+            aria-orientation="vertical"
+            aria-valuemax={420}
+            aria-valuemin={280}
+            aria-valuenow={Math.round(sidebarWidth)}
+            className="sidebar-resizer"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                resizeSidebarBy(-16);
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                resizeSidebarBy(16);
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                resizeSidebarBy(280 - sidebarWidth);
+              } else if (event.key === "End") {
+                event.preventDefault();
+                resizeSidebarBy(420 - sidebarWidth);
+              }
+            }}
+            onPointerDown={startSidebarResize}
+            role="separator"
+            tabIndex={0}
+          />
+        )}
 
         <AgentWorkspace
           activeSession={chat.activeSession}
@@ -187,15 +277,17 @@ export function App() {
             />
 
             <CadArtifactPanel
+              changeReview={changeReview}
               gridVisible={gridVisible}
               hiddenLayers={layerVisibility.hiddenLayers}
               highlightedHandles={highlightedHandles}
               index={index}
               inspectionLoading={inspection.loading}
               maximized={artifactMaximized}
+              overlay={artifactOverlay}
+              restoreFocusRef={artifactButtonRef}
               onClose={() => {
-                setArtifactMaximized(false);
-                setArtifactOpen(false);
+                closeArtifact();
               }}
               onGridVisibleChange={setGridVisible}
               onMaximizedChange={setArtifactMaximized}
@@ -211,6 +303,7 @@ export function App() {
               searchQuery={searchQuery}
               selected={selected}
               selectedHandle={selectedHandle}
+              proposalError={proposalError}
             />
           </>
         )}

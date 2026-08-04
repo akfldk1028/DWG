@@ -1,23 +1,28 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent
 } from "react";
 
-import { clampArtifactWidth } from "./workspacePreferences";
+import { clampArtifactWidth, clampSidebarWidth } from "./workspacePreferences";
 
 const compactArtifactBreakpoint = 886;
 const desktopSidebarBreakpoint = 1280;
 
 interface WorkspaceControlsOptions {
   preferredArtifactWidth: number;
+  preferredSidebarWidth: number;
   setPreferredArtifactWidth(width: number): void;
+  setPreferredSidebarWidth(width: number): void;
 }
 
 export function useWorkspaceControls({
   preferredArtifactWidth,
-  setPreferredArtifactWidth
+  preferredSidebarWidth,
+  setPreferredArtifactWidth,
+  setPreferredSidebarWidth
 }: WorkspaceControlsOptions) {
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -31,25 +36,97 @@ export function useWorkspaceControls({
   const [artifactOpen, setArtifactOpen] = useState(
     () => window.innerWidth > compactArtifactBreakpoint
   );
-  const dragStart = useRef<{ x: number; width: number } | null>(null);
+  const artifactDragStart = useRef<{ x: number; width: number } | null>(null);
+  const sidebarDragStart = useRef<{ x: number; width: number } | null>(null);
+  const artifactOpenRef = useRef(artifactOpen);
+  const sidebarOpenRef = useRef(sidebarOpen);
+  const activeResizeTarget = useRef<{
+    element: HTMLDivElement;
+    pointerId: number;
+  } | null>(null);
+  const removeResizeListeners = useRef<(() => void) | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const artifactButtonRef = useRef<HTMLButtonElement>(null);
   const topActionsRef = useRef<HTMLDivElement>(null);
   const setPreferredArtifactWidthRef = useRef(setPreferredArtifactWidth);
+  const setPreferredSidebarWidthRef = useRef(setPreferredSidebarWidth);
   const desktop = viewportWidth >= desktopSidebarBreakpoint;
+  const artifactOverlay = viewportWidth <= compactArtifactBreakpoint;
+  const sidebarWidth = clampSidebarWidth(preferredSidebarWidth);
   const artifactWidth = clampArtifactWidth(
     viewportWidth,
     preferredArtifactWidth,
-    desktop
+    desktop,
+    sidebarWidth
   );
+  artifactOpenRef.current = artifactOpen;
+  sidebarOpenRef.current = sidebarOpen;
 
   useEffect(() => {
     setPreferredArtifactWidthRef.current = setPreferredArtifactWidth;
   }, [setPreferredArtifactWidth]);
 
   useEffect(() => {
+    setPreferredSidebarWidthRef.current = setPreferredSidebarWidth;
+  }, [setPreferredSidebarWidth]);
+
+  const finishResize = useCallback(() => {
+    artifactDragStart.current = null;
+    sidebarDragStart.current = null;
+    const target = activeResizeTarget.current;
+    activeResizeTarget.current = null;
+    const removeListeners = removeResizeListeners.current;
+    removeResizeListeners.current = null;
+    removeListeners?.();
+    document.body.classList.remove("resizing-artifact");
+    document.body.classList.remove("resizing-sidebar");
+    if (target?.element.hasPointerCapture(target.pointerId)) {
+      try {
+        target.element.releasePointerCapture(target.pointerId);
+      } catch {
+        // The browser may have already cancelled capture while unmounting.
+      }
+    }
+  }, []);
+
+  useEffect(() => finishResize, [finishResize]);
+
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false);
+  }, []);
+
+  const toggleSidebarFromMenu = useCallback(() => {
+    setSidebarOpen((open) => {
+      if (!open && window.innerWidth <= compactArtifactBreakpoint) setArtifactOpen(false);
+      return !open;
+    });
+  }, []);
+
+  const openArtifact = useCallback(() => {
+    if (window.innerWidth <= compactArtifactBreakpoint) setSidebarOpen(false);
+    setArtifactOpen(true);
+  }, []);
+
+  const closeArtifact = useCallback(() => {
+    setArtifactMaximized(false);
+    setArtifactOpen(false);
+  }, []);
+
+  useEffect(() => {
     const resize = () => {
-      setViewportWidth(window.innerWidth);
-      if (window.innerWidth >= desktopSidebarBreakpoint) {
+      const width = window.innerWidth;
+      if (
+        width <= compactArtifactBreakpoint &&
+        artifactOpenRef.current &&
+        sidebarOpenRef.current
+      ) {
+        sidebarOpenRef.current = false;
+        setSidebarOpen(false);
+      }
+      setViewportWidth(width);
+      if (width >= desktopSidebarBreakpoint) {
+        sidebarOpenRef.current = true;
         setSidebarOpen(true);
       }
     };
@@ -67,6 +144,7 @@ export function useWorkspaceControls({
         setSettingsOpen(false);
         setNotificationsOpen(false);
         setArtifactMaximized(false);
+        if (!desktop && sidebarOpen) closeSidebar();
       }
     };
     const pointerdown = (event: PointerEvent) => {
@@ -81,45 +159,85 @@ export function useWorkspaceControls({
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("pointerdown", pointerdown);
     };
-  }, []);
-
-  useEffect(() => {
-    const move = (event: PointerEvent) => {
-      if (!dragStart.current) return;
-      setPreferredArtifactWidthRef.current(clampArtifactWidth(
-        window.innerWidth,
-        dragStart.current.width + dragStart.current.x - event.clientX,
-        window.innerWidth >= desktopSidebarBreakpoint
-      ));
-    };
-    const end = () => {
-      dragStart.current = null;
-      document.body.classList.remove("resizing-artifact");
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", end);
-    };
-  }, []);
+  }, [closeSidebar, desktop, sidebarOpen]);
 
   function resizeArtifactBy(delta: number) {
     setPreferredArtifactWidth(clampArtifactWidth(
       viewportWidth,
       artifactWidth + delta,
-      desktop
+      desktop,
+      sidebarWidth
     ));
   }
 
+  function resizeSidebarBy(delta: number) {
+    setPreferredSidebarWidth(clampSidebarWidth(sidebarWidth + delta));
+  }
+
   function startArtifactResize(event: ReactPointerEvent<HTMLDivElement>) {
-    dragStart.current = { x: event.clientX, width: artifactWidth };
-    document.body.classList.add("resizing-artifact");
-    event.currentTarget.setPointerCapture(event.pointerId);
+    finishResize();
+    artifactDragStart.current = { x: event.clientX, width: artifactWidth };
+    startResize(event, "resizing-artifact");
+  }
+
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    finishResize();
+    sidebarDragStart.current = { x: event.clientX, width: sidebarWidth };
+    startResize(event, "resizing-sidebar");
+  }
+
+  function startResize(
+    event: ReactPointerEvent<HTMLDivElement>,
+    bodyClass: "resizing-artifact" | "resizing-sidebar"
+  ) {
+    const element = event.currentTarget;
+    const pointerId = event.pointerId;
+    activeResizeTarget.current = { element, pointerId };
+
+    const move = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      if (artifactDragStart.current) {
+        setPreferredArtifactWidthRef.current(clampArtifactWidth(
+          window.innerWidth,
+          artifactDragStart.current.width + artifactDragStart.current.x - pointerEvent.clientX,
+          window.innerWidth >= desktopSidebarBreakpoint,
+          sidebarWidth
+        ));
+      }
+      if (sidebarDragStart.current) {
+        setPreferredSidebarWidthRef.current(clampSidebarWidth(
+          sidebarDragStart.current.width + pointerEvent.clientX - sidebarDragStart.current.x
+        ));
+      }
+    };
+    const finishPointer = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) finishResize();
+    };
+    const finishOnBlur = () => finishResize();
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finishPointer);
+    window.addEventListener("pointercancel", finishPointer);
+    window.addEventListener("blur", finishOnBlur);
+    element.addEventListener("lostpointercapture", finishPointer);
+    removeResizeListeners.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finishPointer);
+      window.removeEventListener("pointercancel", finishPointer);
+      window.removeEventListener("blur", finishOnBlur);
+      element.removeEventListener("lostpointercapture", finishPointer);
+    };
+    document.body.classList.add(bodyClass);
+    try {
+      element.setPointerCapture(pointerId);
+    } catch {
+      finishResize();
+    }
   }
 
   return {
     artifactMaximized,
+    artifactOverlay,
     artifactOpen,
     artifactWidth,
     desktop,
@@ -127,17 +245,25 @@ export function useWorkspaceControls({
     notificationsOpen,
     searchQuery,
     searchRef,
+    menuButtonRef,
+    artifactButtonRef,
+    sidebarWidth,
     settingsOpen,
     sidebarOpen,
     topActionsRef,
+    closeSidebar,
+    closeArtifact,
+    openArtifact,
     resizeArtifactBy,
+    resizeSidebarBy,
     setArtifactMaximized,
     setArtifactOpen,
     setGridVisible,
     setNotificationsOpen,
     setSearchQuery,
     setSettingsOpen,
-    setSidebarOpen,
-    startArtifactResize
+    startArtifactResize,
+    startSidebarResize,
+    toggleSidebarFromMenu
   };
 }

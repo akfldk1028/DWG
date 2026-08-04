@@ -5,6 +5,7 @@ export { MAX_PROVIDER_MESSAGE_CHARS } from "@dwg/contracts";
 export type {
   CadEntity,
   CadIndex,
+  CadLayerIndexItem,
   InspectionCheck,
   InspectionEvent,
   InspectionFinding,

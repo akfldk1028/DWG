@@ -1,8 +1,9 @@
-import type { CadPointBox } from "@dwg/contracts";
+import type { CadEntityMatch } from "@dwg/contracts";
 
 export type {
   CadEntityIndex,
   CadEntityIndexItem,
+  CadEntityMatch,
   CadIndexSource,
   CadIndexSummary,
   CadLayerIndexItem,
@@ -12,13 +13,4 @@ export type {
   UnsupportedCadEntity
 } from "@dwg/contracts";
 
-export interface CadToolMatch {
-  id: string;
-  handle: string | null;
-  type: string;
-  layer: string;
-  bbox: CadPointBox | null;
-  text?: string | null;
-  reason: string;
-  confidence: number;
-}
+export type CadToolMatch = CadEntityMatch;

@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using ACadSharp;
+using ACadSharp.Tables;
 using Xunit;
 
 namespace DwgIntelligence.DwgParser.Tests;
@@ -72,6 +74,44 @@ public sealed class DwgIndexBuilderTests
         Assert.Contains(
             index.Entities,
             entity => entity.Space == "paper" && entity.Type == "VIEWPORT");
+    }
+
+    [Fact]
+    public void PublishesOfficialDwgMetadataAndLayerEvidence()
+    {
+        CadIndex index = DwgIndexBuilder.Build(FixturePath("export_sample.dwg"));
+
+        Assert.NotNull(index.Drawing);
+        Assert.Equal("AC1032", index.Drawing.FileVersion);
+        Assert.Equal("Millimeters", index.Drawing.Units);
+        Assert.Equal(
+            [
+                ("0", 7, false),
+                ("Defpoints", 7, false),
+                ("control", 90, false),
+                ("out-margin", 1, false)
+            ],
+            index.Layers.Select(layer => (layer.Name, layer.Color, layer.Locked)));
+    }
+
+    [Fact]
+    public void TrueColorLayerPublishesNullAciAndStableWarning()
+    {
+        var layer = new Layer("RGB-LAYER")
+        {
+            Color = Color.FromTrueColor(0x112233u)
+        };
+        var unsupported = new Dictionary<(string Type, string Reason), int>();
+
+        CadLayerItem item = DwgIndexBuilder.CreateLayerItem(
+            layer,
+            [],
+            unsupported);
+
+        Assert.Null(item.Color);
+        Assert.Equal(
+            1,
+            unsupported[("LAYER", "true-color-unsupported:RGB-LAYER")]);
     }
 
     private static string FixturePath(string name)

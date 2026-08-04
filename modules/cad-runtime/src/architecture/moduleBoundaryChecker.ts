@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, posix, relative, resolve, sep } from "node:path";
 
 export interface ModuleImport {
@@ -25,23 +25,23 @@ export function findModuleBoundaryViolations(
       moduleImport.importer,
       moduleImport.specifier
     );
-    if (!importedModule) return [];
-
     const rule = findViolatedRule(
       moduleImport.importer,
       moduleImport.specifier,
-      importedModule
+      importedModule ?? moduleImport.specifier
     );
-    return rule ? [{ ...moduleImport, importedModule, rule }] : [];
+    return rule
+      ? [{
+          ...moduleImport,
+          importedModule: importedModule ?? moduleImport.specifier,
+          rule
+        }]
+      : [];
   });
 }
 
 export async function scanWorkspaceModuleBoundaries(workspace: string) {
-  const sourceRoots = [
-    "packages/contracts/src",
-    "modules/cad-runtime/src",
-    "apps/workspace/src"
-  ];
+  const sourceRoots = await findWorkspaceSourceRoots(workspace);
   const imports: ModuleImport[] = [];
 
   for (const sourceRoot of sourceRoots) {
@@ -58,12 +58,40 @@ export async function scanWorkspaceModuleBoundaries(workspace: string) {
   return findModuleBoundaryViolations(imports);
 }
 
+async function findWorkspaceSourceRoots(workspace: string) {
+  const sourceRoots: string[] = [];
+
+  for (const workspaceRoot of ["apps", "packages", "modules"]) {
+    const directory = resolve(workspace, workspaceRoot);
+    for (const entry of await readDirectories(directory)) {
+      const packageRoot = resolve(directory, entry);
+      const isModule = workspaceRoot === "modules";
+      if (
+        !isModule &&
+        !await isFile(resolve(packageRoot, "package.json"))
+      ) {
+        continue;
+      }
+
+      const sourceRoot = resolve(packageRoot, "src");
+      if (await isDirectory(sourceRoot)) {
+        sourceRoots.push(toPosix(relative(workspace, sourceRoot)));
+      }
+    }
+  }
+
+  return sourceRoots;
+}
+
 function findViolatedRule(
   importer: string,
   specifier: string,
   importedModule: string
 ): ModuleBoundaryViolation["rule"] | null {
   if (specifier.startsWith("@dwg/contracts/")) {
+    return "cross-module-import-uses-public-entrypoint";
+  }
+  if (/^@dwg\/[^/]+\/src(?:\/|$)/.test(specifier)) {
     return "cross-module-import-uses-public-entrypoint";
   }
   if (
@@ -91,6 +119,15 @@ function findViolatedRule(
     importedModule.startsWith("modules/cad-runtime/")
   ) {
     return "workspace-does-not-import-runtime";
+  }
+  const importerModule = getTopLevelModule(importer);
+  const importedTopLevelModule = getTopLevelModule(importedModule);
+  if (
+    importerModule &&
+    importedTopLevelModule &&
+    importerModule !== importedTopLevelModule
+  ) {
+    return "cross-module-import-uses-public-entrypoint";
   }
   if (
     importer.startsWith("apps/workspace/src/shared/") &&
@@ -127,6 +164,11 @@ function getFrontendFeature(path: string) {
   return match?.[1] ?? null;
 }
 
+function getTopLevelModule(path: string) {
+  const match = /^modules\/([^/]+)\/src(?:\/|$)/.exec(path);
+  return match?.[1] ?? null;
+}
+
 export function extractImportSpecifiers(source: string) {
   const specifiers: string[] = [];
   const importPattern =
@@ -152,6 +194,44 @@ async function listTypeScriptFiles(directory: string): Promise<string[]> {
     }
   }
   return files;
+}
+
+async function readDirectories(directory: string) {
+  try {
+    const entries = await readdir(directory, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch (error) {
+    if (isMissingPathError(error)) return [];
+    throw error;
+  }
+}
+
+async function isDirectory(path: string) {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
+  }
+}
+
+async function isFile(path: string) {
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
+  }
+}
+
+function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
 function toPosix(path: string) {

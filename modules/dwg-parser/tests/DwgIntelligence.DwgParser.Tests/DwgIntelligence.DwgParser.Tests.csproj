@@ -16,6 +16,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/DwgIntelligence.DwgParser/DwgIntelligence.DwgParser.csproj" />
+    <ProjectReference Include="../../../cad-io-acadsharp/src/DwgIntelligence.CadIo/DwgIntelligence.CadIo.csproj" />
+    <Using Include="DwgIntelligence.CadIo" />
     <None Include="../../../../tests/fixtures/dwg/export_sample.dwg">
       <Link>Fixtures/export_sample.dwg</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

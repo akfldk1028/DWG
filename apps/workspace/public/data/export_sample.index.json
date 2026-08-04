@@ -6,6 +6,10 @@
     "displayName": "export_sample.dwg",
     "parser": "acadsharp@3.6.35"
   },
+  "drawing": {
+    "fileVersion": "AC1032",
+    "units": "Millimeters"
+  },
   "summary": {
     "entityCount": 234,
     "layerCount": 4,
@@ -18,25 +22,33 @@
       "name": "0",
       "entityCount": 229,
       "visible": true,
-      "frozen": false
+      "frozen": false,
+      "color": 7,
+      "locked": false
     },
     {
       "name": "Defpoints",
       "entityCount": 0,
       "visible": true,
-      "frozen": false
+      "frozen": false,
+      "color": 7,
+      "locked": false
     },
     {
       "name": "control",
       "entityCount": 1,
       "visible": true,
-      "frozen": false
+      "frozen": false,
+      "color": 90,
+      "locked": false
     },
     {
       "name": "out-margin",
       "entityCount": 4,
       "visible": true,
-      "frozen": false
+      "frozen": false,
+      "color": 1,
+      "locked": false
     }
   ],
   "entities": [

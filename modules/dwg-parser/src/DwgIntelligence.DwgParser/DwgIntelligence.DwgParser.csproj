@@ -6,6 +6,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="ACadSharp" Version="3.6.35" />
+    <ProjectReference Include="../../../cad-io-acadsharp/src/DwgIntelligence.CadIo/DwgIntelligence.CadIo.csproj" />
   </ItemGroup>
 </Project>

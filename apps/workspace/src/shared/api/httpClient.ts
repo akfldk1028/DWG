@@ -35,10 +35,15 @@ async function readJson<T>(
     throw new Error(`Invalid JSON response (HTTP ${response.status})`);
   }
   if (!response.ok) {
-    const error = typeof payload === "object" && payload !== null &&
-      typeof (payload as Record<string, unknown>).error === "string"
-      ? (payload as Record<string, string>).error
-      : `HTTP ${response.status}`;
+    const errorValue = typeof payload === "object" && payload !== null
+      ? (payload as Record<string, unknown>).error
+      : undefined;
+    const error = typeof errorValue === "string"
+      ? errorValue
+      : errorValue && typeof errorValue === "object" &&
+          typeof (errorValue as Record<string, unknown>).message === "string"
+        ? (errorValue as { message: string }).message
+        : `HTTP ${response.status}`;
     throw new Error(error);
   }
   if (!validate(payload)) throw new Error("Response contract validation failed");

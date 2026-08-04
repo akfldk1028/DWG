@@ -10,7 +10,11 @@ export const CAD_TOOL_NAMES = [
   "cad.find_entities_by_type",
   "cad.find_text",
   "cad.get_entity",
-  "cad.list_unsupported"
+  "cad.list_unsupported",
+  "cad_request_export_destination",
+  "cad_export_report",
+  "cad_export_drawing",
+  "cad_get_export_verification"
 ] as const;
 
 export type CadToolName = (typeof CAD_TOOL_NAMES)[number];
@@ -79,5 +83,36 @@ export const CAD_TOOL_DEFINITIONS: readonly CadToolDefinition[] = [
     name: "cad.list_unsupported",
     description: "List unsupported or partially parsed CAD entity types and reasons.",
     inputSchema: { drawingId }
+  },
+  {
+    name: "cad_request_export_destination",
+    description: "Confirm the host-configured export destination and issue a one-use grant.",
+    inputSchema: {}
+  },
+  {
+    name: "cad_export_report",
+    description: "Export a bounded report for the current document revision.",
+    inputSchema: {
+      documentId: drawingId,
+      revision: z.number().int().nonnegative(),
+      format: z.enum(["json", "csv", "pdf", "svg"])
+    }
+  },
+  {
+    name: "cad_export_drawing",
+    description: "Save a verified drawing copy to a granted destination.",
+    inputSchema: {
+      documentId: drawingId,
+      expectedRevision: z.number().int().nonnegative(),
+      destinationGrantId: z.string().uuid(),
+      baseFilename: z.string().min(1).max(255),
+      format: z.enum(["dxf", "dwg"]),
+      version: z.string().regex(/^AC[0-9]{4}$/u)
+    }
+  },
+  {
+    name: "cad_get_export_verification",
+    description: "Read independent verification evidence for a saved drawing.",
+    inputSchema: { id: z.string().min(1).max(256) }
   }
 ];

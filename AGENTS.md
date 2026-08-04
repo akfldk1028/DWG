@@ -33,12 +33,17 @@ These instructions apply to the entire repository.
 ## Supported integration surfaces
 
 - `@dwg/contracts`
+- `@dwg/skill-contracts`
 - loopback `/api`
 - MCP stdio
 - whole apps/workspace composition
 
-`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, and parser
-internals are not deep-import APIs.
+`modules/cad-runtime/src/**`, `apps/workspace/src/features/**`, the CAD
+capability modules (`@dwg/cad-document`, `@dwg/cad-edit`, `@dwg/cad-query`,
+`@dwg/cad-export`, `@dwg/cad-io-acadsharp`, `@dwg/cad-capabilities`,
+`@dwg/skill-runtime`), and parser internals are not deep-import APIs. A
+`packages/**` surface taken into a host repository must carry the dependencies
+its own manifest declares.
 
 ## Verification
 

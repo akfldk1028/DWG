@@ -4,7 +4,6 @@ import type {
   InspectionRun
 } from "@dwg/contracts";
 
-import { createCadToolRuntime } from "../application/cad-tools/runtime.js";
 import type { CadToolMatch } from "../domain/cad-index/types.js";
 import {
   verifyMatches
@@ -23,7 +22,7 @@ export interface InspectionRequest {
 }
 
 export function createInspectionOrchestrator(
-  runtime: OrchestrationCadRuntime = createCadToolRuntime()
+  runtime: OrchestrationCadRuntime
 ) {
   return {
     async run(request: InspectionRequest): Promise<InspectionRun> {

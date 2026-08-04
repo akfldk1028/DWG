@@ -1,19 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-export function useLayerVisibility(layerNames: readonly string[]) {
-  const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(() => new Set());
-  const layerNamesKey = layerNames.join("\u0000");
+import type { CadLayerIndexItem } from "../../shared/types";
+
+export function useLayerVisibility(layers: readonly CadLayerIndexItem[]) {
+  const [userHiddenLayers, setUserHiddenLayers] = useState<Set<string>>(() => new Set());
+  const layerAvailabilityKey = layers
+    .map((layer) => `${layer.name}\u0001${layer.visible}\u0001${layer.frozen}`)
+    .join("\u0000");
+  const layerByName = useMemo(
+    () => new Map(layers.map((layer) => [layer.name, layer])),
+    [layerAvailabilityKey]
+  );
+  const hiddenLayers = new Set([
+    ...layers
+      .filter((layer) => !layer.visible || layer.frozen)
+      .map((layer) => layer.name),
+    ...userHiddenLayers
+  ]);
 
   useEffect(() => {
-    const available = new Set(layerNames);
-    setHiddenLayers((current) => {
+    const available = new Set(layers.map((layer) => layer.name));
+    setUserHiddenLayers((current) => {
       const next = new Set([...current].filter((name) => available.has(name)));
       return next.size === current.size ? current : next;
     });
-  }, [layerNamesKey]);
+  }, [layerByName]);
 
   const toggleLayer = useCallback((layerName: string) => {
-    setHiddenLayers((current) => {
+    const layer = layerByName.get(layerName);
+    if (!layer?.visible || layer.frozen) return;
+    setUserHiddenLayers((current) => {
       const next = new Set(current);
       if (next.has(layerName)) {
         next.delete(layerName);
@@ -22,7 +38,7 @@ export function useLayerVisibility(layerNames: readonly string[]) {
       }
       return next;
     });
-  }, []);
+  }, [layerByName]);
 
   return { hiddenLayers, toggleLayer };
 }

@@ -11,7 +11,8 @@
     "types": ["node"]
   },
   "include": [
-    "modules/cad-runtime/**/*.ts",
+    "packages/**/*.ts",
+    "modules/**/*.ts",
     "scripts/**/*.mjs"
   ]
 }

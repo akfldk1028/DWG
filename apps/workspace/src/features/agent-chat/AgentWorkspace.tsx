@@ -15,6 +15,7 @@ import type {
   ProviderStatus
 } from "../../shared/types";
 import { ChatComposer } from "./ChatComposer";
+import { PendingResponse } from "./PendingResponse";
 import { ProviderSwitch } from "./ProviderSwitch";
 import type { WorkspaceSession } from "./workspaceSessionStore";
 import "./styles.css";
@@ -61,7 +62,7 @@ export function AgentWorkspace({
   }, [activeSession?.messages.length, chatResult]);
 
   return (
-    <main className="panel agent-workspace conversation-panel" aria-label="대화">
+    <main className="panel agent-workspace conversation-panel" aria-label="대화" data-modal-background>
       <div className="agent-tabs">
         <div className="conversation-title"><Bot size={14} /> Drawing inspection</div>
         <button className="agent-tab icon-tab" aria-label="새 대화" onClick={onNewChat}>
@@ -104,7 +105,8 @@ export function AgentWorkspace({
               <code>{activeSession.providerSessionId}</code>}
           </div>
         ))}
-        {!activeSession && !inspectionRun && !inspectionLoading && (
+        {chatLoading && <PendingResponse onCancel={onCancel} />}
+        {!activeSession && !inspectionRun && !inspectionLoading && !chatLoading && (
           <div className="conversation-empty">
             <Bot size={22} />
             <strong>도면에 대해 질문하세요</strong>

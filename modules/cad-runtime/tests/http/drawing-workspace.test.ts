@@ -12,11 +12,17 @@ import test from "node:test";
 
 import { createDrawingWorkspace } from "../../src/http/drawingWorkspace.js";
 
+const unusedRuntime = {
+  async call(): Promise<never> {
+    throw new Error("not used");
+  }
+};
+
 test("drawing workspace rejects configured paths outside its root", () => {
   const workspaceRoot = process.cwd();
 
   assert.throws(
-    () => createDrawingWorkspace(workspaceRoot, "../outside.dwg"),
+    () => createDrawingWorkspace(workspaceRoot, "../outside.dwg", unusedRuntime),
     /outside workspace/i
   );
 });
@@ -25,7 +31,8 @@ test("drawing workspace shares one indexed result across concurrent readers", as
   const workspaceRoot = process.cwd();
   const drawingWorkspace = createDrawingWorkspace(
     workspaceRoot,
-    "tests/fixtures/dwg/export_sample.dwg"
+    "tests/fixtures/dwg/export_sample.dwg",
+    unusedRuntime
   );
 
   const indexes = await Promise.all(
@@ -46,7 +53,7 @@ test("drawing workspace rejects junctions that escape its canonical root", async
   await symlink(outsideRoot, resolve(workspaceRoot, "linked"), "junction");
 
   assert.throws(
-    () => createDrawingWorkspace(workspaceRoot, "linked/secret.dwg"),
+    () => createDrawingWorkspace(workspaceRoot, "linked/secret.dwg", unusedRuntime),
     /outside workspace/i
   );
 });
