@@ -280,3 +280,30 @@ test("workspace controls change visible state instead of remaining inert", async
   await page.getByRole("button", { name: "에이전트 멘션" }).click();
   await expect(page.getByLabel("AI 질문")).toHaveValue("@drawing-index-agent ");
 });
+
+test("a slow provider turn shows a counted pending state that can be stopped", async ({ page }) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/chat", async (route) => {
+    await pending;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ provider: "codex", text: "레이어는 4개입니다.", sessionId: null })
+    });
+  });
+  await page.goto("/");
+
+  await page.getByLabel("AI 질문").fill("이 도면의 레이어를 알려줘");
+  await page.getByLabel("AI 질문").press("Enter");
+
+  // The transcript must show the wait, not sit unchanged until the answer.
+  const waiting = page.getByTestId("pending-response");
+  await expect(waiting).toBeVisible();
+  await expect(waiting).toContainText("응답 생성 중");
+  await expect(waiting.getByRole("status")).toBeVisible();
+
+  await waiting.getByRole("button", { name: "중단" }).click();
+  await expect(waiting).toBeHidden();
+
+  release();
+});

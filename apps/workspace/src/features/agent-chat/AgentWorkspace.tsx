@@ -15,6 +15,7 @@ import type {
   ProviderStatus
 } from "../../shared/types";
 import { ChatComposer } from "./ChatComposer";
+import { PendingResponse } from "./PendingResponse";
 import { ProviderSwitch } from "./ProviderSwitch";
 import type { WorkspaceSession } from "./workspaceSessionStore";
 import "./styles.css";
@@ -104,7 +105,8 @@ export function AgentWorkspace({
               <code>{activeSession.providerSessionId}</code>}
           </div>
         ))}
-        {!activeSession && !inspectionRun && !inspectionLoading && (
+        {chatLoading && <PendingResponse onCancel={onCancel} />}
+        {!activeSession && !inspectionRun && !inspectionLoading && !chatLoading && (
           <div className="conversation-empty">
             <Bot size={22} />
             <strong>도면에 대해 질문하세요</strong>
