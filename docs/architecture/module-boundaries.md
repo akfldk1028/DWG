@@ -126,7 +126,8 @@ as `@dwg/contracts`; `@dwg/contracts/*` is rejected. See
   `modules/dwg-parser`. Contracts contain serializable evidence only; SVG
   arc/bulge conversion stays in `apps/workspace/src/features/cad-viewer`.
 - Cancellation flows through one `AbortSignal`: workspace request -> loopback
-  gateway -> chat service -> provider -> process runner.
+  gateway -> inspection orchestrator/CAD capability or chat service -> provider
+  -> process runner.
 
 ## Automated enforcement
 

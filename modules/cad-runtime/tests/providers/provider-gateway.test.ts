@@ -148,6 +148,34 @@ test("gateway rejects oversized or malformed requests without invoking chat", as
   assert.equal(calls, 0);
 });
 
+test("gateway rejects non-loopback browser origins before dispatching a route", async (context) => {
+  let routeCalls = 0;
+  const server = createProviderGateway({
+    getDrawing: async () => { throw new Error("should not run"); },
+    inspect: async () => { throw new Error("should not run"); },
+    getStatuses: async () => [],
+    chat: async () => { throw new Error("should not run"); },
+    additionalRoute: async (_request, response) => {
+      routeCalls += 1;
+      response.statusCode = 204;
+      response.end();
+      return true;
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/drawings/open`, {
+    method: "POST",
+    headers: { origin: "https://attacker.example" }
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(routeCalls, 0);
+});
+
 test("gateway aborts provider work when the browser cancels the request", async (context) => {
   let providerAborted = false;
   let chatStarted!: () => void;

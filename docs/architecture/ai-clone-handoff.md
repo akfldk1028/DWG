@@ -147,7 +147,8 @@ These locations are ownership navigation, not cross-repository import APIs.
 - DIMENSION, ELLIPSE, HATCH, SPLINE, and VIEWPORT use fallback geometry.
 - OAuth integration uses existing Codex/Claude CLI login state. No API-key
   fallback is supported or stored.
-- The HTTP gateway is loopback-only and has no public-network authentication.
+- The HTTP gateway is loopback-only, rejects non-loopback browser origins, and
+  has no public-network authentication.
 - Drawing export is available in the source format, and a DWG source can also
   be written as a verified DXF copy. Both sides of that pairing are indexed by
   ACadSharp as `cad-index/v0.2`; XY-plane HATCH bounds use the entity's OCS

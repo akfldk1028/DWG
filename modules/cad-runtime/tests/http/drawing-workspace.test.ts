@@ -13,7 +13,7 @@ import test from "node:test";
 import { createDrawingWorkspace } from "../../src/http/drawingWorkspace.js";
 
 const unusedRuntime = {
-  async call(): Promise<never> {
+  async execute(): Promise<never> {
     throw new Error("not used");
   }
 };
@@ -40,6 +40,28 @@ test("drawing workspace shares one indexed result across concurrent readers", as
   );
 
   assert.equal(indexes.every((index) => index === indexes[0]), true);
+});
+
+test("a pre-cancelled inspection never executes a CAD capability", async () => {
+  let calls = 0;
+  const drawingWorkspace = createDrawingWorkspace(
+    process.cwd(),
+    "tests/fixtures/dwg/export_sample.dwg",
+    {
+      async execute() {
+        calls += 1;
+        throw new Error("must not execute");
+      }
+    }
+  );
+  const controller = new AbortController();
+  controller.abort(new Error("inspection cancelled"));
+
+  await assert.rejects(
+    drawingWorkspace.inspect([{ kind: "layer", value: "0" }], controller.signal),
+    /cancelled/i
+  );
+  assert.equal(calls, 0);
 });
 
 test("drawing workspace rejects junctions that escape its canonical root", async (context) => {

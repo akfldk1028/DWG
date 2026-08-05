@@ -104,6 +104,7 @@ export function createActiveApplicationProxy(
       return registry.active().capabilityNames;
     },
     currentIndex: () => registry.active().currentIndex(),
+    currentDrawingPath: () => registry.active().currentDrawingPath(),
     readIndex: (path, signal) => registry.active().readIndex(path, signal),
     activeDrawingFormat: () => registry.active().activeDrawingFormat(),
     requestDestinationGrant: (signal) => registry.active().requestDestinationGrant(signal),

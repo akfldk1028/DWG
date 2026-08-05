@@ -19,7 +19,7 @@ export interface GroundedChatRequest {
 
 interface ChatServiceDependencies {
   providers: Map<ProviderId, ChatProvider>;
-  loadIndex(path: string): Promise<CadEntityIndex>;
+  loadActiveIndex(): Promise<CadEntityIndex>;
 }
 
 export function createChatService(dependencies: ChatServiceDependencies) {
@@ -37,7 +37,7 @@ export function createChatService(dependencies: ChatServiceDependencies) {
         throw new Error(`${status.label} is not authenticated`);
       }
 
-      const index = await dependencies.loadIndex(request.drawingPath);
+      const index = await dependencies.loadActiveIndex();
       return provider.chat({
         message: request.message.trim(),
         sessionId: request.sessionId,
