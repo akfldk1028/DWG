@@ -71,9 +71,11 @@ export function App() {
   // Switching the active drawing changes every read surface, so the workspace
   // reloads its index and drops a selection that belonged to the old drawing.
   const drawingSessions = useDrawingSessions(useCallback(() => {
+    chat.reset();
+    inspection.reset();
     setSelectedHandle(null);
     void refresh();
-  }, [refresh]));
+  }, [chat.reset, inspection.reset, refresh]));
   const refreshAfterMutation = useCallback(async () => {
     const refreshed = await refresh();
     if (!refreshed) return;

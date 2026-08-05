@@ -117,6 +117,58 @@ test("conversation context shows the active drawing name from the loaded index",
   await expect(page.locator(".agent-context")).not.toContainText("export_sample.dwg");
 });
 
+test("switching drawings clears inspection evidence owned by the previous session", async ({ page }) => {
+  let secondDrawingActive = false;
+  const sessions = () => ({
+    sessions: [
+      {
+        id: "session-1",
+        displayName: "export_sample.dwg",
+        drawingId: "dwg:first",
+        active: !secondDrawingActive
+      },
+      {
+        id: "session-2",
+        displayName: "second-building.dwg",
+        drawingId: "dwg:second",
+        active: secondDrawingActive
+      }
+    ],
+    activeSessionId: secondDrawingActive ? "session-2" : "session-1",
+    dialogAvailable: true
+  });
+  await mockProviderStatus(page);
+  await page.route("**/api/drawings/sessions", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(sessions())
+  }));
+  await page.route("**/api/drawings/sessions/session-2/activate", (route) => {
+    secondDrawingActive = true;
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(sessions())
+    });
+  });
+  await page.route("**/api/drawing", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ...indexFixture,
+      source: {
+        ...indexFixture.source,
+        displayName: secondDrawingActive ? "second-building.dwg" : "export_sample.dwg"
+      }
+    })
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Run agents" }).click();
+  await expect(page.locator(".response-message")).toBeVisible();
+
+  await page.getByRole("button", { name: "second-building.dwg" }).click();
+
+  await expect(page.locator(".agent-context")).toContainText("second-building.dwg");
+  await expect(page.locator(".response-message")).toHaveCount(0);
+});
+
 for (const viewport of [
   { name: "loaded-1280x800", width: 1280, height: 800 },
   { name: "loaded-1440x900", width: 1440, height: 900 },

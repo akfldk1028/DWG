@@ -19,7 +19,7 @@ test("uses the assembled export capability endpoint and separates report export 
   await expect(panel.getByRole("button", { name: /Download.*DWG/i })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Choose destination" })).toBeVisible();
   await expect(panel.getByLabel("Base filename")).toBeVisible();
-  await expect(panel.getByRole("status")).toContainText("Destination required");
+  await expect(panel.locator(".destination-status")).toContainText("Destination required");
 });
 
 test("keeps a 500 pixel conversation and exposes both keyboard resizers at 1280 by 800", async ({ page }) => {
