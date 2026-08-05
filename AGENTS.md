@@ -4,7 +4,8 @@ These instructions apply to the entire repository.
 
 ## First actions
 
-1. Read `README.md`, `docs/architecture/ai-clone-handoff.md`,
+1. Read `README.md`, `docs/handoff/repo-memory.md`,
+   `docs/architecture/ai-clone-handoff.md`,
    `docs/architecture/module-boundaries.md`, and
    `docs/architecture/integration-contract.md`.
 2. Run `git status --short`, `git branch --show-current`, and `git remote -v`.

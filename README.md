@@ -103,6 +103,8 @@ repository means taking its declared dependencies with it; see
 ## Architecture and handoff
 
 - [Repository instructions for AI agents](AGENTS.md)
+- [Portable repository memory](docs/handoff/repo-memory.md)
+- [Embed this repository as one folder](docs/handoff/embedding-as-submodule.md)
 - [AI clone and cross-repository handoff](docs/architecture/ai-clone-handoff.md)
 - [Module ownership and import rules](docs/architecture/module-boundaries.md)
 - [Cross-repository integration contract](docs/architecture/integration-contract.md)
