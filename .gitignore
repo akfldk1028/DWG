@@ -44,6 +44,10 @@ tests/visual/test-results/
 clone/
 logs/
 
+# Local source drawings used for ad hoc inspection; retained test fixtures live
+# under tests/fixtures and are reviewed and hash-pinned separately.
+/docs/dwg/
+
 modules/dwg-parser/bin/
 modules/dwg-parser/obj/
 modules/dwg-parser/**/bin/

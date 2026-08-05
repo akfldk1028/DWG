@@ -148,16 +148,14 @@ These locations are ownership navigation, not cross-repository import APIs.
 - OAuth integration uses existing Codex/Claude CLI login state. No API-key
   fallback is supported or stored.
 - The HTTP gateway is loopback-only and has no public-network authentication.
-- Drawing export is offered only for the format the active source was read as.
-  A DWG is indexed by ACadSharp as `cad-index/v0.2` and a DXF by the legacy
-  indexer as `cad-index/v0.1`, so a copy written in the other format cannot be
-  compared against the active document and is withheld with a reason rather
-  than written unverified. Report export is available for every format.
-- ACadSharp derives a different bounding box for fallback-geometry entities
-  when it reads DXF than when it reads DWG: a HATCH that reports a zero Z
-  extent from DWG reports 1 from DXF. That difference is why the mismatched
-  export direction cannot currently be proven, and it is the item to close if
-  cross-format Save As is needed.
+- Drawing export is available in the source format, and a DWG source can also
+  be written as a verified DXF copy. Both sides of that pairing are indexed by
+  ACadSharp as `cad-index/v0.2`; XY-plane HATCH bounds use the entity's OCS
+  elevation projected onto world Z so the DWG and DXF readers agree.
+- Writing a DWG from a DXF source remains withheld. The source DXF is indexed
+  by the legacy `cad-index/v0.1` reader while a written DWG can only be reopened
+  as ACadSharp `cad-index/v0.2`, so the two entity models cannot be compared.
+  Report export remains available for every format.
 
 ## AI change protocol
 

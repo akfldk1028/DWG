@@ -82,11 +82,15 @@ create independent application processes and do not share edit history.
 #### Export capability contract
 
 `GET /api/export/capabilities` returns every supported report (`json`, `csv`,
-`pdf`, `svg`) and drawing (`dxf`, `dwg`) format as typed capability items. In
-the UI-shell phase all are unavailable with `EXPORT_MODULE_NOT_INSTALLED`;
-the endpoint does not create files or modify source drawings. Adding optional
-capability metadata is compatible. Enabling a format requires a coordinated
-Save and Export implementation that preserves source read-only behavior.
+`pdf`, `svg`) and drawing (`dxf`, `dwg`) format as typed capability items.
+Report formats are available for every active drawing. Same-format drawing
+copies are available, as is a verified DXF copy from a DWG source. A DWG copy
+from a DXF source is withheld because its legacy `cad-index/v0.1` source model
+cannot be compared with the ACadSharp `cad-index/v0.2` reopened copy. The
+endpoint itself does not create files or modify source drawings. Adding
+optional capability metadata is compatible. Enabling another format pairing
+requires a coordinated Save and Export implementation that preserves source
+read-only behavior and independently reopens the written output.
 
 #### Workspace edit proposal ingest
 

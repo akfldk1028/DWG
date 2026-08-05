@@ -11,7 +11,7 @@
       "id": "dwg.roundtrip-manifest",
       "path": "tests/fixtures/dwg/roundtrip-manifest.json",
       "bytes": 1456,
-      "sha256": "26ae8e8150d7fe513b1f9fbddbdf8946dc160424b0820614aa853382dce897cd"
+      "sha256": "4c74b28b2f715d62d296f5ec9fabd13ead5f233609bb207061ccac01c3b296b5"
     },
     {
       "id": "dxf.minimal-architectural",

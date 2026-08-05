@@ -35,11 +35,13 @@ assert against the repository default drawing, so a different drawing is for
 targeted runs rather than a full green suite.
 
 Save As writes a copy and then proves the copy matches the active document.
-That proof only holds when both sides come from one parser, so drawing export
-is offered for the format the source was read as and withheld for the other:
-a DWG opens as `cad-index/v0.2` through ACadSharp, a DXF as `cad-index/v0.1`
-through the legacy indexer, and the two entity models cannot be compared.
-`GET /api/export/capabilities` reports the withheld format with a reason, and
+Writing a DXF from a DWG is verified: the index projects an XY-plane HATCH's
+OCS elevation onto world Z instead of retaining ACadSharp's format-specific
+bounding-box artifact, so its DWG and DXF readers agree. Writing a DWG from a
+DXF is withheld, because a DXF is indexed as `cad-index/v0.1` by the legacy
+indexer while a DWG can only be read as
+`cad-index/v0.2`, and the two entity models cannot be compared. `GET
+/api/export/capabilities` reports the withheld pairing with a reason, and
 `export.drawing` rejects it with `EXPORT_UNSUPPORTED` regardless of what the
 capability list advertised. Report export is available for every format.
 
