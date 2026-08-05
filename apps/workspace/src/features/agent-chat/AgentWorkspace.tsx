@@ -21,6 +21,7 @@ import type { WorkspaceSession } from "./workspaceSessionStore";
 import "./styles.css";
 
 interface Props {
+  drawingDisplayName: string;
   inspectionRun: InspectionRun | null;
   inspectionLoading: boolean;
   inspectionError: string | null;
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export function AgentWorkspace({
+  drawingDisplayName,
   inspectionRun,
   inspectionLoading,
   inspectionError,
@@ -74,7 +76,7 @@ export function AgentWorkspace({
         <span className="agent-avatar">DI</span>
         <div>
           <strong>{activeSession?.title ?? "새 검사 대화"}</strong>
-          <span>export_sample.dwg · OAuth CLI</span>
+          <span>{drawingDisplayName} · OAuth CLI</span>
         </div>
         <ProviderSwitch
           providers={providers}

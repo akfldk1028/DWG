@@ -60,8 +60,10 @@ service that should not import Node implementation code.
 | `POST` | `/api/skills/run` | `SkillRunRequest` -> `SkillRunResponse` |
 | `GET` | `/api/export/capabilities` | `ExportCapabilitiesResponse` |
 
-The gateway binds to `127.0.0.1`, rejects malformed/oversized input, and passes
-browser cancellation through one `AbortSignal`. Do not expose it publicly
+The gateway binds to `127.0.0.1`, rejects malformed/oversized input, rejects
+browser `Origin` values outside localhost/loopback, and passes browser
+cancellation through one `AbortSignal`. Requests without `Origin` remain
+available to local CLI and MCP adapters. Do not expose the gateway publicly
 without adding authentication and a separate threat-model review.
 
 `GET /api/drawing` returns the active in-memory document snapshot for the
@@ -78,15 +80,23 @@ and chat reads resolve through the same active edit snapshot. Applying,
 undoing, or redoing a change therefore updates every read surface without
 reopening or modifying the configured source file. MCP and CLI entrypoints
 create independent application processes and do not share edit history.
+After a drawing-session switch, inspection uses the active application's
+canonical source path and chat ignores the browser's legacy `drawingPath` as a
+data-selection authority. A drawing opened outside the repository still uses
+the repository-owned CAD I/O host project for verified Save As.
 
 #### Export capability contract
 
 `GET /api/export/capabilities` returns every supported report (`json`, `csv`,
-`pdf`, `svg`) and drawing (`dxf`, `dwg`) format as typed capability items. In
-the UI-shell phase all are unavailable with `EXPORT_MODULE_NOT_INSTALLED`;
-the endpoint does not create files or modify source drawings. Adding optional
-capability metadata is compatible. Enabling a format requires a coordinated
-Save and Export implementation that preserves source read-only behavior.
+`pdf`, `svg`) and drawing (`dxf`, `dwg`) format as typed capability items.
+Report formats are available for every active drawing. Same-format drawing
+copies are available, as is a verified DXF copy from a DWG source. A DWG copy
+from a DXF source is withheld because its legacy `cad-index/v0.1` source model
+cannot be compared with the ACadSharp `cad-index/v0.2` reopened copy. The
+endpoint itself does not create files or modify source drawings. Adding
+optional capability metadata is compatible. Enabling another format pairing
+requires a coordinated Save and Export implementation that preserves source
+read-only behavior and independently reopens the written output.
 
 #### Workspace edit proposal ingest
 
@@ -190,10 +200,11 @@ so a preview cannot abort or replace a committed mutation request.
 
 All routes operate inside a single loopback trust boundary. Health, read,
 provider, chat, inspection, and edit use the same process. It binds only to
-`127.0.0.1`, has no public-network authentication, and must not be exposed
-beyond that boundary without a separate threat model. This edit-review phase
-does not write DWG or DXF files; its state remains in memory. MCP remains
-read-only and exposes no edit tools.
+`127.0.0.1`, accepts browser origins only from loopback hosts, has no
+public-network authentication, and must not be exposed beyond that boundary
+without a separate threat model.
+This edit-review phase does not write DWG or DXF files; its state remains in memory.
+MCP remains read-only and exposes no edit tools.
 
 | Variable | Meaning | Default |
 |---|---|---|

@@ -213,7 +213,7 @@ public static class DwgIndexBuilder
         }
     }
 
-    private static CadBoundingBox? GetBoundingBox(
+    internal static CadBoundingBox? GetBoundingBox(
         Entity entity,
         string type,
         ICollection<string> warnings,
@@ -229,6 +229,26 @@ public static class DwgIndexBuilder
                 warnings.Add("bbox-unavailable");
                 AddUnsupported(unsupported, type, "bbox-unavailable");
                 return null;
+            }
+            // ACadSharp derives an XY-plane hatch's Z extent differently
+            // depending on whether it read DWG or DXF. Its elevation is an
+            // OCS coordinate along the unit normal, so project that plane to
+            // world Z instead of choosing either edge of the format-specific
+            // box. A hatch with another normal can legitimately span world Z
+            // and must retain that extent.
+            if (
+                entity is Hatch hatch
+                && double.IsFinite(hatch.Elevation)
+                && double.IsFinite(hatch.Normal.X)
+                && double.IsFinite(hatch.Normal.Y)
+                && double.IsFinite(hatch.Normal.Z)
+                && Math.Abs(hatch.Normal.X) <= 1e-12
+                && Math.Abs(hatch.Normal.Y) <= 1e-12
+                && Math.Abs(hatch.Normal.Z) > 1e-12)
+            {
+                double planeZ = hatch.Elevation * Math.Sign(hatch.Normal.Z);
+                min[2] = planeZ;
+                max[2] = planeZ;
             }
             return new CadBoundingBox(min, max);
         }

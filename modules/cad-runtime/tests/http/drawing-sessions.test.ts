@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import type { HostDialogProvider } from "@dwg/host-dialogs";
@@ -96,6 +98,14 @@ test("a chosen drawing becomes a second active session and drives the drawing ro
   const after = await (await fetch(`${base}/api/drawing`)).json();
   assert.equal(after.entities.length, 234);
 
+  const inspection = await fetch(`${base}/api/inspections`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ checks: [{ kind: "layer", value: "0" }] })
+  });
+  assert.equal(inspection.status, 200);
+  assert.equal((await inspection.json()).drawingId, opened.sessions[1].drawingId);
+
   const restored = await (await fetch(
     `${base}/api/drawings/sessions/${opened.sessions[0].id}/activate`,
     { method: "POST" }
@@ -148,4 +158,48 @@ test("closing a session removes it and restores an active drawing", async (conte
   assert.equal(closed.sessions.length, 1);
   assert.equal(closed.sessions[0].active, true);
   assert.equal((await (await fetch(`${base}/api/drawing`)).json()).entities.length, 4);
+});
+
+test("a drawing opened outside the repository can be saved through the repository CAD I/O host", async (context) => {
+  const externalRoot = await mkdtemp(join(tmpdir(), "dwg-opened-session-"));
+  context.after(() => rm(externalRoot, { recursive: true, force: true }));
+  const externalDrawing = join(externalRoot, "export_sample.dwg");
+  await copyFile(EXPORT_SAMPLE, externalDrawing);
+  const server = await createCadGatewayServer({
+    workspaceRoot: process.cwd(),
+    drawingPath: MINIMAL_DXF,
+    dialogs: dialogs({
+      async openDrawingFile() {
+        return { canonicalPath: externalDrawing, displayName: "export_sample.dwg" };
+      },
+      async chooseDirectory() {
+        return { canonicalDirectory: externalRoot, displayDirectory: "Test exports" };
+      }
+    })
+  });
+  context.after(() => server.close());
+  const base = await listen(server);
+
+  await fetch(`${base}/api/drawings/open`, { method: "POST" });
+  const drawing = await (await fetch(`${base}/api/drawing`)).json();
+  const grant = await (await fetch(`${base}/api/export/destination-grants`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  })).json();
+  const saved = await fetch(`${base}/api/export/drawings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: drawing.drawingId,
+      expectedRevision: drawing.drawing.revision,
+      destinationGrantId: grant.grantId,
+      baseFilename: "opened-session-copy",
+      format: "dxf",
+      version: "AC1032"
+    })
+  });
+
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).status, "passed");
 });

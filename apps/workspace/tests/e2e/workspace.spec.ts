@@ -14,6 +14,7 @@ const indexFixture = JSON.parse(readFileSync(
   ),
   "utf8"
 )) as {
+  source: Record<string, unknown>;
   summary: { modelSpaceCount: number };
   layers: Array<{ name: string; entityCount: number }>;
   entities: Array<{ layout: string; layer: string }>;
@@ -95,6 +96,77 @@ test("serves the application favicon without a missing-resource error", async ({
 
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toContain("image/svg+xml");
+});
+
+test("conversation context shows the active drawing name from the loaded index", async ({ page }) => {
+  await mockProviderStatus(page);
+  await page.route("**/api/drawing", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ...indexFixture,
+      source: {
+        ...indexFixture.source,
+        displayName: "selected-building.dwg"
+      }
+    })
+  }));
+
+  await page.goto("/");
+
+  await expect(page.locator(".agent-context")).toContainText("selected-building.dwg");
+  await expect(page.locator(".agent-context")).not.toContainText("export_sample.dwg");
+});
+
+test("switching drawings clears inspection evidence owned by the previous session", async ({ page }) => {
+  let secondDrawingActive = false;
+  const sessions = () => ({
+    sessions: [
+      {
+        id: "session-1",
+        displayName: "export_sample.dwg",
+        drawingId: "dwg:first",
+        active: !secondDrawingActive
+      },
+      {
+        id: "session-2",
+        displayName: "second-building.dwg",
+        drawingId: "dwg:second",
+        active: secondDrawingActive
+      }
+    ],
+    activeSessionId: secondDrawingActive ? "session-2" : "session-1",
+    dialogAvailable: true
+  });
+  await mockProviderStatus(page);
+  await page.route("**/api/drawings/sessions", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(sessions())
+  }));
+  await page.route("**/api/drawings/sessions/session-2/activate", (route) => {
+    secondDrawingActive = true;
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(sessions())
+    });
+  });
+  await page.route("**/api/drawing", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ...indexFixture,
+      source: {
+        ...indexFixture.source,
+        displayName: secondDrawingActive ? "second-building.dwg" : "export_sample.dwg"
+      }
+    })
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Run agents" }).click();
+  await expect(page.locator(".response-message")).toBeVisible();
+
+  await page.getByRole("button", { name: "second-building.dwg" }).click();
+
+  await expect(page.locator(".agent-context")).toContainText("second-building.dwg");
+  await expect(page.locator(".response-message")).toHaveCount(0);
 });
 
 for (const viewport of [

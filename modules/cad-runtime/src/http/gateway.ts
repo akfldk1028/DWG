@@ -74,6 +74,7 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     drawingPath,
     exportRoot,
     dwgVersionManifestPath: paths.dwgVersionManifest,
+    cadIoHostProjectPath: paths.cadIoHostProject,
     destinationSelector: options.dialogs
       ? { request: (signal) => options.dialogs!.chooseDirectory(signal) }
       : undefined,
@@ -89,12 +90,13 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
     workspace,
     drawingPath,
     active.capabilities,
-    () => active.currentIndex()
+    () => active.currentIndex(),
+    () => active.currentDrawingPath()
   );
   const providers = createProviderRegistry(workspace);
   const chatService = createChatService({
     providers,
-    loadIndex: (path) => active.readIndex(path)
+    loadActiveIndex: async () => active.currentIndex()
   });
   const skills = createSkillGatewayRoutes({
     skillRoot: options.skillRoot ?? resolve(paths.repositoryRoot, "skills"),
@@ -115,6 +117,7 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
           drawingPath: basename(canonicalPath),
           exportRoot,
           dwgVersionManifestPath: paths.dwgVersionManifest,
+          cadIoHostProjectPath: paths.cadIoHostProject,
           destinationSelector: options.dialogs
             ? { request: (signal) => options.dialogs!.chooseDirectory(signal) }
             : undefined,
@@ -126,7 +129,7 @@ export async function createCadGatewayServer(options: CadGatewayServerOptions = 
 
   return createProviderGateway({
     getDrawing: () => drawingWorkspace.getIndex(),
-    inspect: ({ checks }) => drawingWorkspace.inspect(checks),
+    inspect: ({ checks }, signal) => drawingWorkspace.inspect(checks, signal),
     getStatuses: () => getProviderStatuses(providers),
     chat: (request, signal) => chatService.chat(request, signal),
     edit: (name, input, signal) => active.capabilities.execute(name, input, signal),

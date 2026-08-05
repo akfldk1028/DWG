@@ -13,7 +13,7 @@ import type { AgentId } from "./types.js";
 type ToolArguments = Record<string, unknown>;
 
 export interface OrchestrationCadRuntime {
-  call(name: string, args: ToolArguments): Promise<unknown>;
+  call(name: string, args: ToolArguments, signal?: AbortSignal): Promise<unknown>;
 }
 
 export interface InspectionRequest {
@@ -25,7 +25,8 @@ export function createInspectionOrchestrator(
   runtime: OrchestrationCadRuntime
 ) {
   return {
-    async run(request: InspectionRequest): Promise<InspectionRun> {
+    async run(request: InspectionRequest, signal?: AbortSignal): Promise<InspectionRun> {
+      requireNotAborted(signal);
       const events: InspectionEvent[] = [];
       const pushEvent = (
         agentId: AgentId,
@@ -43,24 +44,24 @@ export function createInspectionOrchestrator(
       pushEvent("orchestrator", "plan", "planned");
 
       const opened = asRecord(
-        await runtime.call("cad.open_drawing", { path: request.path })
+        await runtime.call("cad.open_drawing", { path: request.path }, signal)
       );
       const drawingId = asRequiredString(opened.drawingId, "drawingId");
       const warnings = asStringArray(opened.warnings);
       pushEvent("drawing-index-agent", "open-drawing", "completed");
 
-      await runtime.call("cad.build_index", { drawingId });
+      await runtime.call("cad.build_index", { drawingId }, signal);
       pushEvent("drawing-index-agent", "build-index", "completed");
 
       const unsupportedResult = asRecord(
-        await runtime.call("cad.list_unsupported", { drawingId })
+        await runtime.call("cad.list_unsupported", { drawingId }, signal)
       );
       warnings.push(...formatUnsupported(unsupportedResult.unsupported));
 
       const matchGroups = await runWithConcurrency(
         request.checks,
         3,
-        async (check) => runSearchCheck(runtime, drawingId, check)
+        async (check) => runSearchCheck(runtime, drawingId, check, signal)
       );
       for (const check of request.checks) {
         pushEvent("search-agent", `search-${check.kind}`, "completed");
@@ -101,7 +102,8 @@ export function createInspectionOrchestrator(
 async function runSearchCheck(
   runtime: OrchestrationCadRuntime,
   drawingId: string,
-  check: InspectionCheck
+  check: InspectionCheck,
+  signal?: AbortSignal
 ): Promise<CadToolMatch[]> {
   let name: string;
   let args: ToolArguments;
@@ -125,11 +127,16 @@ async function runSearchCheck(
       break;
   }
 
-  const result = asRecord(await runtime.call(name, args));
+  requireNotAborted(signal);
+  const result = asRecord(await runtime.call(name, args, signal));
   if (!Array.isArray(result.matches)) {
     throw new Error(`Expected matches array from ${name}`);
   }
   return result.matches as CadToolMatch[];
+}
+
+function requireNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason;
 }
 
 async function runWithConcurrency<T, R>(

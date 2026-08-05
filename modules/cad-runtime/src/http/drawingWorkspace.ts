@@ -17,14 +17,15 @@ export { resolveWorkspaceCadPath as resolveWorkspaceDrawingPath }
 
 export interface DrawingWorkspace {
   getIndex(): Promise<CadEntityIndex>;
-  inspect(checks: readonly InspectionCheck[]): Promise<InspectionRun>;
+  inspect(checks: readonly InspectionCheck[], signal?: AbortSignal): Promise<InspectionRun>;
 }
 
 export function createDrawingWorkspace(
   workspaceRoot: string,
   configuredPath: string,
   capabilities: CadCapabilityRuntime,
-  getCurrentIndex?: () => CadEntityIndex
+  getCurrentIndex?: () => CadEntityIndex,
+  getCurrentDrawingPath?: () => string | null
 ): DrawingWorkspace {
   const drawingPath = resolveWorkspaceCadPath(workspaceRoot, configuredPath);
 
@@ -34,6 +35,9 @@ export function createDrawingWorkspace(
   const orchestrator = createInspectionOrchestrator(runtime);
   return {
     getIndex: async () => getCurrentIndex ? getCurrentIndex() : buildCadIndexForPath(drawingPath),
-    inspect: (checks) => orchestrator.run({ path: drawingPath, checks })
+    inspect: (checks, signal) => orchestrator.run({
+      path: getCurrentDrawingPath?.() ?? drawingPath,
+      checks
+    }, signal)
   };
 }

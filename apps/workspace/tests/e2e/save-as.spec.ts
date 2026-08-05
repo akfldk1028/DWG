@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import {
+  parseCadDrawingExportResponse,
+  parseCadVerificationResponse
+} from "@dwg/contracts";
 
 test("saves a verified drawing copy and downloads a report", async ({ page }, testInfo) => {
   await page.goto("/");
@@ -22,40 +26,30 @@ test("saves a verified drawing copy and downloads a report", async ({ page }, te
   });
 });
 
-test("withholds DXF drawing export instead of offering an unverifiable copy", async ({ page }) => {
+test("saves a verified DXF copy from a DWG source", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("tab", { name: "Export", exact: true }).click();
   const dxf = page.getByRole("button", { name: "Save As DXF" });
   await expect(dxf).toBeDisabled();
-  await expect(dxf).toHaveAttribute(
-    "title",
-    "DXF drawing export is withheld for a DWG source because the copy cannot be verified against it."
-  );
 
   await page.getByRole("button", { name: "Choose destination" }).click();
-  await expect(page.getByRole("button", { name: "Save As DWG" })).toBeEnabled();
-  await expect(dxf).toBeDisabled();
+  await page.getByLabel("Base filename").fill("verified-dxf-copy");
+  await expect(dxf).toBeEnabled();
+  const saveResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && response.url().endsWith("/api/export/drawings")
+  );
+  await dxf.click();
 
-  const rejected = await page.evaluate(async () => {
-    const grant = await fetch("/api/export/destination-grants", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}"
-    }).then((response) => response.json());
-    const response = await fetch("/api/export/drawings", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        documentId: "dwg:unused",
-        expectedRevision: 0,
-        destinationGrantId: grant.grantId,
-        baseFilename: "direct-call",
-        format: "dxf",
-        version: "AC1032"
-      })
-    });
-    return { status: response.status, body: await response.json() };
-  });
-  expect(rejected.status).toBe(409);
-  expect(rejected.body.error.code).toBe("EXPORT_UNSUPPORTED");
+  const saved = parseCadDrawingExportResponse(await (await saveResponse).json());
+  await expect(page.getByRole("status")).toContainText("Verified");
+  const verificationResponse = await page.request.get(
+    `/api/export/verifications/${saved.verificationId}`
+  );
+  expect(verificationResponse.status()).toBe(200);
+  const { verification } = parseCadVerificationResponse(
+    await verificationResponse.json()
+  );
+  expect(verification.status).toBe("passed");
+  expect(verification.format).toBe("dxf");
 });

@@ -95,6 +95,8 @@ export interface CadApplication {
   readIndex(path: string, signal?: AbortSignal): Promise<CadEntityIndex>;
   /** The format the active drawing was read as, or null when none is open. */
   activeDrawingFormat(): DrawingFormat | null;
+  /** Canonical source path for internal adapters that must follow session switches. */
+  currentDrawingPath(): string | null;
   requestDestinationGrant(signal?: AbortSignal): Promise<{
     grantId: string;
     displayDirectory: string;
@@ -118,6 +120,7 @@ export interface CadApplicationOptions {
   sourceSha256?: string;
   exportRoot?: string;
   dwgVersionManifestPath?: string;
+  cadIoHostProjectPath?: string;
   processRunner?: CadProcessRunner;
   destinationSelector?: DestinationSelectionProvider;
   clock?: () => number;
@@ -155,6 +158,7 @@ export async function createCadApplication(
     documentId: activeDrawingId,
     processRunner: options.processRunner,
     dwgVersionManifestPath: options.dwgVersionManifestPath,
+    cadIoHostProjectPath: options.cadIoHostProjectPath,
     workspaceRoot
   });
   const read: ReadCapabilityDependencies = {
@@ -186,6 +190,7 @@ export async function createCadApplication(
           documentId: activeDrawingId,
           processRunner: options.processRunner,
           dwgVersionManifestPath: options.dwgVersionManifestPath,
+          cadIoHostProjectPath: options.cadIoHostProjectPath,
           workspaceRoot
         });
         return currentIndex();
@@ -220,6 +225,7 @@ export async function createCadApplication(
     transactions: edit.transactions,
     capabilityNames: CAD_APPLICATION_CAPABILITY_NAMES,
     currentIndex,
+    currentDrawingPath: () => activePath,
     activeDrawingFormat: () => activeDrawingFormat(activePath),
     async readIndex(path, signal) {
       if (signal?.aborted) throw signal.reason;
@@ -309,6 +315,7 @@ function createDrawingSaveModule(options: {
   documentId: string;
   processRunner?: CadProcessRunner;
   dwgVersionManifestPath?: string;
+  cadIoHostProjectPath?: string;
   workspaceRoot: string;
 }): CadCapabilityModule | null {
   if (!options.activePath || !options.processRunner) return null;
@@ -320,10 +327,12 @@ function createDrawingSaveModule(options: {
   });
   const coordinator = createSaveCoordinator({
     cadIo: createAcadSharpCadIoClient({
-      projectPath: resolve(
-        options.workspaceRoot,
-        "modules/cad-io-acadsharp/src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj"
-      ),
+      projectPath: options.cadIoHostProjectPath
+        ? resolve(options.cadIoHostProjectPath)
+        : resolve(
+            options.workspaceRoot,
+            "modules/cad-io-acadsharp/src/DwgIntelligence.CadIo.Host/DwgIntelligence.CadIo.Host.csproj"
+          ),
       processRunner: options.processRunner,
       dwgVersionManifestPath: options.dwgVersionManifestPath
     }),

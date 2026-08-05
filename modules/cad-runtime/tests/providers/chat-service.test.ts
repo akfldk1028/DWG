@@ -141,7 +141,7 @@ test("chat service sends a bounded real-index context to the selected provider",
   const provider = new CapturingProvider();
   const service = createChatService({
     providers: new Map([["codex", provider]]),
-    loadIndex: async () => index
+    loadActiveIndex: async () => index
   });
 
   const result = await service.chat({
@@ -155,10 +155,26 @@ test("chat service sends a bounded real-index context to the selected provider",
   assert.match(provider.request?.context ?? "", /cad-index\/v0.1/);
 });
 
+test("chat service grounds against the active drawing instead of a stale browser path", async () => {
+  const provider = new CapturingProvider();
+  const service = createChatService({
+    providers: new Map([["codex", provider]]),
+    loadActiveIndex: async () => index
+  });
+
+  await service.chat({
+    provider: "codex",
+    drawingPath: "stale-session.dxf",
+    message: "현재 도면을 설명해줘"
+  });
+
+  assert.match(provider.request?.context ?? "", /drawingId=drawing-1/);
+});
+
 test("chat service rejects unknown providers and unsupported paths", async () => {
   const service = createChatService({
     providers: new Map(),
-    loadIndex: async () => index
+    loadActiveIndex: async () => index
   });
 
   await assert.rejects(

@@ -37,6 +37,9 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
   return createServer(async (request, response) => {
     setSecurityHeaders(response);
     try {
+      if (!isAllowedBrowserOrigin(request.headers.origin)) {
+        return sendJson(response, 403, { error: "Browser origin is not allowed" });
+      }
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       const controller = createRequestAbortController(request, response);
       if (dependencies.edit) {
@@ -88,6 +91,19 @@ export function createProviderGateway(dependencies: GatewayDependencies) {
       return sendJson(response, status, { error: message });
     }
   });
+}
+
+function isAllowedBrowserOrigin(origin: string | undefined): boolean {
+  if (origin === undefined) return true;
+  try {
+    const url = new URL(origin);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function createRequestAbortController(

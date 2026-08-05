@@ -29,7 +29,7 @@ const drawingPath = runtimePaths.drawingPath;
 const providers = createProviderRegistry(workspace);
 const service = createChatService({
   providers,
-  loadIndex: (path) => buildCadIndexForPath(resolve(workspace, path))
+  loadActiveIndex: () => buildCadIndexForPath(resolve(workspace, drawingPath))
 });
 
 for (const provider of providerIds) {
