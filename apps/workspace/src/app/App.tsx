@@ -244,6 +244,7 @@ export function App() {
           chatError={chat.error}
           chatLoading={chat.loading}
           chatResult={chat.result}
+          drawingDisplayName={index.source.displayName}
           inspectionError={inspection.error}
           inspectionLoading={inspection.loading}
           inspectionRun={inspection.run}

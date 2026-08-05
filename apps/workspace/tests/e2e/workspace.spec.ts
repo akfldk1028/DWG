@@ -14,6 +14,7 @@ const indexFixture = JSON.parse(readFileSync(
   ),
   "utf8"
 )) as {
+  source: Record<string, unknown>;
   summary: { modelSpaceCount: number };
   layers: Array<{ name: string; entityCount: number }>;
   entities: Array<{ layout: string; layer: string }>;
@@ -95,6 +96,25 @@ test("serves the application favicon without a missing-resource error", async ({
 
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toContain("image/svg+xml");
+});
+
+test("conversation context shows the active drawing name from the loaded index", async ({ page }) => {
+  await mockProviderStatus(page);
+  await page.route("**/api/drawing", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ...indexFixture,
+      source: {
+        ...indexFixture.source,
+        displayName: "selected-building.dwg"
+      }
+    })
+  }));
+
+  await page.goto("/");
+
+  await expect(page.locator(".agent-context")).toContainText("selected-building.dwg");
+  await expect(page.locator(".agent-context")).not.toContainText("export_sample.dwg");
 });
 
 for (const viewport of [
